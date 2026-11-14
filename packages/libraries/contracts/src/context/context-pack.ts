@@ -2,13 +2,10 @@ import { Type, type Static } from 'typebox';
 import { ModelToolCallSchema } from '../executor/model-tool-call.js';
 import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
 import {
-  LINE_RANGE_ERROR,
   Sha256Schema,
   TimestampSchema,
   closed,
   count,
-  isLineRange,
-  lineRange,
   text,
 } from '../platform-common/schema-helpers.js';
 
@@ -29,20 +26,6 @@ export const ModelToolSpecSchema = closed(
 );
 export type ModelToolSpec = Static<typeof ModelToolSpecSchema>;
 
-/** Where a piece of the repository overview came from. */
-export const ProvenanceSchema = Type.Refine(
-  closed({
-    path: text(1024),
-    ...lineRange,
-    contentSha256: Sha256Schema,
-    snapshotId: Type.Optional(IdSchemas.snapshotId),
-    retrieval: Type.Literal('TREE'),
-  }),
-  isLineRange,
-  LINE_RANGE_ERROR,
-);
-export type Provenance = Static<typeof ProvenanceSchema>;
-
 const item = {
   /** `${contextPackId}:${index}`, with the index of the item in `items`. */
   itemId: text(200),
@@ -56,8 +39,8 @@ const user = Type.Literal('user');
 
 /**
  * One variant per segment, which fixes the role and the extra fields together: `toolSpecs`
- * only on TOOLS, `provenance` always on ORIENT, `toolCalls` only on an assistant HISTORY item and
- * `toolCallId` on every tool HISTORY item. A field outside its variant makes the item invalid.
+ * only on TOOLS, `toolCalls` only on an assistant HISTORY item and `toolCallId` on every tool
+ * HISTORY item. A field outside its variant makes the item invalid.
  */
 const InstructionsItemSchema = closed({
   ...item,
@@ -71,12 +54,6 @@ const ToolsItemSchema = closed({
   toolSpecs: Type.Array(ModelToolSpecSchema),
 });
 const StatusItemSchema = closed({ ...item, segment: Type.Literal('STATUS'), role: user });
-const OrientItemSchema = closed({
-  ...item,
-  segment: Type.Literal('ORIENT'),
-  role: user,
-  provenance: ProvenanceSchema,
-});
 const history = {
   ...item,
   segment: Type.Literal('HISTORY'),
@@ -96,32 +73,11 @@ const HistoryItemSchema = Type.Union([
   closed({ ...history, role: user }),
 ]);
 
-const pack = {
-  contextPackId: IdSchemas.contextPackId,
-  tokenCount: count(),
-  tokenBudget: count(1),
-  truncated: Type.Boolean(),
-  droppedCount: count(),
-  createdAt: TimestampSchema,
-};
 const hasOrderedItemIds = (value: {
   contextPackId: string;
   items: readonly { itemId: string }[];
 }) => value.items.every((entry, index) => entry.itemId === `${value.contextPackId}:${index}`);
 const ITEM_ID_ERROR = () => 'itemId must be `${contextPackId}:${index}`';
-
-/** The artifact of repository-orient: only ORIENT items, always with a snapshotId. */
-export const OrientContextPackSchema = Type.Refine(
-  closed({
-    ...pack,
-    operation: Type.Literal('ORIENT'),
-    snapshotId: IdSchemas.snapshotId,
-    items: Type.Array(OrientItemSchema),
-  }),
-  hasOrderedItemIds,
-  ITEM_ID_ERROR,
-);
-export type OrientContextPack = Static<typeof OrientContextPackSchema>;
 
 /** `elidedEntries` are the `seq` values the final-call safeguard removed, and nothing else does. */
 export const AssembleContextPackSchema = Type.Refine(
@@ -131,19 +87,12 @@ export const AssembleContextPackSchema = Type.Refine(
     tokenBudget: count(1),
     createdAt: TimestampSchema,
     operation: Type.Literal('ASSEMBLE'),
-    snapshotId: Type.Optional(IdSchemas.snapshotId),
     prefixSha256: Sha256Schema,
     projectionDigest: Sha256Schema,
     headDigest: Sha256Schema,
     elidedEntries: Type.Array(count(1)),
     items: Type.Array(
-      Type.Union([
-        InstructionsItemSchema,
-        ToolsItemSchema,
-        StatusItemSchema,
-        OrientItemSchema,
-        HistoryItemSchema,
-      ]),
+      Type.Union([InstructionsItemSchema, ToolsItemSchema, StatusItemSchema, HistoryItemSchema]),
     ),
   }),
   hasOrderedItemIds,
@@ -152,7 +101,7 @@ export const AssembleContextPackSchema = Type.Refine(
 export type AssembleContextPack = Static<typeof AssembleContextPackSchema>;
 
 /** Immutable once published. */
-export const ContextPackSchema = Type.Union([OrientContextPackSchema, AssembleContextPackSchema], {
+export const ContextPackSchema = Type.Union([AssembleContextPackSchema], {
   $id: 'context.ContextPack.v1',
 });
 export type ContextPack = Static<typeof ContextPackSchema>;

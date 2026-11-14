@@ -21,7 +21,7 @@ describe('control-plane entry', () => {
     process.env['MULTIAGENTOS_CONFIG'] = join(tmpdir(), 'missing-multiagentos-config.json');
     const write = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
-      await expect(main(['run', '--repo', tmpdir(), 'analyze', 'Explain X'])).resolves.toBe(70);
+      await expect(main(['run', '--repo', tmpdir(), 'Explain X'])).resolves.toBe(70);
     } finally {
       if (previous === undefined) delete process.env['MULTIAGENTOS_CONFIG'];
       else process.env['MULTIAGENTOS_CONFIG'] = previous;

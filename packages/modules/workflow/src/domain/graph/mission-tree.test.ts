@@ -30,7 +30,6 @@ const node = (name: string, extra: Partial<GraphNode> = {}): GraphNode => ({
   name,
   kind: 'AGENT',
   trigger: 'all_success',
-  iteration: 1,
   ...extra,
 });
 const edge = (from: string, to: string, extra: Partial<GraphEdge> = {}): GraphEdge => ({
@@ -201,22 +200,21 @@ describe('the MissionTree read from the graph (Orchestration 3.1, 3.2)', () => {
     const template: TemplateDefinition = {
       schemaVersion: 'v1',
       kind: 'TEMPLATE',
-      id: 'analyze',
+      id: 'pipeline',
       version: 'v1.0.0',
-      description: 'plan then view',
+      description: 'explore then build',
       nodes: [
-        { name: 'plan', kind: 'AGENT', agent: { id: 'planner', version: 'v1.0.0' } },
+        { name: 'plan', kind: 'AGENT', agent: { id: 'explorer', version: 'v1.0.0' } },
         {
           name: 'view',
           kind: 'AGENT',
-          agent: { id: 'code-viewer', version: 'v1.0.0' },
+          agent: { id: 'worker', version: 'v1.0.0' },
           dependsOn: ['plan'],
         },
       ],
-      origin: 'BUILT_IN',
       digest: 'a'.repeat(64),
     } as unknown as TemplateDefinition;
-    const templateRoot = rootMissionId(session, 'analyze');
+    const templateRoot = rootMissionId(session, 'pipeline');
     const { revision } = compileTemplate(run, template, templateRoot);
     expect(agentOf(revision, 'plan').mission).toEqual({ id: templateRoot });
     expect(agentOf(revision, 'view').mission?.parentId).toBe(templateRoot);

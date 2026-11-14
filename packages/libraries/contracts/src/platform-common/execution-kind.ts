@@ -1,19 +1,13 @@
 import { Type, type Static } from 'typebox';
 
-/**
- * Every execution kind a Unit can have (Interface/Definitions 5). TEST is answered with
- * UNSUPPORTED_CAPABILITY until the stage that adds it.
- */
+/** Every execution kind a Unit can have (Interface/Definitions 5). */
 export const EXECUTION_KINDS = [
-  'REPOSITORY_ORIENT',
   'REPOSITORY_SEARCH',
   'FILE_READ',
   'CONTEXT_ASSEMBLE',
   'MODEL',
-  'REPORT_PUBLISH',
   'FILE_WRITE',
   'COMMAND',
-  'TEST',
   'REPOSITORY_LIST',
   'MESSAGE_PUBLISH',
   'FILE_EDIT',
@@ -31,7 +25,6 @@ export type ExecutionKind = Static<typeof ExecutionKindSchema>;
 
 /** The execution kinds that are dispatched to the Supervisor and run by an Executor. */
 export const EXECUTOR_KINDS = [
-  'REPOSITORY_ORIENT',
   'REPOSITORY_SEARCH',
   'FILE_READ',
   'CONTEXT_ASSEMBLE',
@@ -50,7 +43,6 @@ export type ExecutorKind = (typeof EXECUTOR_KINDS)[number];
 
 /** The kinds whose Unit declares `repo.read` and therefore needs a Lease. */
 export const REPOSITORY_KINDS = [
-  'REPOSITORY_ORIENT',
   'REPOSITORY_SEARCH',
   'FILE_READ',
   'REPOSITORY_LIST',

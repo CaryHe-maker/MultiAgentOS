@@ -10,10 +10,10 @@ async function parse(...argv: string[]) {
 describe('the options of each command', () => {
   // The program once took `--repo` and `--readonly` from anywhere on the line, so after a
   // subcommand they were dropped and `mas run --repo X` ran on the working directory.
-  it('reach `mas run`, before or after the template', async () => {
+  it('reach `mas run`, before or after the goal', async () => {
     for (const argv of [
-      ['run', '--repo', '/x', '--readonly', 'analyze', 'goal'],
-      ['run', 'analyze', 'goal', '--repo', '/x', '--readonly'],
+      ['run', '--repo', '/x', '--readonly', 'goal'],
+      ['run', 'goal', '--repo', '/x', '--readonly'],
     ]) {
       const { result } = await parse(...argv);
       expect(result, argv.join(' ')).toEqual({
@@ -22,7 +22,6 @@ describe('the options of each command', () => {
           kind: 'RUN',
           repo: '/x',
           readonly: true,
-          template: 'analyze',
           goal: 'goal',
         },
       });

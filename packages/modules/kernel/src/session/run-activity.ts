@@ -19,7 +19,6 @@ const NOT_TOOLS: ReadonlySet<ExecutionKind> = new Set([
   'CONTEXT_ASSEMBLE',
   'MODEL',
   'MESSAGE_PUBLISH',
-  'REPORT_PUBLISH',
 ]);
 
 type Phase = ActivityEvent['phase'];
@@ -120,7 +119,6 @@ export class RunActivity {
         this.#emit(spec.agentRunId, final ? 'WRAPPING_UP' : 'THINKING');
         return;
       case 'MESSAGE_PUBLISH':
-      case 'REPORT_PUBLISH':
         return;
       default:
         this.#emit(spec.agentRunId, 'CALLING_TOOL', this.#unit(spec, unitAttemptId, 'RUNNING'));

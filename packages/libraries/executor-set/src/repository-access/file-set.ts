@@ -22,8 +22,6 @@ export interface FileSet {
   readonly snapshotId: string;
 }
 
-export type FileSetResult = { readonly ok: true; readonly set: FileSet } | { readonly ok: false };
-
 /**
  * Remembers the digest of files whose identity and timestamps did not change, so repeated
  * searches in one run hash only what changed. The key includes `ctime`, which every write
@@ -48,24 +46,20 @@ const PARALLEL_READS = 8;
 
 /**
  * Walks the repository without following links and builds the file set and its snapshot:
- * regular files only, minus excluded paths and files that are not UTF-8 text. `ok: false` means
- * the set has more than `maxFiles` files (LIMIT_EXCEEDED); the walk stops as soon as that is
- * known.
+ * regular files only, minus excluded paths and files that are not UTF-8 text.
  */
 export async function buildFileSet(
   scope: RepositoryScope,
-  options: { signal: AbortSignal; maxFiles?: number | undefined; cache: FileDigestCache },
-): Promise<FileSetResult> {
+  options: { signal: AbortSignal; cache: FileDigestCache },
+): Promise<FileSet> {
   const candidates = await listCandidates(scope, options.signal);
   const files: RepositoryFile[] = [];
   let next = 0;
-  let overLimit = false;
   const results: (RepositoryFile | undefined)[] = new Array<RepositoryFile | undefined>(
     candidates.length,
   );
-  let textFiles = 0;
   const worker = async () => {
-    while (next < candidates.length && !overLimit) {
+    while (next < candidates.length) {
       const index = next;
       next += 1;
       throwIfAborted(options.signal);
@@ -73,17 +67,14 @@ export async function buildFileSet(
       const digest = await digestFile(join(scope.root, path), options.cache);
       if (digest === undefined || !digest.text) continue;
       results[index] = { path, size: digest.size, sha256: digest.sha256 };
-      textFiles += 1;
-      if (options.maxFiles !== undefined && textFiles > options.maxFiles) overLimit = true;
     }
   };
   await Promise.all(Array.from({ length: PARALLEL_READS }, worker));
   throwIfAborted(options.signal);
-  if (overLimit) return { ok: false };
   for (const file of results) if (file !== undefined) files.push(file);
   const totalBytes = files.reduce((total, file) => total + file.size, 0);
   const snapshotId = `snp_${sha256Hex(canonicalJson(files.map((file) => ({ ...file }))))}`;
-  return { ok: true, set: { files, totalBytes, snapshotId } };
+  return { files, totalBytes, snapshotId };
 }
 
 /** Relative paths of every regular, non-excluded file, sorted by UTF-16 code units. */
@@ -156,7 +147,7 @@ async function digestFile(
 }
 
 /**
- * Reads a file of the set again for orient excerpts and search snippets. The hit passes steps
+ * Reads a file of the set again for search snippets. The hit passes steps
  * 2–5 of ExecutorSet by construction (it was found by a walk that never followed a link),
  * and is checked once more here: its real path must be itself, inside the root, and its content
  * must still be the content the snapshot hashed. Otherwise undefined, and the caller drops it.

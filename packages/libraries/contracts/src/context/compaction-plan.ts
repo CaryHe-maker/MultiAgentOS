@@ -46,7 +46,6 @@ export function entryBytes(entry: ContextHistoryEntry): number {
       );
     case 'TOOL_RESULT':
       return sizeOf(entry.outputRef) + ENTRY_OVERHEAD_BYTES;
-    case 'HANDOFF':
     case 'MESSAGE':
     case 'PLAN':
       return sizeOf(entry.outputRef) + ENTRY_OVERHEAD_BYTES;

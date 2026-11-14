@@ -50,7 +50,6 @@ unitRefs:
     version: v0.1.0
   - id: message-publish
     version: v0.1.0
-startUnitRefs: []
 actions:
   end:
     - toolRef:

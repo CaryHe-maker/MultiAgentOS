@@ -1,9 +1,6 @@
 import { Type, type Static, type TProperties, type TSchema } from 'typebox';
 import { ContextAssembleOutputSchema } from '../context/history-entry.js';
-import {
-  RepositoryOrientOutputSchema,
-  RepositorySearchOutputSchema,
-} from '../context/repository.js';
+import { RepositorySearchOutputSchema } from '../context/repository.js';
 import { CommandOutputSchema, GitInspectOutputSchema } from '../executor/command.js';
 import { FileReadOutputSchema } from '../executor/file-read.js';
 import { FileWriteOutputSchema } from '../executor/file-write.js';
@@ -117,7 +114,6 @@ const toolResult = <O extends TSchema>(output: O) =>
     artifact: artifact,
     fullOutput: Type.Optional(closed({ text: Type.String() })),
   });
-const OrientResultSchema = toolResult(RepositoryOrientOutputSchema);
 const SearchResultSchema = toolResult(RepositorySearchOutputSchema);
 const ListResultSchema = toolResult(RepositoryListOutputSchema);
 const FileReadResultSchema = toolResult(FileReadOutputSchema);
@@ -145,7 +141,6 @@ const ModelResultSchema = closed({
 
 export const ExecutionResultSchema = Type.Union(
   [
-    OrientResultSchema,
     SearchResultSchema,
     ListResultSchema,
     FileReadResultSchema,
@@ -165,7 +160,6 @@ export type ExecutionResult = Static<typeof ExecutionResultSchema>;
 
 const inSession = { sessionId: IdSchemas.sessionId };
 const NON_MODEL_KINDS = Type.Enum([
-  'REPOSITORY_ORIENT',
   'REPOSITORY_SEARCH',
   'REPOSITORY_LIST',
   'FILE_READ',
@@ -186,7 +180,6 @@ const [modelRejected, , modelTerminated, modelUnconfirmed, modelViolation] = not
 
 export const ExecutionFactSchema = Type.Union(
   [
-    completed('REPOSITORY_ORIENT', OrientResultSchema, inSession),
     completed('REPOSITORY_SEARCH', SearchResultSchema, inSession),
     completed('REPOSITORY_LIST', ListResultSchema, inSession),
     completed('FILE_READ', FileReadResultSchema, inSession),

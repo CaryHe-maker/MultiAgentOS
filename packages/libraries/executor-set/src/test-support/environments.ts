@@ -43,11 +43,9 @@ export function environmentFor(
     limits:
       kind === 'MODEL'
         ? { ...limits, maxOutputTokens: 8_192 }
-        : kind === 'REPOSITORY_ORIENT'
-          ? { ...tool, maxFiles: 20_000 }
-          : kind === 'CONTEXT_ASSEMBLE'
-            ? limits
-            : tool,
+        : kind === 'CONTEXT_ASSEMBLE'
+          ? limits
+          : tool,
     signal: new AbortController().signal,
     subprocess: NO_SUBPROCESS,
     sandbox: DENY_SANDBOX,

@@ -3,7 +3,7 @@ export const CLI_MESSAGES = Object.freeze({
   help: [
     '用法：',
     '  mas [--repo <路径>] [--readonly]                     交互式对话',
-    '  mas run [--repo <路径>] [--readonly] [<模板>] "<目标>"  作为长任务完成一个目标（缺省模板 mission；另有 analyze）',
+    '  mas run [--repo <路径>] [--readonly] "<目标>"        作为长任务完成一个目标',
     '  mas log [<对话>] [--repo <路径>] [--input <n>] [--full] [--json] [--list]',
     '                                                       查看一个对话的时间线（只读）',
     '',
@@ -16,7 +16,7 @@ export const CLI_MESSAGES = Object.freeze({
     '  --input <n>  只看第 n 次输入    --full  显示完整内容    --json  输出结构化结果    --list  列出本仓库的对话',
     '',
   ].join('\n'),
-  run: '以模板运行一次，结束后退出',
+  run: '作为长任务完成一个目标，结束后退出',
   log: '查看一个对话的时间线',
   logSession: '列表里的编号、对话 id 或 id 的开头；缺省为本仓库最近的一个',
   logInput: '只看第 n 次输入',
@@ -25,22 +25,8 @@ export const CLI_MESSAGES = Object.freeze({
   logList: '列出本仓库的对话',
   repository: '本进程的仓库，缺省为当前工作目录',
   readonly: '只读预设',
-  template: '内置模板（mission、analyze）；只给目标时用 mission',
   goal: '运行的目标',
   invalidArguments: '命令参数不符合要求，请检查命令格式。',
-  unknownTemplate: (id: string) =>
-    `没有这个模板：${id}。内置模板以外，可以把模板放在仓库的 .multiagentos/workflows/${id}.yaml。`,
-  invalidTemplate: (
-    id: string,
-    issues: readonly { readonly rule: string; readonly node?: string; readonly message: string }[],
-  ) =>
-    [
-      `模板 ${id} 无效，没有开始运行：`,
-      ...issues.map(
-        (issue) =>
-          `  - 规则 ${issue.rule}${issue.node === undefined ? '' : `，节点 ${issue.node}`}：${issue.message}`,
-      ),
-    ].join('\n'),
   errors: {
     'commander.unknownCommand': '无法识别该命令。',
     'commander.unknownOption': '无法识别该选项，请检查命令格式。',

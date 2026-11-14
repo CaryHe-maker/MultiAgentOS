@@ -18,10 +18,9 @@ const playbook: Playbook = {
   ],
   example: 'an example',
 };
-const submission = {
+const specialist = {
   template: { id: 'demo', version: 'v0.1.0' },
   playbook,
-  params: {},
 };
 const root = 'msc_root';
 let seq = 0;
@@ -74,19 +73,19 @@ function logOf(made: readonly (readonly string[])[], ended = true): SessionLogRe
 }
 const tasks = (...agents: string[]) => agents.map((agent) => ({ agent }));
 
-describe('the playbook of a subMission (Orchestration 3.9)', () => {
+describe('the playbook of a specialist (Orchestration 3.9)', () => {
   it('lets the phases come in order, passes over an optional one, and repeats within its bound', () => {
     expect(
-      playbookRefusal(logOf([]), root, submission, tasks('explorer', 'explorer')),
+      playbookRefusal(logOf([]), root, specialist, tasks('explorer', 'explorer')),
     ).toBeUndefined();
     // The optional phase passed over: the build may be the first call.
-    expect(playbookRefusal(logOf([]), root, submission, tasks('worker'))).toBeUndefined();
-    expect(playbookRefusal(logOf([['worker']]), root, submission, tasks('worker'))).toBeUndefined();
+    expect(playbookRefusal(logOf([]), root, specialist, tasks('worker'))).toBeUndefined();
+    expect(playbookRefusal(logOf([['worker']]), root, specialist, tasks('worker'))).toBeUndefined();
     expect(
-      playbookRefusal(logOf([['worker'], ['worker']]), root, submission, tasks('worker')),
+      playbookRefusal(logOf([['worker'], ['worker']]), root, specialist, tasks('worker')),
     ).toContain('does not follow your playbook');
     expect(
-      playbookRefusal(logOf([['worker'], ['worker']]), root, submission, tasks('explorer')),
+      playbookRefusal(logOf([['worker'], ['worker']]), root, specialist, tasks('explorer')),
     ).toBeUndefined();
   });
 
@@ -94,28 +93,28 @@ describe('the playbook of a subMission (Orchestration 3.9)', () => {
     const refused = playbookRefusal(
       logOf([]),
       root,
-      submission,
+      specialist,
       tasks('explorer', 'explorer', 'explorer'),
     );
     expect(refused).toContain('explore: 1-2 explorer task(s)');
-    expect(playbookRefusal(logOf([]), root, submission, tasks('worker', 'explorer'))).toContain(
+    expect(playbookRefusal(logOf([]), root, specialist, tasks('worker', 'explorer'))).toContain(
       'one Agent only',
     );
     expect(
-      playbookRefusal(logOf([['worker']], false), root, submission, tasks('explorer')),
+      playbookRefusal(logOf([['worker']], false), root, specialist, tasks('explorer')),
     ).toContain('have not all ended');
     expect(
-      playbookRefusal(logOf([['worker'], ['explorer']]), root, submission, tasks('explorer')),
+      playbookRefusal(logOf([['worker'], ['explorer']]), root, specialist, tasks('explorer')),
     ).toContain('every phase of your playbook that has tasks has run');
   });
 
   it('is done only when every phase that is not optional has run', () => {
-    expect(playbookUnfinished(logOf([['worker']]), root, submission)).toEqual(['review']);
-    expect(playbookUnfinished(logOf([['worker'], ['explorer']]), root, submission)).toEqual([]);
+    expect(playbookUnfinished(logOf([['worker']]), root, specialist)).toEqual(['review']);
+    expect(playbookUnfinished(logOf([['worker'], ['explorer']]), root, specialist)).toEqual([]);
   });
 
   it('is read by its root in words, with what it needs from its task and its example', () => {
-    const text = renderPlaybook(submission);
+    const text = renderPlaybook(specialist);
     expect(text).toContain('template demo (explore, build, check)');
     // The caller gives no fields of its own: the root looks for these in its goal and acceptance.
     expect(text).toContain('What you need from your task, in its goal and acceptance');
@@ -128,7 +127,7 @@ describe('the playbook of a subMission (Orchestration 3.9)', () => {
 
   it('says which phase a call belongs to, and tells a task that inherits by the Agent its phase names (D35)', () => {
     const inheriting = {
-      ...submission,
+      ...specialist,
       playbook: {
         ...playbook,
         phases: playbook.phases.map((phase) =>
@@ -145,7 +144,7 @@ describe('the playbook of a subMission (Orchestration 3.9)', () => {
     expect(renderPlaybook(inheriting)).toContain(
       'each task starts with everything you have read and done so far',
     );
-    expect(renderPlaybook(submission)).not.toContain('each task starts with everything');
+    expect(renderPlaybook(specialist)).not.toContain('each task starts with everything');
     // A task that inherits runs as the Agent of its caller (a lead); the phase is still counted
     // by the Agent the phase names, so the next phase is the one after it.
     const log = logOf([['lead']]).map((record) =>

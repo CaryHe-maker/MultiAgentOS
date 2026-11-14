@@ -207,17 +207,10 @@ describe('fake Session Kernel', () => {
     expect(uiEvents(kernel).at(-1)).toBe('RunFinished');
   });
 
-  it('accepts only analyze as a template', async () => {
+  it('starts a run of a template', async () => {
     const { kernel } = setup();
-    const goal = prompt();
-    expect(
-      await kernel.interaction.startRun(
-        { requestId: newId('req'), template: { id: 'research', version: 'v1.0.0' }, goal },
-        context,
-      ),
-    ).toMatchObject({ reasonCode: 'TEMPLATE_UNSUPPORTED' });
     await kernel.interaction.startRun(
-      { requestId: newId('req'), template: { id: 'analyze', version: 'v1.0.0' }, goal },
+      { requestId: newId('req'), template: { id: 'mission', version: 'v1.0.0' }, goal: prompt() },
       context,
     );
     await kernel.idle();

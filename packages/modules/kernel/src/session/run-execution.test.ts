@@ -37,7 +37,6 @@ const tool = {
 };
 const config: ExecutionConfig = {
   executionLimits: {
-    REPOSITORY_ORIENT: tool,
     REPOSITORY_SEARCH: tool,
     REPOSITORY_LIST: tool,
     FILE_READ: tool,
@@ -54,9 +53,6 @@ const config: ExecutionConfig = {
   },
   retryBackoffBaseMs: 100,
   retryAfterMaxMs: 5000,
-  maxReportBytes: 1000,
-  maxSnapshotFiles: 100,
-  orientBudget: 100,
   searchBudget: 100,
   cancelGraceMs: 10,
   pauseDrainMs: 50,
@@ -416,31 +412,6 @@ describe('results', () => {
 });
 
 describe('resolving references', () => {
-  it('turns objectiveRef into the objective', async () => {
-    const run = setup();
-    const objectiveRef = await run.artifacts.storeUserInput({
-      inputId: testId('inp'),
-      text: 'why?',
-    });
-    await run.submit('REPOSITORY_ORIENT', { objectiveRef });
-    expect(run.last().input).toMatchObject({ objective: 'why?' });
-  });
-
-  it('refuses an objective of another Session before anything runs', async () => {
-    const run = setup();
-    const other = setup();
-    const objectiveRef = await other.artifacts.storeUserInput({
-      inputId: testId('inp'),
-      text: 'theirs',
-    });
-    await run.submit('REPOSITORY_ORIENT', { objectiveRef });
-    expect(run.dispatched).toEqual([]);
-    expect(run.reports[0]).toMatchObject({
-      status: 'REJECTED',
-      reasonCode: 'INVALID_ARTIFACT_REF',
-    });
-  });
-
   it('assembles history from artifacts, and tells the model what a refusal means', async () => {
     const run = setup();
     const contentRef = await run.artifacts.storeUserInput({

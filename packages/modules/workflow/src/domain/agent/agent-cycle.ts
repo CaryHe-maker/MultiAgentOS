@@ -49,7 +49,6 @@ export interface AgentTool {
 export interface AgentDefinitions {
   readonly label: string;
   readonly limits: { readonly maxRounds: number; readonly maxToolCallsPerRound: number };
-  readonly orient?: AgentUnit;
   readonly contextAssemble: AgentUnit;
   readonly modelCall: AgentUnit;
   /** The Unit that publishes what an ended AgentRun leaves behind; a SubAgent has none. */
@@ -81,8 +80,8 @@ export interface AgentDefinitions {
 }
 export type JobAction = 'OUTPUT' | 'LIST' | 'KILL';
 /** What follows an end tool; only the runner reads it, never this machine. */
-export type EndAction = 'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT';
-export type DegradedAction = 'PUBLISH_NOTICE' | 'PUBLISH_REPORT' | 'RETURN_PARTIAL';
+export type EndAction = 'PUBLISH_REPLY' | 'FINISH_SUBAGENT';
+export type DegradedAction = 'PUBLISH_NOTICE' | 'RETURN_PARTIAL';
 export interface EndTool {
   readonly toolName: string;
   readonly parameters: Schema;
@@ -107,7 +106,7 @@ export interface AgentConfig {
 
 type Pending =
   | {
-      readonly role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'CLOSING';
+      readonly role: 'CONTEXT' | 'MODEL' | 'CLOSING';
       readonly unit: AgentUnit;
     }
   | {
@@ -137,9 +136,7 @@ export interface DeferredWrite {
  * is how a note added while continuing reaches the model.
  */
 export type Held =
-  | { readonly kind: 'TOOL'; readonly planned: DeferredWrite }
-  | { readonly kind: 'ORIENT' }
-  | { readonly kind: 'ASSEMBLE' };
+  { readonly kind: 'TOOL'; readonly planned: DeferredWrite } | { readonly kind: 'ASSEMBLE' };
 
 export interface AgentState {
   readonly workflowRunId: string;
@@ -151,7 +148,6 @@ export interface AgentState {
   readonly finalUsed: boolean;
   readonly wrapUpReason?: WrapUpReason;
   readonly budget: BudgetView;
-  readonly orientPackRef?: ArtifactRef;
   readonly pending: ReadonlyMap<string, Pending>;
   readonly unitCounter: number;
   readonly succeeded: readonly string[];
@@ -267,8 +263,6 @@ export interface AgentContext {
     final: boolean,
     withdrawnTools: readonly string[],
   ) => ContextAssembleInput;
-  /** The first prompt of the run: no event or log record carries its text. */
-  readonly objectiveRef: ArtifactRef;
   /**
    * What the log adds to a tool's arguments and the model cannot give. Undefined leaves them as
    * they are, and a refusal is a tool result for the model.
@@ -438,7 +432,7 @@ function submission(
 
 function one(
   state: AgentState,
-  role: 'ORIENT' | 'CONTEXT' | 'MODEL' | 'CLOSING',
+  role: 'CONTEXT' | 'MODEL' | 'CLOSING',
   unit: AgentUnit,
   input: UnitInput,
   toolName: string,
@@ -567,10 +561,7 @@ function nextRound(
 }
 
 export function startAgent(
-  input: Pick<
-    AgentState,
-    'workflowRunId' | 'sessionId' | 'agentRunId' | 'definitions' | 'orientPackRef'
-  >,
+  input: Pick<AgentState, 'workflowRunId' | 'sessionId' | 'agentRunId' | 'definitions'>,
   context: AgentContext,
 ): AgentTransition {
   const state: AgentState = {
@@ -598,9 +589,7 @@ export function startAgent(
     roundMixed: false,
     todoOnlyRounds: 0,
   };
-  const { orient } = input.definitions;
-  if (orient === undefined || input.orientPackRef !== undefined) return nextRound(state, context);
-  return one(state, 'ORIENT', orient, { objectiveRef: context.objectiveRef }, 'repository_orient');
+  return nextRound(state, context);
 }
 
 function wrapUp(state: AgentState, reason: WrapUpReason): AgentState {
@@ -1436,21 +1425,11 @@ export function receiveAgentReport(
         requestId: report.requestId,
         reasonCode: report.reasonCode,
       });
-    if (pending.role === 'ORIENT') return nextRound(state, context, records);
     if (pending.role === 'CLOSING')
       return ended(state, { kind: 'FAILED', code: report.reasonCode }, records);
     return failed(state, pending, report.reasonCode, context, records);
   }
   switch (pending.role) {
-    case 'ORIENT':
-      return nextRound(
-        {
-          ...state,
-          ...(report.outputRef === undefined ? {} : { orientPackRef: report.outputRef }),
-        },
-        context,
-        records,
-      );
     case 'CONTEXT':
       if (report.outputRef === undefined) throw new Error('A context report has no reference');
       records.push(assembled(state, report));
@@ -1543,7 +1522,7 @@ function handleInterrupted(
   } else if (report.interruptedBy === 'PAUSED') {
     next = {
       ...next,
-      held: [...next.held, { kind: pending.role === 'ORIENT' ? 'ORIENT' : 'ASSEMBLE' }],
+      held: [...next.held, { kind: 'ASSEMBLE' }],
     };
   }
   // After an abort nothing goes on here: Workflow ends the AgentRun with what it has.
@@ -1565,14 +1544,6 @@ export function resumeAfterPause(
   const records: NewLogRecord[] = [];
   let next: AgentState = { ...state, held: [] };
   const restart = state.held.find((held) => held.kind !== 'TOOL');
-  if (restart?.kind === 'ORIENT' && next.definitions.orient !== undefined)
-    return one(
-      next,
-      'ORIENT',
-      next.definitions.orient,
-      { objectiveRef: context.objectiveRef },
-      'repository_orient',
-    );
   if (restart?.kind === 'ASSEMBLE') {
     const status: ContextAssembleInput['status'] = {
       round: next.round,

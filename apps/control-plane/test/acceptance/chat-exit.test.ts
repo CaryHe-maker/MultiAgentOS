@@ -176,7 +176,7 @@ describe('S: Sessions', () => {
       await writeFile(config, JSON.stringify({ dataDir: place.dataDir }));
       const child = spawn(
         process.execPath,
-        ['--import', 'tsx', bin, 'run', '--repo', place.repository, 'analyze', 'X'],
+        ['--import', 'tsx', bin, 'run', '--repo', place.repository, 'X'],
         { env: { ...process.env, MULTIAGENTOS_CONFIG: config }, stdio: ['ignore', 'pipe', 'pipe'] },
       );
       let stderr = '';

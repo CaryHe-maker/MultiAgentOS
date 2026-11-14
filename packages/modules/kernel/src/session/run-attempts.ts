@@ -220,7 +220,7 @@ interface Attempt {
 }
 
 /** Built-in Units finish in Execution without an execution instance. */
-const BUILT_IN: ReadonlySet<ExecutionKind> = new Set(['REPORT_PUBLISH', 'MESSAGE_PUBLISH']);
+const BUILT_IN: ReadonlySet<ExecutionKind> = new Set(['MESSAGE_PUBLISH']);
 const isViolation = (code: ReasonCode | undefined): code is ViolationCode =>
   code === 'SCOPE_MISSING' || code === 'PATH_ESCAPE' || code === 'GUARD_FAILURE';
 

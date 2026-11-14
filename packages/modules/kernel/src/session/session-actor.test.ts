@@ -146,7 +146,7 @@ describe('new Session', () => {
 
   it('starts a template run', async () => {
     const { begin, toWorkflow } = setup();
-    const template = { id: 'analyze', version: 'v1.0.0' };
+    const template = { id: 'mission', version: 'v1.0.0' };
     await begin({ kind: 'NEW', requestId: newId('req'), input: input(), template });
     expect(toWorkflow[1]?.event).toMatchObject({ mode: 'ORCHESTRATION', templateRef: template });
   });

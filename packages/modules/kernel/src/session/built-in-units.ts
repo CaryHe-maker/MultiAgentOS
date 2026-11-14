@@ -1,17 +1,13 @@
 import {
-  AnalysisReportSchema,
   MEDIA_TYPES,
   MessagePublishInputSchema,
   ModelRawOutputSchema,
-  ReportPublishInputSchema,
   ReplyArgsSchema,
   canonicalJson,
   validate,
-  type AnalysisReport,
   type MessagePublishInput,
   type ModelRawOutput,
   type ReplyArgs,
-  type ReportPublishInput,
   type UnitInput,
 } from '@multiagentos/contracts';
 import type { ResultCheck } from './run-attempts.js';
@@ -64,36 +60,6 @@ export async function publishMessage(
   return {
     outcome: 'COMPLETED',
     output: { kind: value.kind, ...(wrapUpReason === undefined ? {} : { wrapUpReason }) },
-    outputRef,
-  };
-}
-
-/** Fills in the goal from `goalRef`, because Workflow never holds the user's words. */
-export async function publishReport(
-  unitInput: UnitInput,
-  artifacts: SessionArtifacts,
-  maxReportBytes: number,
-): Promise<BuiltInResult> {
-  const input = validate<ReportPublishInput>(ReportPublishInputSchema, unitInput);
-  if (!input.ok) return notDispatched('INVALID_INPUT');
-  const goal = await artifacts.read(input.value.goalRef);
-  if (!goal.ok) return notDispatched('INVALID_ARTIFACT_REF');
-  const report = validate<AnalysisReport>(AnalysisReportSchema, {
-    ...input.value.report,
-    goal: goal.text,
-  });
-  if (!report.ok) return notDispatched('INVALID_INPUT');
-  const body = canonicalJson(report.value);
-  if (Buffer.byteLength(body, 'utf8') > maxReportBytes)
-    return { outcome: 'REJECTED', reasonCode: 'LIMIT_EXCEEDED' };
-  const outputRef = await artifacts.put(body, MEDIA_TYPES.analysisReport, 'SESSION');
-  return {
-    outcome: 'COMPLETED',
-    output: {
-      conclusionCount: report.value.conclusions.length,
-      unconfirmedCount: report.value.unconfirmed.length,
-      degraded: report.value.degraded,
-    },
     outputRef,
   };
 }

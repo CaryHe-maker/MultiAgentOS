@@ -12,7 +12,7 @@
 | 维度 | 边界 |
 |---|---|
 | 运行组织 | 本地、单用户、单进程；进程绑定一个仓库；同一时刻打开一个 Session，Session 中的运行先后进行；同一 `dataDir` 只有一个进程 |
-| 业务目标 | Turn-chat：用户与 main 多轮对话，main 只读仓库；`mas run analyze`：M1 的只读分析 |
+| 业务目标 | Turn-chat：用户与 main 多轮对话；`mas run "<目标>"`：一个长任务一直做到完成（Mission） |
 | 执行 | 同一轮可提出多个工具调用，按 FIFO 串行执行 |
 | 只读约束 | 不修改被分析仓库，不执行项目命令，不调用 git（M2 开放写入、命令与只读 git） |
 | 人类参与 | 开放输入（每条用户消息）与授权询问；增加暂停、中止、运行中插话与局部询问 |
@@ -47,10 +47,9 @@
 
 | Unit | executionKind | 受保护能力 | 由谁执行 |
 |---|---|---|---|
-| `repository-orient`、`repository-search`、`file-read` | M1 原样 | `repo.read` | Supervisor（Executor） |
+| `repository-search`、`file-read` | M1 原样 | `repo.read` | Supervisor（Executor） |
 | `repository-list` | `REPOSITORY_LIST` | `repo.read` | Supervisor（Executor） |
 | `context-assemble`、`model-call` | M1 原样 | — | Supervisor（Executor） |
-| `report-publish`（`analyze`） | `REPORT_PUBLISH` | — | Execution（内建） |
 | `message-publish` | `MESSAGE_PUBLISH` | — | Execution（内建） |
 
 ## 6. 授权
@@ -74,7 +73,7 @@
 
 | closeReason | 发起方 | 用户看到的内容 |
 |---|---|---|
-| `COMPLETED` | Workflow | 运行结果（`analyze` 为报告）；Turn-chat 的回复已逐条发布 |
+| `COMPLETED` | Workflow | 运行结果（Mission 为输出节点的回复）；Turn-chat 的回复已逐条发布 |
 | `BUDGET` | Workflow | 回复或运行结果，注明因额度结束；Turn-chat 中提示是否在同一 Session 中继续 |
 | `FAILED` | Workflow 或 Kernel | 失败说明（按原因码的文案） |
 | `ENDED_BY_USER`、`SHUTDOWN` | Kernel | 无单独说明 |

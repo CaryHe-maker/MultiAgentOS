@@ -2,14 +2,14 @@ import type { Playbook, PlaybookPhase, SessionLogRecord, SpawnNode } from '@mult
 import { isRolledBack, rewoundRanges } from '../context/rolled-back.js';
 import { projectMissions } from '../graph/mission-tree.js';
 
-type Submission = NonNullable<SpawnNode['submission']>;
+type Specialist = NonNullable<SpawnNode['specialist']>;
 
 /**
- * The playbook of a subMission in words (Orchestration 3.9, D32): what its root reads with its
+ * The playbook of a specialist in words (Orchestration 3.9, D32, D39): what it reads with its
  * task. Pure, so the same log always gives the same text.
  */
-export function renderPlaybook(submission: Submission): string {
-  const { template, playbook } = submission;
+export function renderPlaybook(specialist: Specialist): string {
+  const { template, playbook } = specialist;
   const phaseLine = (phase: PlaybookPhase, index: number): string => {
     const tasks =
       phase.tasks === undefined
@@ -135,16 +135,16 @@ const wanted = (phase: PlaybookPhase): string =>
       } ${phase.tasks.agent} task(s)`;
 
 /**
- * Whether the root of a subMission may make this run_subagents call (Orchestration 3.9): the
+ * Whether a specialist may make this run_subagents call (Orchestration 3.9): the
  * reason it may not, in words the model can act on, or undefined.
  */
 export function playbookRefusal(
   records: readonly SessionLogRecord[],
   missionId: string,
-  submission: Submission,
+  specialist: Specialist,
   tasks: readonly { readonly agent: string }[],
 ): string | undefined {
-  const { playbook } = submission;
+  const { playbook } = specialist;
   const calls = callsOf(records, missionId);
   const missions = projectMissions(records);
   const running = calls
@@ -185,10 +185,10 @@ export function playbookRefusal(
 export function phaseOfCall(
   records: readonly SessionLogRecord[],
   missionId: string,
-  submission: Submission,
+  specialist: Specialist,
   tasks: readonly { readonly agent: string }[],
 ): PlaybookPhase | undefined {
-  const { playbook } = submission;
+  const { playbook } = specialist;
   const agents = new Set(tasks.map((task) => task.agent));
   const call = {
     agent: agents.size === 1 ? (tasks[0]?.agent ?? '') : 'mixed',
@@ -203,9 +203,9 @@ export function phaseOfCall(
 export function playbookUnfinished(
   records: readonly SessionLogRecord[],
   missionId: string,
-  submission: Submission,
+  specialist: Specialist,
 ): readonly string[] {
-  const { playbook } = submission;
+  const { playbook } = specialist;
   const { used } = placeCalls(playbook, callsOf(records, missionId));
   return playbook.phases.flatMap((phase, index) =>
     phase.tasks !== undefined && phase.optional !== true && (used[index] ?? 0) === 0

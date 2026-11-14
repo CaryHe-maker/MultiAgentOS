@@ -6,7 +6,6 @@ import {
   WRITE_KINDS,
   REASON_CODE_CATEGORY,
   newId,
-  type AnalysisReportDraft,
   type AskUserArgs,
   type ArtifactRef,
   type BoundaryContext,
@@ -61,12 +60,6 @@ import {
   type EndAction,
 } from '../domain/agent/agent-cycle.js';
 import { controlLineOf } from '../domain/agent/tool-display.js';
-import {
-  analysisFacts,
-  degradedReportBody,
-  normalReportBody,
-  type AgentRounds,
-} from '../domain/agent/analysis-report.js';
 import { instructionsToLoad } from '../domain/context/nested-instructions.js';
 import { toolInputOf } from '../domain/context/tool-inputs.js';
 import {
@@ -198,14 +191,12 @@ const SPECIALIST_ASK = 1_000_000_000;
 
 /** The playbook a task follows when it is a specialist, as the field of its spawn (D39). */
 const specialistOf = (
-  specialists: ReadonlyMap<string, NonNullable<SpawnNode['submission']>>,
+  specialists: ReadonlyMap<string, NonNullable<SpawnNode['specialist']>>,
   name: string,
-): { submission?: NonNullable<SpawnNode['submission']> } => {
-  const submission = specialists.get(name);
-  return submission === undefined ? {} : { submission };
+): { specialist?: NonNullable<SpawnNode['specialist']> } => {
+  const specialist = specialists.get(name);
+  return specialist === undefined ? {} : { specialist };
 };
-
-type HumanContentRef = Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }>['contentRef'];
 
 const contextOf = (sessionId: string, workflowRunId?: string): BoundaryContext => ({
   correlationId: newId('cor'),
@@ -253,7 +244,6 @@ const asHumanRequestId = (nodeId: string): string => `hrq_${nodeId.slice('nod_'.
 /** How a node ends once its AgentRun closed. */
 interface NodeEnding {
   readonly status: 'SUCCEEDED' | 'FAILED';
-  readonly result?: Record<string, unknown>;
   /** The run's result when this node is its output. */
   readonly runOutput: boolean;
 }
@@ -306,12 +296,10 @@ export class SessionRunner {
   #inputCheckpointId: string | undefined;
   /** Every AgentRun that has not ended, by id: SubAgents run beside the AgentRun that spawned them. */
   readonly #agents = new Map<string, ActiveAgent>();
-  #orientPackRef: AgentState['orientPackRef'];
   /** A repository tool succeeded in the current run. */
   #readRepository = false;
   /** The run whose `AGENTS.md` was already asked for. */
   #instructionsRun: string | undefined;
-  #rounds: AgentRounds[] = [];
   #runResult: ArtifactRef | undefined;
   #overBudget = false;
   /** The Kernel interrupted this run: the reply that says so is the last thing it publishes. */
@@ -454,9 +442,7 @@ export class SessionRunner {
 
   #clearRun(): void {
     this.#interruptReason = undefined;
-    this.#orientPackRef = undefined;
     this.#readRepository = false;
-    this.#rounds = [];
     this.#runResult = undefined;
     this.#overBudget = false;
     this.#interrupted = false;
@@ -1207,7 +1193,7 @@ export class SessionRunner {
             spawn: false,
             records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, problem)],
           },
-          this.#context(workflowRunId, active.scope),
+          this.#context(active.scope),
           this.#deps.config,
         ),
       );
@@ -1350,11 +1336,7 @@ export class SessionRunner {
       if (current === undefined) continue;
       await this.#apply(
         workflowRunId,
-        resumeAfterPause(
-          current.state,
-          this.#context(workflowRunId, current.scope),
-          this.#deps.config,
-        ),
+        resumeAfterPause(current.state, this.#context(current.scope), this.#deps.config),
       );
     }
   }
@@ -1581,17 +1563,8 @@ export class SessionRunner {
     return registered?.type === 'AGENT_RUN_REGISTERED' ? registered.agentRunId : undefined;
   }
 
-  #objectiveRef(workflowRunId: string): HumanContentRef {
-    const prompt = [...this.#records]
-      .reverse()
-      .find((record) => record.type === 'HUMAN_ANSWERED' && record.workflowRunId === workflowRunId);
-    if (prompt?.type !== 'HUMAN_ANSWERED') throw new Error('an Agent needs a prompt');
-    return prompt.contentRef;
-  }
-
-  #context(workflowRunId: string, scope: ProjectionScope): AgentContext {
+  #context(scope: ProjectionScope): AgentContext {
     return {
-      objectiveRef: this.#objectiveRef(workflowRunId),
       // What a transition has not appended yet still counts: it may be the write this one follows.
       toolInput: (kind, args, notYetInLog = []) =>
         toolInputOf(
@@ -1615,7 +1588,6 @@ export class SessionRunner {
         return {
           final,
           ...(withdrawn.length === 0 ? {} : { withdrawnTools: [...new Set(withdrawn)] }),
-          ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
           history: [...projectHistory(this.#records, scope, { final })],
           status,
         };
@@ -1634,20 +1606,6 @@ export class SessionRunner {
         ),
       ),
     ];
-  }
-
-  /** The handoff a node takes as input: the latest one of this run. */
-  #handoffInput(workflowRunId: string): Extract<ProjectionScope, { kind: 'NODE' }>['handoff'] {
-    const ended = [...this.#records]
-      .reverse()
-      .find(
-        (record) =>
-          record.type === 'NODE_ENDED' &&
-          record.workflowRunId === workflowRunId &&
-          record.result?.['action'] === 'HANDOFF',
-      );
-    if (ended?.type !== 'NODE_ENDED' || ended.resultRef === undefined) return undefined;
-    return { outputRef: ended.resultRef, toolCallId: String(ended.result?.['toolCallId']) };
   }
 
   /** Who dispatched a task, from the `DELEGATE` edge that leads to it; undefined for any other node. */
@@ -1813,7 +1771,6 @@ export class SessionRunner {
         await this.#close(workflowRunId, 'INTERRUPTED');
       return;
     }
-    const handoff = node.inputFrom === 'HANDOFF' ? this.#handoffInput(workflowRunId) : undefined;
     const task =
       taskNode?.spawn !== undefined
         ? taskScopeOf(this.#records, workflowRunId, graph, taskNode, taskNode.spawn)
@@ -1839,7 +1796,6 @@ export class SessionRunner {
             workflowRunId,
             agentRunId,
             ...(node.mission === undefined ? {} : { missionId }),
-            ...(handoff === undefined ? {} : { handoff }),
             ...(task === undefined ? {} : { task }),
           };
     const transition = startAgent(
@@ -1848,9 +1804,8 @@ export class SessionRunner {
         sessionId,
         agentRunId,
         definitions: binding.definitions,
-        ...(this.#orientPackRef === undefined ? {} : { orientPackRef: this.#orientPackRef }),
       },
-      this.#context(workflowRunId, scope),
+      this.#context(scope),
     );
     this.#agents.set(agentRunId, {
       state: transition.state,
@@ -1888,8 +1843,6 @@ export class SessionRunner {
         contextOf(sessionId, workflowRunId),
       );
     }
-    if (transition.state.orientPackRef !== undefined)
-      this.#orientPackRef = transition.state.orientPackRef;
     // A segment told to stop or interrupted ends where its next round would begin (5.1, 5.2).
     const halted = this.#agents.get(agentRunId);
     // A segment that would go to sleep instead is halted just the same: stopped, it does not sleep
@@ -2021,7 +1974,7 @@ export class SessionRunner {
         { requestId: newId('req'), sessionId, workflowRunId, path: 'AGENTS.md' },
         contextOf(sessionId, workflowRunId),
       );
-      if (file.outcome === 'ACCEPTED' && file.exists && 'trusted' in file)
+      if (file.outcome === 'ACCEPTED' && file.exists)
         await this.#append([
           {
             type: 'PROJECT_FILE_LOADED',
@@ -2067,7 +2020,7 @@ export class SessionRunner {
         { requestId: newId('req'), sessionId, workflowRunId, path },
         contextOf(sessionId, workflowRunId),
       );
-      if (file.outcome === 'ACCEPTED' && file.exists && 'trusted' in file)
+      if (file.outcome === 'ACCEPTED' && file.exists)
         await this.#append([
           {
             type: 'PROJECT_FILE_LOADED',
@@ -2113,7 +2066,7 @@ export class SessionRunner {
     const transition = receiveAgentReport(
       active.state,
       report,
-      this.#context(workflowRunId, active.scope),
+      this.#context(active.scope),
       this.#deps.config,
     );
     await this.#apply(workflowRunId, transition);
@@ -2162,14 +2115,8 @@ export class SessionRunner {
       projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.mission?.parentId ===
       undefined;
     const continues = sleeping || isRoot;
-    const { agentRunId, wrapUpReason, round, definitions } = active.state;
+    const { agentRunId, wrapUpReason } = active.state;
     this.#agents.delete(agentRunId);
-    this.#rounds.push({
-      agentId: active.agentId,
-      agentRunId,
-      roundsUsed: round,
-      maxRounds: definitions.limits.maxRounds,
-    });
     await this.#append([
       {
         type: 'AGENT_RUN_ENDED',
@@ -2202,24 +2149,6 @@ export class SessionRunner {
   ): Promise<void> {
     this.#agents.set(active.state.agentRunId, { ...active, nodeEnding });
     await this.#apply(workflowRunId, closeAgent(active.state, input, source));
-  }
-
-  #reportInput(workflowRunId: string, active: ActiveAgent) {
-    const { round, agentRunId, definitions } = active.state;
-    return {
-      workflowRunId,
-      facts: analysisFacts(this.#records, workflowRunId),
-      agentRounds: [
-        ...this.#rounds,
-        {
-          agentId: active.agentId,
-          agentRunId,
-          roundsUsed: round,
-          maxRounds: definitions.limits.maxRounds,
-        },
-      ],
-      createdAt: (this.#deps.now?.() ?? new Date()).toISOString(),
-    };
   }
 
   async #close(
@@ -2298,31 +2227,6 @@ export class SessionRunner {
               projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.output === true,
           },
         );
-      case 'PUBLISH_REPORT':
-        return this.#closeWith(
-          workflowRunId,
-          active,
-          {
-            goalRef: this.#objectiveRef(workflowRunId),
-            report: normalReportBody({
-              ...this.#reportInput(workflowRunId, active),
-              draft: ending.arguments as AnalysisReportDraft,
-              ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
-            }),
-          },
-          ending.source,
-          { status: 'SUCCEEDED', result: { action: 'FINISH' }, runOutput: true },
-        );
-      case 'HANDOFF':
-        await this.#endAgentRun(workflowRunId, active, 'ENDED');
-        await this.#endNode(
-          workflowRunId,
-          active.nodeId,
-          'SUCCEEDED',
-          { action: 'HANDOFF', toolCallId: ending.source.toolCallId },
-          ending.source.modelOutputRef,
-        );
-        return this.#advance(workflowRunId);
       case 'FINISH_SUBAGENT':
         return this.#finishSubagent(workflowRunId, active, ending);
     }
@@ -2339,7 +2243,7 @@ export class SessionRunner {
     const transition = resumeAfterRefusal(
       active.state,
       [answerRecord(active.state, code, toolCallId, message)],
-      this.#context(workflowRunId, active.scope),
+      this.#context(active.scope),
       this.#deps.config,
     );
     await this.#apply(workflowRunId, transition);
@@ -2355,13 +2259,13 @@ export class SessionRunner {
     if (task === undefined) throw new Error('only a SubAgent finishes with a result');
     const args = ending.arguments as Parameters<typeof finishedOutcome>[0];
     const { toolCallId } = ending.source;
-    // The root of a subMission is done only once its playbook has run (Orchestration 3.9).
+    // A specialist is done only once its playbook has run (Orchestration 3.9).
     const ownTask = this.#taskNodeOf(
       workflowRunId,
       projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId) ??
         ({} as GraphNodeRecord),
     );
-    const followed = ownTask?.spawn?.submission;
+    const followed = ownTask?.spawn?.specialist;
     if (followed !== undefined && (args as { readonly status?: string }).status === 'done') {
       const left = playbookUnfinished(this.#records, active.missionId, followed);
       if (left.length > 0)
@@ -2585,26 +2489,15 @@ export class SessionRunner {
       );
       return this.#advance(workflowRunId);
     }
-    if (onDegraded === 'PUBLISH_NOTICE') {
-      // A step of a template that gave up has not delivered: `mas run` must not say it did. A run
-      // cut by its budget still ends as BUDGET.
-      if (this.#mode !== 'CHAT' && active.task === undefined && !OVER_BUDGET.includes(reason))
-        this.#runFailure ??= reason;
-      const input = { kind: 'DEGRADED_REPLY', agentLabel: active.state.definitions.label, reason };
-      await this.#closeWith(workflowRunId, active, input as UnitInput, undefined, {
-        status: 'FAILED',
-        runOutput: false,
-      });
-      return;
-    }
-    const report = degradedReportBody({ ...this.#reportInput(workflowRunId, active), reason });
-    await this.#closeWith(
-      workflowRunId,
-      active,
-      { goalRef: this.#objectiveRef(workflowRunId), report },
-      undefined,
-      { status: 'FAILED', result: { action: 'FINISH' }, runOutput: true },
-    );
+    // A step of a template that gave up has not delivered: `mas run` must not say it did. A run
+    // cut by its budget still ends as BUDGET.
+    if (this.#mode !== 'CHAT' && active.task === undefined && !OVER_BUDGET.includes(reason))
+      this.#runFailure ??= reason;
+    const input = { kind: 'DEGRADED_REPLY', agentLabel: active.state.definitions.label, reason };
+    await this.#closeWith(workflowRunId, active, input as UnitInput, undefined, {
+      status: 'FAILED',
+      runOutput: false,
+    });
   }
 
   async #onEnding(workflowRunId: string, agentRunId: string, ending: AgentEnding): Promise<void> {
@@ -2643,7 +2536,7 @@ export class SessionRunner {
           workflowRunId,
           active.nodeId,
           this.#interrupted ? 'INTERRUPTED' : plan.status,
-          plan.result,
+          undefined,
           ending.outputRef,
         );
         if (plan.runOutput) this.#runResult = ending.outputRef;
@@ -2716,7 +2609,7 @@ export class SessionRunner {
             withdraw,
             records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, text)],
           },
-          this.#context(workflowRunId, active.scope),
+          this.#context(active.scope),
           this.#deps.config,
         ),
       );
@@ -2725,7 +2618,7 @@ export class SessionRunner {
     // A specialist (fixer, reviewer, ...) is a lead that follows the playbook of the template that
     // names it (Orchestration 3.9, D39). Only the root task starts one: the specialist and its
     // tasks take the two levels below it.
-    const specialists = new Map<string, NonNullable<SpawnNode['submission']>>();
+    const specialists = new Map<string, NonNullable<SpawnNode['specialist']>>();
     const tasks: RunSubagentsArgs['tasks'][number][] = [];
     for (const task of requested.tasks) {
       const template = this.#specialists.get(task.agent);
@@ -2755,9 +2648,8 @@ export class SessionRunner {
         template: { id: template.id, version: template.version },
         // A copy of it as it is now: the log keeps what the specialist was given.
         playbook: structuredClone(template.playbook) as NonNullable<
-          SpawnNode['submission']
+          SpawnNode['specialist']
         >['playbook'],
-        params: {},
       });
       tasks.push({
         ...task,
@@ -2786,7 +2678,7 @@ export class SessionRunner {
         'PLAN_REQUIRED',
         'Not started: write the plan of the work first, in plan of this same call: what is delivered and how it is checked, the approach, how the work is split and who owns which part and which shared file or interface, and the constraints every task must keep. Every task you start sees it, so the goals of the tasks need not repeat it.',
       );
-    // The root of a subMission follows its playbook (Orchestration 3.9): a call that does not
+    // A specialist follows its playbook (Orchestration 3.9): a call that does not
     // is sent back, without counting as a wrong call of run_subagents.
     const ownTask = this.#taskNodeOf(
       workflowRunId,
@@ -2802,7 +2694,7 @@ export class SessionRunner {
         'NOT_A_LEAD',
         'Not started: you are a subtask, not the task whose context you were given. You start no subtasks: do your goal yourself and finish with your finishing call.',
       );
-    const followed = ownTask?.spawn?.submission;
+    const followed = ownTask?.spawn?.specialist;
     let inherit: { readonly as: string } | undefined;
     if (followed !== undefined) {
       const off = playbookRefusal(this.#records, active.missionId, followed, args.tasks);
@@ -2949,7 +2841,7 @@ export class SessionRunner {
     tasks: SpawnPlan['tasks'],
     reserved: DelegationReserved,
     /** The specialists among the tasks, by task name, with the playbook each follows (D39). */
-    specialists: ReadonlyMap<string, NonNullable<SpawnNode['submission']>> = new Map(),
+    specialists: ReadonlyMap<string, NonNullable<SpawnNode['specialist']>> = new Map(),
     /** The ended task each continuing task takes up, by task name. */
     continued: ReadonlyMap<string, string> = new Map(),
     /** The tasks start with the caller's context (a phase with `context: inherit`, D35). */
@@ -3009,7 +2901,7 @@ export class SessionRunner {
             ),
           ],
         },
-        this.#context(workflowRunId, current.scope),
+        this.#context(current.scope),
         this.#deps.config,
       ),
     );
@@ -3056,7 +2948,7 @@ export class SessionRunner {
           caller.state,
           call.toolCallId,
           { refused: false, spawn: call.delegationId !== undefined, records: [] },
-          this.#context(workflowRunId, caller.scope),
+          this.#context(caller.scope),
           this.#deps.config,
         ),
       );
@@ -3551,7 +3443,7 @@ export class SessionRunner {
             spawn: false,
             records: [answerRecord(active.state, refused ? 'NOT_SENT' : 'SENT', toolCallId, text)],
           },
-          this.#context(workflowRunId, active.scope),
+          this.#context(active.scope),
           this.#deps.config,
         ),
       );
@@ -3688,7 +3580,7 @@ export class SessionRunner {
             ),
           ],
         },
-        this.#context(workflowRunId, current.scope),
+        this.#context(current.scope),
         this.#deps.config,
       ),
     );
@@ -3738,7 +3630,7 @@ export class SessionRunner {
           spawn: false,
           records: [answerRecord(active.state, code, toolCallId, shown)],
         },
-        this.#context(workflowRunId, active.scope),
+        this.#context(active.scope),
         this.#deps.config,
       ),
     );

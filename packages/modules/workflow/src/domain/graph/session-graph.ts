@@ -11,7 +11,6 @@ import {
   nodePath,
   readyNodes,
   settleSkips,
-  validateExtension,
   wakeableNodes,
   withWaiting,
   type EdgeCall,
@@ -43,7 +42,6 @@ interface NodeSpec {
   readonly agentRef?: DefinitionRef;
   readonly goal?: string;
   readonly guide?: string;
-  readonly inputFrom?: 'HANDOFF';
   readonly output?: boolean;
   readonly spawn?: GraphNodeRecord['spawn'];
   readonly ask?: GraphNodeRecord['ask'];
@@ -51,18 +49,16 @@ interface NodeSpec {
 }
 
 function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphNodeRecord {
-  const path = nodePath(workflowRunId, revision, spec.name, 1);
+  const path = nodePath(workflowRunId, revision, spec.name);
   return {
     nodeId: nodeIdOf(path),
     path,
     name: spec.name,
     kind: spec.kind,
     trigger: spec.trigger ?? 'all_success',
-    iteration: 1,
     ...(spec.agentRef === undefined ? {} : { agentRef: spec.agentRef }),
     ...(spec.goal === undefined ? {} : { goal: spec.goal }),
     ...(spec.guide === undefined ? {} : { guide: spec.guide }),
-    ...(spec.inputFrom === undefined ? {} : { inputFrom: spec.inputFrom }),
     ...(spec.output === undefined ? {} : { output: spec.output }),
     ...(spec.spawn === undefined ? {} : { spawn: spec.spawn }),
     ...(spec.ask === undefined ? {} : { ask: spec.ask }),
@@ -253,10 +249,9 @@ export function compileTemplate(
             agentRef: node.agent,
             mission: owners.has(node.name)
               ? { id: rootMission }
-              : { id: templateMissionId(rootMission, node.name, 1), parentId: rootMission },
+              : { id: templateMissionId(rootMission, node.name), parentId: rootMission },
             ...(node.goal === undefined ? {} : { goal: node.goal }),
             ...(node.guide === undefined ? {} : { guide: node.guide }),
-            ...(node.inputFrom === undefined ? {} : { inputFrom: node.inputFrom }),
             ...(node.output === undefined ? {} : { output: node.output }),
           })
         : nodeOf(workflowRunId, 1, { name: node.name, kind: 'HUMAN' }),
@@ -270,25 +265,9 @@ export function compileTemplate(
     const dependencies = node.kind === 'AGENT' ? (node.dependsOn ?? []) : [];
     if (dependencies.length === 0) edges.push(depends(root, target));
     for (const dependency of dependencies) {
-      const name = typeof dependency === 'string' ? dependency : dependency.node;
-      const source = byName.get(name);
-      if (source === undefined) {
-        errors.push({ code: 'UNKNOWN_DEPENDENCY', node: node.name });
-      } else if (typeof dependency === 'string') {
-        edges.push(depends(source, target));
-      } else {
-        const { field, equals, in: anyOf } = dependency.when;
-        edges.push({
-          from: source.nodeId,
-          to: target.nodeId,
-          kind: 'CONDITIONAL',
-          when: {
-            field,
-            ...(equals === undefined ? {} : { equals }),
-            ...(anyOf === undefined ? {} : { in: [...anyOf] }),
-          },
-        });
-      }
+      const source = byName.get(dependency);
+      if (source === undefined) errors.push({ code: 'UNKNOWN_DEPENDENCY', node: node.name });
+      else edges.push(depends(source, target));
     }
   }
   errors.push(...ownerOrderErrors(template, owners));
@@ -318,11 +297,7 @@ function ownerOrderErrors(
 ): GraphValidationError[] {
   const before = new Map<string, readonly string[]>();
   for (const node of template.nodes)
-    if (node.kind === 'AGENT')
-      before.set(
-        node.name,
-        (node.dependsOn ?? []).map((each) => (typeof each === 'string' ? each : each.node)),
-      );
+    if (node.kind === 'AGENT') before.set(node.name, node.dependsOn ?? []);
   const ancestors = (name: string): Set<string> => {
     const seen = new Set<string>();
     const stack = [...(before.get(name) ?? [])];
@@ -343,11 +318,10 @@ function ownerOrderErrors(
   return errors;
 }
 
-const toGraphEdge = ({ from, to, kind, when, call }: GraphEdgeRecord): GraphEdge => ({
+const toGraphEdge = ({ from, to, kind, call }: GraphEdgeRecord): GraphEdge => ({
   from,
   to,
   kind,
-  ...(when === undefined ? {} : { when }),
   ...(call === undefined ? {} : { call }),
 });
 
@@ -356,29 +330,8 @@ const toGraphNode = (node: GraphNodeRecord): GraphNode => ({
   name: node.name,
   kind: node.kind,
   trigger: node.trigger,
-  iteration: node.iteration,
-  ...(node.loopId === undefined ? {} : { loopId: node.loopId }),
   ...(node.mission === undefined ? {} : { missionId: node.mission.id }),
 });
-
-/** The rules of an extension; the same function checks every extension (Module/Workflow 6.1). */
-export function validateRevision(
-  current: Graph,
-  revision: GraphRevision,
-  rules: { readonly builtInAgents: ReadonlySet<string>; readonly allowConditions: boolean },
-): readonly GraphValidationError[] {
-  return validateExtension(
-    current,
-    {
-      nodes: revision.nodes.map((node) => ({
-        node: toGraphNode(node),
-        ...(node.agentRef === undefined ? {} : { agentId: node.agentRef.id }),
-      })),
-      edges: revision.edges.map(toGraphEdge),
-    },
-    rules,
-  );
-}
 
 export interface ProjectedGraph {
   readonly graph: Graph;
@@ -421,7 +374,6 @@ export function projectGraph(
       view.set(record.nodeId, {
         status: record.status,
         ...(record.skipReason === undefined ? {} : { skipReason: record.skipReason }),
-        ...(record.result === undefined ? {} : { result: record.result }),
       });
     }
   }
@@ -461,10 +413,7 @@ export function chatGrowthPoint(projected: ProjectedGraph): string | undefined {
       nodes.get(node.nodeId)?.mission?.parentId === undefined &&
       nodes.get(node.nodeId)?.kind === 'AGENT' &&
       // Nothing follows it by dependency: a call that leads on to tasks is no next step.
-      !graph.edges.some(
-        (edge) =>
-          edge.from === node.nodeId && (edge.kind === 'DEPENDS' || edge.kind === 'CONDITIONAL'),
-      ) &&
+      !graph.edges.some((edge) => edge.from === node.nodeId && edge.kind === 'DEPENDS') &&
       // A task answers to its caller; only what no call started can be a main.
       !graph.edges.some((edge) => edge.to === node.nodeId && edge.kind === 'DELEGATE'),
   )?.nodeId;

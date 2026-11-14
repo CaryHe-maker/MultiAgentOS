@@ -1,6 +1,5 @@
 import {
   approvalDigestOf,
-  isProjectInstructionPath,
   newId,
   normalizeRequestPath,
   writableRoots,
@@ -1849,11 +1848,6 @@ export class RunWork {
     });
     if (!read.exists) {
       file.done({ ...accepted, path, exists: false });
-      return;
-    }
-    if (!isProjectInstructionPath(path)) {
-      const { ref, sha256, text } = read;
-      file.done({ ...accepted, path, exists: true, ref, sha256, text });
       return;
     }
     if (this.#deps.isTrusted(path, read.sha256)) {

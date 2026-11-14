@@ -1,9 +1,6 @@
 import {
-  AnalysisReportSchema,
   EXIT_CODE_MEMORY_PRESSURE,
   newId,
-  validate,
-  type AnalysisReport,
   type ArtifactRef,
   type BoundaryContext,
   type CloseReason,
@@ -17,7 +14,6 @@ import {
   type ShutdownSource,
 } from '@multiagentos/contracts';
 import { describeReason } from '../domain/interaction-messages.js';
-import { renderReport } from '../domain/report-view.js';
 import { ConsoleText as text, commandPreview, terminalText } from './console-text.js';
 import { MAX_INPUT_BYTES, exceedsInputLimit, inputBytes } from './input-limit.js';
 import type {
@@ -1504,7 +1500,7 @@ export class Console {
           });
         break;
       case 'RunFinished':
-        await this.#runFinished(event);
+        this.#runFinished(event);
         break;
     }
     this.#refresh();
@@ -1573,11 +1569,7 @@ export class Console {
       });
   }
 
-  async #published(
-    kind: 'REPLY' | 'DEGRADED_REPLY' | 'RUN_RESULT',
-    agentLabel: string,
-    ref: ArtifactRef,
-  ) {
+  async #published(kind: 'REPLY' | 'DEGRADED_REPLY', agentLabel: string, ref: ArtifactRef) {
     const body = await this.#read(ref);
     if (kind === 'DEGRADED_REPLY') {
       let reason: string | undefined;
@@ -1595,24 +1587,12 @@ export class Console {
     this.#deps.view.print({ kind: 'REPLY', agentLabel, text: terminalText(body ?? '') });
   }
 
-  async #runFinished(event: RunFinished): Promise<void> {
+  #runFinished(event: RunFinished): void {
     this.#runState = 'CLOSED';
     this.#aborting = false;
     this.#activity.clear();
     this.#openRequest = undefined;
     this.#pending.splice(0);
-    if (event.resultRef !== undefined) {
-      const body = await this.#read(event.resultRef);
-      let report: AnalysisReport | undefined;
-      try {
-        const parsed = validate<AnalysisReport>(AnalysisReportSchema, JSON.parse(body ?? 'null'));
-        report = parsed.ok ? parsed.value : undefined;
-      } catch {
-        report = undefined;
-      }
-      if (report !== undefined)
-        this.#deps.view.print({ kind: 'REPORT', text: renderReport(report) });
-    }
     this.#notice(text.finished[event.closeReason]);
     this.#putBack();
     // An interrupted conversation stays open: the log is complete, and the next message starts

@@ -39,7 +39,6 @@ export const KernelConfigSchema = closed(
     /** Appended to the default exclusion rules; it can never remove one of them. */
     repositoryExclusions: Type.Array(ExclusionRuleSchema),
     maxSnapshotFiles: count(1),
-    maxReportBytes: count(1),
     /** The sandbox of commands (Interface/KernelSupervisor 9). */
     sandbox: closed({
       unavailable: Type.Enum(['deny', 'ask-unisolated']),
@@ -152,11 +151,9 @@ export const KernelConfigSchema = closed(
        * when absent; 1 counts every call at its whole input limit, as before.
        */
       reserveShare: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 1 })),
-      orientBudget: count(1),
       searchBudget: count(1),
     }),
     executionLimits: closed({
-      REPOSITORY_ORIENT: ToolLimitSchema,
       REPOSITORY_SEARCH: ToolLimitSchema,
       REPOSITORY_LIST: ToolLimitSchema,
       FILE_READ: ToolLimitSchema,

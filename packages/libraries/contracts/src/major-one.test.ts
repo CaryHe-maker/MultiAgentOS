@@ -84,7 +84,8 @@ describe('Schema-enforced constraints', () => {
     const accepts = (value: string) =>
       isValid(ReadProjectFileRequestSchema, { ...base, path: value });
     expect(accepts('AGENTS.md')).toBe(true);
-    expect(accepts('.multiagentos/workflows/research.yaml')).toBe(true);
+    expect(accepts('docs/AGENTS.md')).toBe(true);
+    expect(accepts('.multiagentos/workflows/research.yaml')).toBe(false);
     expect(accepts('../AGENTS.md')).toBe(false);
     expect(accepts('.env')).toBe(false);
     expect(accepts('.multiagentos/workflows/../x.yaml')).toBe(false);
@@ -92,7 +93,7 @@ describe('Schema-enforced constraints', () => {
 
   it('ties templateRef to the run mode', () => {
     const start = { type: 'RunStart', preset: 'standard', initialInput: true };
-    const templateRef = { id: 'analyze', version: 'v1.0.0' };
+    const templateRef = { id: 'mission', version: 'v0.1.0' };
     expect(isValid(RunStartSchema, { ...start, mode: 'CHAT' })).toBe(true);
     expect(isValid(RunStartSchema, { ...start, mode: 'CHAT', templateRef })).toBe(false);
     expect(isValid(RunStartSchema, { ...start, mode: 'ORCHESTRATION' })).toBe(false);

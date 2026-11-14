@@ -1,7 +1,5 @@
 import {
   MEDIA_TYPES,
-  AnalysisReportDraftSchema,
-  HandoffBriefSchema,
   ReplyArgsSchema,
   RepositoryListInputSchema,
   newId,
@@ -44,7 +42,6 @@ const unit = (id: string): AgentUnit => ({
 const definitions: AgentDefinitions = {
   label: 'main',
   limits: { maxRounds: 5, maxToolCallsPerRound: 4 },
-  orient: unit('repository-orient'),
   contextAssemble: unit('context-assemble'),
   modelCall: unit('model-call'),
   publish: unit('message-publish'),
@@ -77,53 +74,15 @@ const binding = (id: string, agentDefinitions: AgentDefinitions) => ({
   toolsDigest: digest,
   definitions: agentDefinitions,
 });
-const finishTool = {
-  toolName: 'finish',
-  parameters: AnalysisReportDraftSchema,
-  allowedInFinal: true,
-  action: 'PUBLISH_REPORT',
-} as const;
-const reporting: AgentDefinitions = {
-  limits: definitions.limits,
-  contextAssemble: definitions.contextAssemble,
-  modelCall: definitions.modelCall,
-  tools: definitions.tools,
-  label: 'analysis',
-  publish: unit('report-publish'),
-  endTools: [finishTool],
-  onDegraded: 'PUBLISH_REPORT',
-};
-const plannerDefinitions: AgentDefinitions = {
-  ...reporting,
-  endTools: [
-    finishTool,
-    {
-      toolName: 'handoff',
-      parameters: HandoffBriefSchema,
-      allowedInFinal: false,
-      action: 'HANDOFF',
-    },
-  ],
-};
-const viewerDefinitions = reporting;
-const analyze: TemplateDefinition = {
+const solo: TemplateDefinition = {
   schemaVersion: 'v1',
   kind: 'TEMPLATE',
-  id: 'analyze',
+  id: 'solo',
   version: 'v1.0.0',
   digest,
-  description: 'analyze',
-  origin: 'BUILTIN',
+  description: 'one step',
   nodes: [
-    { name: 'plan', kind: 'AGENT', agent: { id: 'planner', version: 'v1.0.0' } },
-    {
-      name: 'view',
-      kind: 'AGENT',
-      agent: { id: 'code-viewer', version: 'v1.0.0' },
-      dependsOn: [{ node: 'plan', when: { field: 'action', equals: 'HANDOFF' } }],
-      inputFrom: 'HANDOFF',
-      output: true,
-    },
+    { name: 'answer', kind: 'AGENT', agent: { id: 'main', version: 'v1.0.0' }, output: true },
   ],
 };
 
@@ -149,8 +108,6 @@ function script(replies: readonly Ok[]): FakeUnitScript {
         if (reply === undefined) throw new Error('no scripted reply');
         return reply;
       }
-      case 'report-publish':
-        return { output: { kind: 'REPLY' }, outputRef: artifact('7', MEDIA_TYPES.analysisReport) };
       case 'message-publish':
         return { output: { kind: 'REPLY' }, outputRef: artifact('5', MEDIA_TYPES.markdown) };
       case 'repository-list':
@@ -191,12 +148,8 @@ function setup(
   const runner = new SessionRunner({
     gateway: kernel.gateway,
     store: new SessionLogStore(persistence),
-    agents: new Map([
-      ['main', binding('main', definitions)],
-      ['planner', binding('planner', plannerDefinitions)],
-      ['code-viewer', binding('code-viewer', viewerDefinitions)],
-    ]),
-    templates: new Map([['analyze', analyze]]),
+    agents: new Map([['main', binding('main', definitions)]]),
+    templates: new Map([['solo', solo]]),
     definitionsDigest: digest,
     definitionVersions: ['main@v1.0.0'],
     config: {
@@ -360,10 +313,6 @@ describe('a chat exchange', () => {
     expect(count(runner.records, 'UNIT_SUBMITTED') - count(runner.records, 'UNIT_COMPLETED')).toBe(
       0,
     );
-    const orients = runner.records.filter(
-      (r) => r.type === 'UNIT_SUBMITTED' && r.unitRef.id === 'repository-orient',
-    );
-    expect(orients).toHaveLength(1);
   });
 
   it('keeps the conversation going when main ends degraded', async () => {
@@ -397,60 +346,24 @@ describe('Sessions', () => {
   });
 });
 
-describe('analyze', () => {
-  const start = async (kernel: ReturnType<typeof createFakeSessionKernel>) => {
+describe('a template run', () => {
+  it('runs its output step and closes with that reply as the result', async () => {
+    const { kernel, runner } = setup([modelReply('reply', { text: 'the answer' })]);
     await kernel.interaction.startRun(
-      { requestId: newId('req'), template: { id: 'analyze', version: 'v1.0.0' }, goal: prompt() },
+      { requestId: newId('req'), template: { id: 'solo', version: 'v1.0.0' }, goal: prompt() },
       context,
     );
     await kernel.idle();
-  };
-  const nodeEnds = (records: readonly SessionLogRecord[]) =>
-    records.flatMap((record) =>
-      record.type === 'NODE_ENDED' ? [[record.status, record.skipReason]] : [],
-    );
-  const draft = { summary: 'the summary', conclusions: [], unconfirmed: [] };
-
-  it('hands off from planner to code-viewer and closes with the report', async () => {
-    const { kernel, runner } = setup([
-      modelReply('handoff', { task: 'look', focusAreas: [], openQuestions: [] }),
-      modelReply('finish', draft),
-    ]);
-    await start(kernel);
-    expect(nodeEnds(runner.records)).toEqual([
-      ['SUCCEEDED', undefined],
-      ['SUCCEEDED', undefined],
-      ['SUCCEEDED', undefined],
-    ]);
-    expect(count(runner.records, 'AGENT_RUN_REGISTERED')).toBe(2);
+    expect(
+      runner.records.flatMap((record) => (record.type === 'NODE_ENDED' ? [record.status] : [])),
+    ).toEqual(['SUCCEEDED', 'SUCCEEDED']);
+    expect(runner.records.filter((record) => record.type === 'NODE_ENDED').at(-1)).toMatchObject({
+      resultRef: { mediaType: MEDIA_TYPES.markdown },
+    });
     expect(kernel.workflowEvents.at(-1)?.event).toMatchObject({
       type: 'RunClosed',
       closeReason: 'COMPLETED',
     });
-    expect(JSON.stringify(runner.records)).not.toContain('the summary');
-  });
-
-  it('skips code-viewer when planner finishes by itself', async () => {
-    const { kernel, runner } = setup([modelReply('finish', draft)]);
-    await start(kernel);
-    expect(nodeEnds(runner.records)).toEqual([
-      ['SUCCEEDED', undefined],
-      ['SUCCEEDED', undefined],
-      ['SKIPPED', 'NOT_TAKEN'],
-    ]);
-  });
-
-  it('names the goal by reference only', async () => {
-    const seen: SubmitUnitRequest[] = [];
-    const replies = script([modelReply('finish', draft)]);
-    const { kernel } = setup([modelReply('finish', draft)], (request, index) => {
-      seen.push(request);
-      return replies(request, index);
-    });
-    await start(kernel);
-    const publish = seen.find((request) => request.unitRef.id === 'report-publish');
-    expect(publish?.input).toMatchObject({ goalRef: { mediaType: MEDIA_TYPES.fileText } });
-    expect(JSON.stringify(publish?.input)).not.toContain('"goal"');
   });
 });
 

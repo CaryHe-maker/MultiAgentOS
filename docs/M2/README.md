@@ -68,7 +68,7 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 | [Phase2Plan](Phase2Plan.md) | 已定（2026-11-12，Cary 决定）；对照实验的阈值与预算待定 |
 | [M2Security](M2Security.md) | 已实现部分已评审；phase 1–3 的对抗用例与审计后更新 |
 | [Interface](Interface/README.md)：[WorkflowKernel](Interface/WorkflowKernel.md)、[InteractionKernel](Interface/InteractionKernel.md)、[Persistence](Interface/Persistence.md)、[Definitions](Interface/Definitions.md)、[KernelSupervisor](Interface/KernelSupervisor.md) | 已实现 |
-| Module：[Kernel](Module/Kernel.md)、[Workflow](Module/Workflow.md)、[UserInteraction](Module/UserInteraction.md) | 已实现；Workflow 的使用者模板与预置工作流部分为设计（phase 2） |
+| Module：[Kernel](Module/Kernel.md)、[Workflow](Module/Workflow.md)、[UserInteraction](Module/UserInteraction.md) | 已实现；使用者模板与 `analyze` 已删除，预编排模板作为专家 Agent（Orchestration D39、D46） |
 | Kernel：[Interaction](Kernel/Interaction.md)、[Core](Kernel/Core.md)、[Gateway](Kernel/Gateway.md)、[Execution](Kernel/Execution.md)、[Monitor](Kernel/Monitor.md)、[Supervisor](Kernel/Supervisor.md) | 已实现 |
 | Library：[AgentToolPool](Library/AgentToolPool.md)、[ExecutorSet](Library/ExecutorSet.md)、[SharedContracts](Library/SharedContracts.md) | 已实现；Agent 与 Prompt 模板库部分为设计（phase 2） |
 | Infrastructure：[Persistence](Infrastructure/Persistence.md)、[ArtifactStore](Infrastructure/ArtifactStore.md)、[ModuleHost](Infrastructure/ModuleHost.md)、[Fabric](Infrastructure/Fabric.md) | 已实现 |

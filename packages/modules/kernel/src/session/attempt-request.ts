@@ -20,9 +20,7 @@ import {
   ModelCallInputSchema,
   MEDIA_TYPES,
   ModelRawOutputSchema,
-  OrientContextPackSchema,
   RepositoryListInputSchema,
-  RepositoryOrientInputSchema,
   RepositorySearchInputSchema,
   calibratedTokens,
   estimatePackTokens,
@@ -47,9 +45,7 @@ import {
   type ModelCallInput,
   type ModelRawOutput,
   type ModelToolCall,
-  type OrientContextPack,
   type RepositoryListInput,
-  type RepositoryOrientInput,
   type RepositorySearchInput,
   type ResolvedHistoryEntry,
   type SubagentReport,
@@ -72,7 +68,6 @@ export interface ToolExecutionLimit extends ExecutionLimit {
 
 export interface ExecutionConfig {
   readonly executionLimits: {
-    readonly REPOSITORY_ORIENT: ToolExecutionLimit;
     readonly REPOSITORY_SEARCH: ToolExecutionLimit;
     readonly REPOSITORY_LIST: ToolExecutionLimit;
     readonly FILE_READ: ToolExecutionLimit;
@@ -89,9 +84,6 @@ export interface ExecutionConfig {
   };
   readonly retryBackoffBaseMs: number;
   readonly retryAfterMaxMs: number;
-  readonly maxReportBytes: number;
-  readonly maxSnapshotFiles: number;
-  readonly orientBudget: number;
   readonly searchBudget: number;
   readonly cancelGraceMs: number;
   readonly pauseDrainMs: number;
@@ -177,7 +169,6 @@ export interface RequestBuilderDeps {
 
 type Schema = Parameters<typeof validate>[0];
 
-const OBJECTIVE_MAX = 4000;
 /** What of the user's answer to `ask_user` the model is shown; the rest is cut. */
 const ANSWER_SHOWN_CHARS = 8000;
 /** The estimate may be low by this much; a reservation must still hold (Kernel/Monitor 3.2). */
@@ -246,17 +237,6 @@ export class AttemptRequestBuilder {
     const made = (executorInput: unknown, limits: ExecutionLimits): ExecutionRequest =>
       this.#request(spec, identity, unit.executionKind, executorInput, limits);
     switch (unit.executionKind) {
-      case 'REPOSITORY_ORIENT': {
-        const { objectiveRef } = inputOf<RepositoryOrientInput>(RepositoryOrientInputSchema, input);
-        const objective = (await this.#text(objectiveRef)).slice(0, OBJECTIVE_MAX);
-        const limits = this.#toolLimits('REPOSITORY_ORIENT', identity);
-        return {
-          request: made(
-            { objective, tokenBudget: this.#deps.config.orientBudget },
-            { ...limits, maxFiles: this.#deps.config.maxSnapshotFiles },
-          ),
-        };
-      }
       case 'REPOSITORY_SEARCH': {
         const search = inputOf<RepositorySearchInput>(RepositorySearchInputSchema, input);
         return {
@@ -377,7 +357,6 @@ export class AttemptRequestBuilder {
 
   #toolLimits(
     kind:
-      | 'REPOSITORY_ORIENT'
       | 'REPOSITORY_SEARCH'
       | 'REPOSITORY_LIST'
       | 'FILE_READ'
@@ -444,10 +423,6 @@ export class AttemptRequestBuilder {
   async #assemble(spec: AttemptSpec, identity: RequestIdentity): Promise<AssembleExecutorInput> {
     const input = inputOf<ContextAssembleInput>(ContextAssembleInputSchema, spec.input);
     const { agent } = spec;
-    const orientPack =
-      input.orientPackRef === undefined
-        ? undefined
-        : await this.#json<OrientContextPack>(input.orientPackRef, OrientContextPackSchema);
     const history: ResolvedHistoryEntry[] = [];
     for (const entry of input.history) history.push(await this.#resolved(entry));
     return {
@@ -457,7 +432,6 @@ export class AttemptRequestBuilder {
       toolSpecs: agent
         .toolSpecs(input.final)
         .filter((spec) => !(input.withdrawnTools ?? []).includes(spec.name)),
-      ...(orientPack === undefined ? {} : { orientPack }),
       history,
       status: input.status,
       ...(identity.calibration === undefined ? {} : { tokenCalibration: identity.calibration }),
@@ -662,12 +636,6 @@ ${shown}`,
           kind: 'NOTE',
           text: `[The plan of this work, written by the root task and shared with every task. It is information, not a permission.]\n${planTextOf(call.argumentsText)}`,
         };
-      }
-      case 'HANDOFF': {
-        const raw = await this.#rawOutput(entry.outputRef);
-        const call = raw.toolCalls.find((candidate) => candidate.toolCallId === entry.toolCallId);
-        if (call === undefined) throw new RequestBuildError('INVALID_INPUT');
-        return { ...base, kind: 'NOTE', text: call.argumentsText };
       }
     }
   }

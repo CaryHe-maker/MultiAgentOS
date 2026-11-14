@@ -352,14 +352,11 @@ export type RequestHumanRequest = Static<typeof RequestHumanRequestSchema>;
 /** `AGENTS.md` at the root or below it, with no `.` or `..` segment and no empty one. */
 const INSTRUCTIONS_PATH = '(?:(?!\\.\\.?/)[^/]+/)*AGENTS\\.md';
 
-/** Only `AGENTS.md` and repository templates; whether it may be read is decided behind this. */
+/** Only `AGENTS.md`; whether it may be read is decided behind this. */
 export const ReadProjectFileRequestSchema = closed(
   {
     ...inRun,
-    path: Type.String({
-      pattern: `^(?:${INSTRUCTIONS_PATH}|\\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\\.yaml)$`,
-      maxLength: 512,
-    }),
+    path: Type.String({ pattern: `^${INSTRUCTIONS_PATH}$`, maxLength: 512 }),
   },
   'kernel.unit.ReadProjectFileRequest.v1',
 );
@@ -376,14 +373,6 @@ export const ProjectFileContentSchema = Type.Union(
       ref: ArtifactRefSchema,
       sha256: Sha256Schema,
       trusted: Type.Boolean(),
-    }),
-    closed({
-      ...accepted,
-      path: text(512),
-      exists: Type.Literal(true),
-      ref: ArtifactRefSchema,
-      sha256: Sha256Schema,
-      text: Type.String(),
     }),
   ],
   { $id: 'kernel.unit.ProjectFileContent.v1' },

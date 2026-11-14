@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
@@ -7,10 +6,6 @@ import {
   FileDefinitionSource,
 } from '@multiagentos/agent-tool-pool';
 import { GlobalArtifactStore } from '@multiagentos/artifacts';
-import {
-  readRepositoryTemplate,
-  type RepositoryTemplateIssue,
-} from '@multiagentos/agent-tool-pool';
 import {
   ArtifactOwnerLineSchema,
   COMPACTION_SECTIONS,
@@ -71,7 +66,7 @@ import {
   type Console,
   type ConsoleView,
 } from '@multiagentos/user-interaction';
-import { agentBindingOf, compileTemplate, createWorkflow } from '@multiagentos/workflow';
+import { agentBindingOf, createWorkflow } from '@multiagentos/workflow';
 import { assertStartupChecks } from '../config/startup-checks.js';
 import { assertSystemConfig, ConfigError, type SystemConfig } from '../config/system-config.js';
 import { createDeferredFaultReporter } from './deferred-fault-reporter.js';
@@ -119,18 +114,6 @@ export interface System {
   readonly console: Console;
   /** The built-in template with this id, as `mas run` starts it. */
   templateRef(id: string): DefinitionRef | undefined;
-  /**
-   * A template of the repository (`.multiagentos/workflows/<id>.yaml`, the pre-orchestrated mode, Orchestration D29): read and
-   * checked; when it holds, the run may start it like a built-in one. Each problem names its rule
-   * and node. Undefined when there is no such file.
-   */
-  repositoryTemplate(
-    id: string,
-  ): Promise<
-    | { readonly ok: true; readonly ref: DefinitionRef }
-    | { readonly ok: false; readonly issues: readonly RepositoryTemplateIssue[] }
-    | undefined
-  >;
   whenStopped(): Promise<void>;
   /**
    * Runs one command to its end and resolves with the process exit code only after every
@@ -416,42 +399,6 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
         return template === undefined || template.playbook !== undefined
           ? undefined
           : { id, version: template.version };
-      },
-      repositoryTemplate: async (id) => {
-        if (!/^[a-z0-9][a-z0-9-]{0,63}$/u.test(id)) return undefined;
-        const text = await readFile(
-          join(options.repositoryRoot, '.multiagentos', 'workflows', `${id}.yaml`),
-          'utf8',
-        ).catch(() => undefined);
-        if (text === undefined) return undefined;
-        const agents = new Map(
-          [...builtin.sets].map(([agentId, set]) => [
-            agentId,
-            {
-              ref: { id: set.agent.id, version: set.agent.version },
-              writes: set.agent.capabilities.includes('workspace.write'),
-            },
-          ]),
-        );
-        const read = readRepositoryTemplate(text, id, agents);
-        if (!read.ok) return read;
-        // What the run itself checks when it compiles the graph (an owner's steps in a line).
-        const compiled = compileTemplate(
-          'wfr_00000000000000000000000000',
-          read.template,
-          'msc_check',
-        );
-        if (compiled.errors.length > 0)
-          return {
-            ok: false,
-            issues: compiled.errors.map((error) => ({
-              rule: 'SCHEMA_INVALID' as const,
-              ...(error.node === undefined ? {} : { node: error.node }),
-              message: error.code,
-            })),
-          };
-        builtin.templates.set(id, read.template);
-        return { ok: true, ref: { id, version: read.template.version } };
       },
       whenStopped: () => supervisor.whenStopped(),
       run: (command) => control.run(() => command(console)),

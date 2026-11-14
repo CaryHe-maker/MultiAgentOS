@@ -43,7 +43,6 @@ import { ArtifactRefSchema } from './platform-common/common-schemas.js';
 import { MEDIA_TYPES } from './platform-common/media-types.js';
 import { pathDerivedId } from './platform-common/new-id.js';
 import { validate } from './platform-common/validation.js';
-import { AnalysisReportSchema } from './workflow/report.js';
 
 const sha = 'a'.repeat(64);
 const at = '2026-10-09T00:00:00.000Z';
@@ -59,11 +58,10 @@ const without = <T extends object>(value: T, key: keyof T) =>
 const ref = (mediaType: string) => ({ artifactId: `art_${sha}`, mediaType, sha256: sha, size: 1 });
 const packRef = ref(MEDIA_TYPES.contextPack);
 const textRef = ref(MEDIA_TYPES.fileText);
-const reportRef = ref(MEDIA_TYPES.analysisReport);
 const summaryRef = ref(MEDIA_TYPES.runSummary);
 const outputRef = ref(MEDIA_TYPES.modelOutput);
 const unitRef = { kind: 'UNIT', id: 'file-read', version: 'v0.1.0', digest: sha };
-const agentRef = { kind: 'AGENT', id: 'planner', version: 'v0.1.0', digest: sha };
+const agentRef = { kind: 'AGENT', id: 'worker', version: 'v0.1.0', digest: sha };
 const readOutput = {
   path: 'a.ts',
   startLine: 1,
@@ -97,7 +95,7 @@ describe('references and identifiers', () => {
     };
     expectRules(
       CloseRunRequestSchema,
-      { ...close, resultRef: reportRef },
+      { ...close, resultRef: textRef },
       { 'resultRef that is no reference': { ...close, resultRef: 'report' } },
     );
   });
@@ -248,16 +246,7 @@ describe('ContextPack', () => {
     contentSha256: sha,
     retrieval: 'TREE',
   };
-  const pack = {
-    contextPackId: 'ctx_123456',
-    tokenCount: 1,
-    tokenBudget: 10,
-    truncated: false,
-    droppedCount: 0,
-    createdAt: at,
-  };
-  const orientItem = { ...item, segment: 'ORIENT', role: 'user', provenance };
-  const orient = { ...pack, operation: 'ORIENT', snapshotId: `snp_${sha}`, items: [orientItem] };
+  const pack = { contextPackId: 'ctx_123456', tokenCount: 1, tokenBudget: 10 };
   const assemble = (items: object[]) => ({
     contextPackId: pack.contextPackId,
     tokenCount: pack.tokenCount,
@@ -274,19 +263,16 @@ describe('ContextPack', () => {
   const at0 = (extra: object) => [{ ...item, ...extra }];
 
   it('fixes what each operation may contain', () => {
-    expectRules(ContextPackSchema, orient, {
-      'ORIENT without snapshotId': without(orient, 'snapshotId'),
-      'ORIENT item without provenance': { ...orient, items: [without(orientItem, 'provenance')] },
-      'itemId that is not contextPackId:index': {
-        ...orient,
-        items: [{ ...orientItem, itemId: 'ctx_123456:1' }],
-      },
-      'prefixSha256 on an ORIENT pack': { ...orient, prefixSha256: sha },
-    });
     const hit = { ...item, segment: 'SEARCH_HIT', role: 'user', provenance, score: 1 };
     const search = { ...pack, operation: 'SEARCH', snapshotId: `snp_${sha}`, items: [hit] };
     expect(ok(ContextPackSchema, search), 'a SEARCH pack').toBe(false);
-    expectRules(ContextPackSchema, assemble(at0({ segment: 'INSTRUCTIONS', role: 'system' })), {
+    const orient = { ...pack, operation: 'ORIENT', snapshotId: `snp_${sha}`, items: [] };
+    expect(ok(ContextPackSchema, orient), 'an ORIENT pack').toBe(false);
+    const instructions = at0({ segment: 'INSTRUCTIONS', role: 'system' });
+    expectRules(ContextPackSchema, assemble(instructions), {
+      'itemId that is not contextPackId:index': assemble(
+        instructions.map((entry) => ({ ...entry, itemId: 'ctx_123456:1' })),
+      ),
       'ASSEMBLE without prefixSha256': without(assemble([]), 'prefixSha256'),
       'ASSEMBLE that says it was truncated': { ...assemble([]), truncated: false },
       'SEARCH_HIT item in an ASSEMBLE pack': assemble([hit]),
@@ -311,6 +297,7 @@ describe('ContextPack', () => {
       { segment: 'STATUS', role: 'user', toolSpecs: [] },
       { segment: 'OBJECTIVE', role: 'user' },
       { segment: 'HANDOFF', role: 'user' },
+      { segment: 'ORIENT', role: 'user', provenance },
       { segment: 'INSTRUCTIONS', role: 'user' },
       { ...history, role: 'tool' },
       { ...history, role: 'user', toolCallId: 'call_1' },
@@ -327,7 +314,7 @@ describe('ContextPack', () => {
     const input = { final: false, history: [], status };
     expectRules(ContextAssembleInputSchema, input, {
       'final that differs from status.final': { ...input, final: true },
-      'orientPackRef that is not a ContextPack': { ...input, orientPackRef: textRef },
+      'an orient pack': { ...input, orientPackRef: ref(MEDIA_TYPES.contextPack) },
     });
     expectRules(StatusFactsSchema, status, {
       'a round before the first': { ...status, round: 0 },
@@ -359,7 +346,7 @@ describe('ContextPack', () => {
       { ...resolved, history: [turn] },
       {
         'an entry without seq': { ...resolved, history: [without(turn, 'seq')] },
-        'orientPack that is an ASSEMBLE pack': { ...resolved, orientPack: assemble([]) },
+        'an orient pack': { ...resolved, orientPack: assemble([]) },
       },
     );
   });
@@ -391,84 +378,6 @@ describe('workflow values', () => {
     expect(
       ok(ContextHistoryEntrySchema, { ...entry, kind: 'FEEDBACK', text: 'm', toolCallId: 'c' }),
     ).toBe(true);
-  });
-
-  it('separates the normal report from the degraded one', () => {
-    const source = {
-      path: 'a.ts',
-      startLine: 1,
-      endLine: 2,
-      readRequestId: 'req_123456',
-      readContentSha256: sha,
-    };
-    const report = {
-      workflowRunId: 'wfr_123456',
-      goal: 'g',
-      summary: 's',
-      conclusions: [{ statement: 'c', sources: [source] }],
-      unconfirmed: [],
-      readSources: [source],
-      degraded: false,
-      agentRounds: [],
-      createdAt: at,
-    };
-    const degraded = {
-      ...report,
-      conclusions: [],
-      degraded: true,
-      wrapUp: { reason: 'BUDGET_EXHAUSTED' },
-    };
-    expectRules(AnalysisReportSchema, report, {
-      'conclusion without a source': { ...report, conclusions: [{ statement: 'c', sources: [] }] },
-      'source with startLine after endLine': {
-        ...report,
-        readSources: [{ ...source, startLine: 3 }],
-      },
-      'degraded without wrapUp': { ...report, conclusions: [], degraded: true },
-      'degraded with conclusions': { ...degraded, conclusions: report.conclusions },
-      'a normal report with lastIssue': {
-        ...report,
-        wrapUp: { reason: 'ROUND_LIMIT', lastIssue: { kind: 'NO_FINISH' } },
-      },
-      'a reason that was removed': { ...report, wrapUp: { reason: 'USER_DECLINED' } },
-      'the same empty read twice': { ...report, emptyReads: ['e.ts', 'e.ts'] },
-    });
-    expect(ok(AnalysisReportSchema, degraded)).toBe(true);
-    expect(ok(AnalysisReportSchema, { ...report, emptyReads: ['e.ts', 'f.ts'] })).toBe(true);
-    expect(ok(AnalysisReportSchema, { ...report, wrapUp: { reason: 'ROUND_LIMIT' } })).toBe(true);
-    for (const reason of ['TOOL_UNIT_LIMIT', 'CONTEXT_LIMIT', 'FINAL_CALL_INVALID'])
-      expect(ok(AnalysisReportSchema, { ...degraded, wrapUp: { reason } }), reason).toBe(true);
-  });
-
-  it('lets a degraded report state its last issue as a structured fact', () => {
-    const degraded = {
-      workflowRunId: 'wfr_123456',
-      goal: 'g',
-      summary: 's',
-      conclusions: [],
-      unconfirmed: [],
-      readSources: [],
-      degraded: true,
-      agentRounds: [],
-      createdAt: at,
-      emptyReads: ['empty.ts'],
-    };
-    const withIssue = (lastIssue: object) => ({
-      ...degraded,
-      wrapUp: { reason: 'ROUND_LIMIT', lastIssue },
-    });
-    for (const lastIssue of [
-      { kind: 'FAILURE', code: 'UNIT_TIMEOUT' },
-      { kind: 'INVALID_OUTPUT', reason: 'CONTROL_MIXED' },
-      { kind: 'NO_FINISH' },
-    ])
-      expect(ok(AnalysisReportSchema, withIssue(lastIssue)), lastIssue.kind).toBe(true);
-    expectRules(AnalysisReportSchema, withIssue({ kind: 'NO_FINISH' }), {
-      'an unknown reason code': withIssue({ kind: 'FAILURE', code: 'NOT_A_CODE' }),
-      'an unknown invalid-output reason': withIssue({ kind: 'INVALID_OUTPUT', reason: 'X' }),
-      'free text in place of a fact': withIssue({ kind: 'NO_FINISH', message: 'text' }),
-      'an unknown kind': withIssue({ kind: 'OTHER' }),
-    });
   });
 });
 
@@ -528,7 +437,7 @@ describe('Gateway responses and run outcomes', () => {
       {
         'failure whose source is KERNEL': { ...close, failure },
         'FAILED without failure': close,
-        'resultRef next to failure': { ...close, failure: byWorkflow, resultRef: reportRef },
+        'resultRef next to failure': { ...close, failure: byWorkflow, resultRef: textRef },
       },
     );
   });
@@ -539,7 +448,7 @@ describe('Gateway responses and run outcomes', () => {
     const violation = { code: 'PATH_ESCAPE', category: 'INTEGRITY', source: 'KERNEL' };
     expectRules(
       RunFinishedSchema,
-      { ...end, closeReason: 'COMPLETED', resultRef: reportRef },
+      { ...end, closeReason: 'COMPLETED', resultRef: textRef },
       {
         'COMPLETED with failure': { ...end, closeReason: 'COMPLETED', failure },
         'FAILED without failure': { ...end, closeReason: 'FAILED' },
@@ -557,7 +466,7 @@ describe('Gateway responses and run outcomes', () => {
         'runSummaryRef that is not a RunSummary': {
           ...end,
           closeReason: 'CANCELLED',
-          runSummaryRef: reportRef,
+          runSummaryRef: textRef,
         },
       },
     );
@@ -640,7 +549,7 @@ describe('Gateway responses and run outcomes', () => {
         },
         'unconfirmed stop of the built-in Unit': {
           ...effect,
-          executionKind: 'REPORT_PUBLISH',
+          executionKind: 'MESSAGE_PUBLISH',
           effect: 'EXECUTION_STOP_UNCONFIRMED',
         },
       },
@@ -712,7 +621,7 @@ describe('UnitReport', () => {
       },
     );
     const declined = { ...report, status: 'REJECTED', reasonCode: 'USER_DECLINED' };
-    expect(ok(UnitReportSchema, { ...declined, executionKind: 'REPOSITORY_ORIENT' })).toBe(true);
+    expect(ok(UnitReportSchema, { ...declined, executionKind: 'REPOSITORY_SEARCH' })).toBe(true);
     expect(ok(UnitReportSchema, { ...attempt, status: 'FAILED', reasonCode: 'UNIT_TIMEOUT' })).toBe(
       true,
     );
@@ -767,7 +676,7 @@ describe('ExecutionRequest and ExecutionFact', () => {
   it('fixes input, scope and limits by executionKind', () => {
     expectRules(ExecutionRequestSchema, read, {
       'scope of another kind': { ...read, scope: { kind: 'NONE' } },
-      'a kind that is never dispatched': { ...read, executionKind: 'REPORT_PUBLISH' },
+      'a kind that is never dispatched': { ...read, executionKind: 'MESSAGE_PUBLISH' },
       'maxOutputTokens outside MODEL': { ...read, limits: { ...limits, maxOutputTokens: 1 } },
       'a tool without preview limits': { ...read, limits },
       'an exclusion rule the matcher cannot apply': {
@@ -775,15 +684,6 @@ describe('ExecutionRequest and ExecutionFact', () => {
         scope: { ...repository, exclusions: ['**/*.{pem,key}'] },
       },
     });
-    const orient = {
-      ...read,
-      executionKind: 'REPOSITORY_ORIENT',
-      input: { objective: 'o', tokenBudget: 1 },
-    };
-    expect(ok(ExecutionRequestSchema, orient)).toBe(false);
-    expect(ok(ExecutionRequestSchema, { ...orient, limits: { ...toolLimits, maxFiles: 1 } })).toBe(
-      true,
-    );
     const pack = {
       contextPackId: 'ctx_123456',
       operation: 'ASSEMBLE',

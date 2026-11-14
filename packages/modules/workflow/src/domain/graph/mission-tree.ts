@@ -33,9 +33,9 @@ export const rootMissionId = (sessionId: string, templateId: string): string =>
 export const childMissionId = (parentId: string, toolCallId: string, name: string): string =>
   pathDerivedId('msc', `${parentId}/${toolCallId}/${name}`);
 
-/** A task a template compiled under its root: one per node and iteration. */
-export const templateMissionId = (rootId: string, name: string, iteration: number): string =>
-  pathDerivedId('msc', `${rootId}/template/${name}#${String(iteration)}`);
+/** A task a template compiled under its root: one per node. */
+export const templateMissionId = (rootId: string, name: string): string =>
+  pathDerivedId('msc', `${rootId}/template/${name}`);
 
 interface Building {
   readonly missionId: string;

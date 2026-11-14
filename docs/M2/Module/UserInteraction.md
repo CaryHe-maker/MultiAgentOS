@@ -13,11 +13,11 @@ UserInteraction 是用户与系统交互的边界：收集用户意图与原始�
 
 | M1 | M2 | 依据 |
 |---|---|---|
-| `multiagentos analyze --repo <路径> "<目标>"`：一次输入、一次报告，展示完即关闭 | `mas`：交互式对话，进程绑定一个仓库，可以新建、打开、切换 Session；`mas run <模板> "<目标>"`：一次运行后退出 | M2Design 第 2.3 节 |
+| `multiagentos analyze --repo <路径> "<目标>"`：一次输入、一次报告，展示完即关闭 | `mas`：交互式对话，进程绑定一个仓库，可以新建、打开、切换 Session；`mas run "<目标>"`：一个长任务做完后退出 | M2Design 第 2.3 节 |
 | 逐行输出（readline） | 三个区域的终端界面（Ink）：记录区、活动区、输入区 | M2Design 第 11.1 节、M2TechStack 第 4 节 |
 | 只有授权询问 | 授权询问与人类请求排成同一个队列，一次处理一项，每项标明来源 | M2Design 第 4.1 节 |
 | Ctrl+C 取消运行 | Ctrl+C 为暂停、再按为中止；退出用 `/exit` | M2Design 第 11.2 节 |
-| 展示 AnalysisReport | 展示 `reply`、运行结果与 `analyze` 的报告；报告的展示规则沿用 M1 | — |
+| 展示 AnalysisReport | 展示 `reply` 与降级通知；M1 的报告展示随 `analyze` 删除（M2Design v1.38） | — |
 | 运行中不接受输入 | 运行中输入的消息在界面中排队，AWAITING_INPUT 时作为下一条消息提交； Alt+Enter 或 `/steer` 为运行中插话 | M2Design 第 4.5 节 |
 
 报告的展示、控制字符的转义、`InteractionMessages` 文案表、自身错误的捕获边界与 M1 相同，见归档的
@@ -34,13 +34,13 @@ UserInteraction 是用户与系统交互的边界：收集用户意图与原始�
 
 ```text
 mas [--repo <路径>] [--readonly]                    交互式；仓库缺省为当前工作目录
-mas run [--repo <路径>] [--readonly] <模板> "<目标>"   目前只接受内置模板 analyze（使用者模板见 M2ReleasePlan phase 2）
+mas run [--repo <路径>] [--readonly] "<目标>"           内置模板 mission；不接受模板名
 mas log [<对话>] [--repo <路径>] [--turn <n>] [--full] [--json] [--list]   只读地查看一个对话的时间线
 ```
 
 - 仓库路径由组合根取 realpath 后写入 Kernel 的配置（M2Design 第 2.3 节 Session 第 0 条）；UserInteraction 不传仓库路径。
 - `--readonly` 设置启动预设（M2Design 第 5.2 节）。
-- 参数错误返回 64（M1 的规则）。选项只在它所属的命令之后生效：`mas run --repo X analyze …` 与 `mas run analyze … --repo X` 都把 `--repo` 交给 `run`（曾因程序级选项吞掉子命令的选项而丢失，有回归测试）。
+- 参数错误返回 64（M1 的规则）。选项只在它所属的命令之后生效：`mas run --repo X "<目标>"` 与 `mas run "<目标>" --repo X` 都把 `--repo` 交给 `run`（曾因程序级选项吞掉子命令的选项而丢失，有回归测试）。
 - `mas log` 在启动任何模块之前处理，不取实例锁与 Session 锁，不调用模型（[Phase1Console](../Phase1Console.md) 第 3 节）。
 
 ## 5. 交互式流程
@@ -155,7 +155,7 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 ```text
 startRun({ template, goal }) → SessionOpened → 运行
   授权询问照常进入待处理队列
-RunFinished → 展示运行结果（analyze 为报告）→ shutdown → 进程退出
+RunFinished → 展示结束原因 → shutdown → 进程退出
 ```
 
 | closeReason | 退出码 |

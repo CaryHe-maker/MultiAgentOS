@@ -60,18 +60,11 @@ describe('admitUnit', () => {
     );
   });
 
-  it('refuses kinds this stage cannot run, before reading the input', () => {
-    const command = unitOf('TEST');
-    expect(refusal({ agentRun: pinned(command), inputIsValid: () => false }, command)).toBe(
-      'UNSUPPORTED_CAPABILITY',
-    );
-  });
-
   it('refuses input outside the contract', () => {
     expect(refusal({ inputIsValid: () => false })).toBe('INVALID_INPUT');
   });
 
-  it.each(['CONTEXT_ASSEMBLE', 'MODEL', 'MESSAGE_PUBLISH', 'REPORT_PUBLISH'] as const)(
+  it.each(['CONTEXT_ASSEMBLE', 'MODEL', 'MESSAGE_PUBLISH'] as const)(
     'leaves %s outside the tool quota',
     (kind) => {
       const unit = unitOf(kind);

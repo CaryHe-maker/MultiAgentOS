@@ -27,7 +27,6 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   sessionCloseTimeoutMs: 10_000,
   repositoryExclusions: [],
   maxSnapshotFiles: 20_000,
-  maxReportBytes: 262_144,
   sandbox: Object.freeze({
     unavailable: 'deny' as const,
     homeReadOnly: ['~/.nvm', '~/.volta', '~/.cargo', '~/.rustup', '~/.local/bin', '~/.npm'],
@@ -72,11 +71,9 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
     runTokenLimit: 24_000_000,
     inputTokenLimit: 8_000_000,
     reserveShare: 0.3,
-    orientBudget: 1_200,
     searchBudget: 1_200,
   }),
   executionLimits: Object.freeze({
-    REPOSITORY_ORIENT: toolLimit(60_000, 1_048_576),
     REPOSITORY_SEARCH: toolLimit(30_000, 1_048_576),
     REPOSITORY_LIST: toolLimit(30_000, 1_048_576),
     FILE_READ: toolLimit(10_000, 16_384),

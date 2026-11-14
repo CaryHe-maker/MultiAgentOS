@@ -404,7 +404,7 @@ describe('Console', () => {
 
   it('resolves `mas run` with the exit code of its outcome', async () => {
     const t = setup();
-    const exit = t.console.run({ id: 'analyze', version: 'v0.1.0' }, '分析');
+    const exit = t.console.run({ id: 'mission', version: 'v0.1.0' }, '完成');
     await Promise.resolve();
     await t.event({ type: 'RunFinished', closeReason: 'VIOLATION' } as KernelToInteractionEvent);
     await expect(exit).resolves.toBe(3);

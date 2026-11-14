@@ -43,11 +43,11 @@ describe('fixture repository', () => {
       );
   });
 
-  it('comes with the guard verdicts of ExecutorSet for all three repository Executors', async () => {
+  it('comes with the guard verdicts of ExecutorSet for reading and searching', async () => {
     const repository = await fixture();
     const expectations = repositoryGuardExpectations(repository, environment);
     expect(new Set(expectations.map((expectation) => expectation.kind))).toEqual(
-      new Set(['FILE_READ', 'REPOSITORY_SEARCH', 'REPOSITORY_ORIENT']),
+      new Set(['FILE_READ', 'REPOSITORY_SEARCH']),
     );
     const verdicts = new Set(
       expectations.map(({ expected }) =>
@@ -63,7 +63,6 @@ describe('fixture repository', () => {
       'REJECTED:UNSUPPORTED_FILE',
       'REJECTED:INVALID_RANGE',
       'REJECTED:INVALID_QUERY',
-      'REJECTED:LIMIT_EXCEEDED',
       'VIOLATION:SCOPE_MISSING',
     ])
       expect(verdicts).toContain(verdict);

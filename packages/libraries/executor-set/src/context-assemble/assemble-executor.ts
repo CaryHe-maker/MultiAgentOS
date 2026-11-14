@@ -255,13 +255,6 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
       reason: 'tools of this call',
       toolSpecs: input.toolSpecs,
     },
-    ...(input.orientPack?.items ?? []).map((item) => ({
-      segment: 'ORIENT' as const,
-      role: 'user' as const,
-      content: item.content,
-      reason: item.reason,
-      provenance: item.provenance,
-    })),
   ];
   // A summary request in prefix form ends with its instruction where a call ends with its status.
   const asking = input.compaction?.mode === 'PREFIX';
@@ -309,7 +302,6 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
     tokenBudget: input.tokenBudget,
     createdAt: environment.now().toISOString(),
     operation: 'ASSEMBLE',
-    ...(input.orientPack === undefined ? {} : { snapshotId: input.orientPack.snapshotId }),
     prefixSha256,
     projectionDigest,
     headDigest: prefixSha256,

@@ -84,7 +84,6 @@ import type { RequestState } from './kernel-execution/execution-fact.js';
 import type {
   ExecutionRequest,
   ExecutionScope,
-  OrientExecutorInput,
   SearchExecutorInput,
 } from './kernel-execution/execution-request.js';
 import type {
@@ -129,7 +128,6 @@ export interface SupervisorPort {
 }
 
 export interface ExecutorInputByKind {
-  readonly REPOSITORY_ORIENT: OrientExecutorInput;
   readonly REPOSITORY_SEARCH: SearchExecutorInput;
   readonly REPOSITORY_LIST: RepositoryListInput;
   readonly FILE_READ: FileReadInput;

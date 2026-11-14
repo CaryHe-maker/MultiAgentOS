@@ -26,11 +26,10 @@ export interface ToolUse {
   readonly status?: string;
 }
 
-export interface SubMissionShape {
+export interface SpecialistShape {
   readonly name: string;
   readonly template: string;
   readonly missionId: string;
-  readonly params: Readonly<Record<string, string>>;
   readonly status?: string;
   /** Its tasks, by Agent, in the order they were started. */
   readonly children: readonly { readonly agent: string; readonly status?: string }[];
@@ -50,9 +49,9 @@ export interface TaskStats {
   readonly agent: string;
   /** The name of the task that started it; absent for root. */
   readonly parent?: string;
-  /** Set on the root of a subMission: its template. */
+  /** Set on a specialist: its template. */
   readonly template?: string;
-  /** Set on a task inside a subMission: the template of the subMission it is in. */
+  /** Set on a task a specialist started: the template of that specialist. */
   readonly inside?: string;
   readonly status?: string;
   /** Its AgentRuns: one per segment (a task that slept has several). */
@@ -80,10 +79,10 @@ export interface RunShape {
   /** Every task, root first, then in the order they were started. */
   readonly tasks: readonly TaskStats[];
   /** The specialists started (Orchestration D39), with how each kept to its playbook. */
-  readonly subMissions: readonly SubMissionShape[];
+  readonly specialists: readonly SpecialistShape[];
   /** Calls of `run_subagents` by root. */
   readonly runSubagentsCalls: number;
-  /** Every task of the run (subMission roots and their tasks too), by Agent. */
+  /** Every task of the run (specialists and their tasks too), by Agent. */
   readonly tasksByAgent: Readonly<Record<string, number>>;
   /** Root's own work. */
   readonly rootWrites: number;
@@ -98,7 +97,7 @@ interface Mission {
   readonly name: string;
   readonly agent: string;
   readonly startedSeq: number;
-  readonly submission?: { readonly template: string; readonly params: Record<string, string> };
+  readonly specialist?: { readonly template: string };
 }
 
 export function shapeOf(log: readonly Row[]): RunShape {
@@ -127,27 +126,16 @@ export function shapeOf(log: readonly Row[]): RunShape {
           const mission = node['mission'] as { id?: string; parentId?: string } | undefined;
           if (mission?.id === undefined || mission.parentId === undefined) continue;
           const spawn = node['spawn'] as
-            | {
-                submission?: {
-                  template?: { id?: string };
-                  params?: Record<string, string>;
-                };
-              }
-            | undefined;
+            { specialist?: { template?: { id?: string } } } | undefined;
           missions.set(mission.id, {
             id: mission.id,
             parentId: mission.parentId,
             name: text(node['name']),
             agent: text((node['agentRef'] as { id?: string } | undefined)?.id),
             startedSeq: seqOf(record),
-            ...(spawn?.submission === undefined
+            ...(spawn?.specialist === undefined
               ? {}
-              : {
-                  submission: {
-                    template: text(spawn.submission.template?.id),
-                    params: { ...(spawn.submission.params ?? {}) },
-                  },
-                }),
+              : { specialist: { template: text(spawn.specialist.template?.id) } }),
           });
         }
         break;
@@ -256,24 +244,23 @@ export function shapeOf(log: readonly Row[]): RunShape {
     return below.length === 0 ? 0 : 1 + Math.max(...below);
   };
 
-  const subMissions = [...missions.values()]
-    .filter((each) => each.submission !== undefined)
-    .map((each): SubMissionShape => {
+  const specialists = [...missions.values()]
+    .filter((each) => each.specialist !== undefined)
+    .map((each): SpecialistShape => {
       const own = usesOf(each.id);
       const children = childrenOf(each.id);
       const ownWrites = writes(own);
-      const template = each.submission?.template ?? '';
-      const params = each.submission?.params ?? {};
+      const template = each.specialist?.template ?? '';
+      const status = endedAt.get(each.id)?.status;
       return {
         name: each.name,
         template,
         missionId: each.id,
-        params,
-        ...(endedAt.get(each.id) === undefined ? {} : { status: endedAt.get(each.id)?.status }),
-        children: children.map((child) => ({
-          agent: child.agent,
-          ...(endedAt.get(child.id) === undefined ? {} : { status: endedAt.get(child.id)?.status }),
-        })),
+        ...(status === undefined ? {} : { status }),
+        children: children.map((child) => {
+          const status = endedAt.get(child.id)?.status;
+          return { agent: child.agent, ...(status === undefined ? {} : { status }) };
+        }),
         sentBack: sentBack.get(each.id) ?? {},
         ownWrites: ownWrites.length,
         ownChangedFiles: [...new Set(ownWrites.flatMap((use) => use.changed))],
@@ -289,7 +276,7 @@ export function shapeOf(log: readonly Row[]): RunShape {
       at = missions.get(at)?.parentId
     ) {
       const above = missions.get(at);
-      if (above?.submission !== undefined) return above.submission.template;
+      if (above?.specialist !== undefined) return above.specialist.template;
     }
     return undefined;
   };
@@ -319,7 +306,7 @@ export function shapeOf(log: readonly Row[]): RunShape {
             parent:
               parent?.name ?? (mission.parentId === rootMissionId ? 'root' : mission.parentId),
           }),
-      ...(mission?.submission === undefined ? {} : { template: mission.submission.template }),
+      ...(mission?.specialist === undefined ? {} : { template: mission.specialist.template }),
       ...(inside === undefined ? {} : { inside }),
       ...(status === undefined ? {} : { status }),
       segments: runs.length,
@@ -355,7 +342,7 @@ export function shapeOf(log: readonly Row[]): RunShape {
   return {
     ...(rootMissionId === undefined ? {} : { rootMissionId }),
     tasks,
-    subMissions,
+    specialists,
     runSubagentsCalls: rootUses.filter((use) => use.tool === 'run_subagents').length,
     tasksByAgent,
     rootWrites: writes(rootUses).length,

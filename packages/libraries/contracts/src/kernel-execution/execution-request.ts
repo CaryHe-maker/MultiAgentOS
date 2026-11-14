@@ -1,9 +1,5 @@
 import { Type, type Static, type TSchema } from 'typebox';
-import {
-  AssembleContextPackSchema,
-  ModelToolSpecSchema,
-  OrientContextPackSchema,
-} from '../context/context-pack.js';
+import { AssembleContextPackSchema, ModelToolSpecSchema } from '../context/context-pack.js';
 import { StatusFactsSchema } from '../context/history-entry.js';
 import { ModelToolCallSchema } from '../executor/model-tool-call.js';
 import { RepositoryListInputSchema } from '../executor/repository-list.js';
@@ -65,12 +61,6 @@ export type ExecutionScope = Static<typeof ExecutionScopeSchema>;
 
 const limits = { deadline: TimestampSchema, maxOutputBytes: count(1) };
 
-export const OrientExecutorInputSchema = closed(
-  { objective: text(4000), tokenBudget: count(1) },
-  'kernel.execution.OrientExecutorInput.v1',
-);
-export type OrientExecutorInput = Static<typeof OrientExecutorInputSchema>;
-
 /** The search input with defaults filled in. */
 export const SearchExecutorInputSchema = closed(
   {
@@ -93,11 +83,10 @@ const toolLimits = {
   maxFullOutputBytes: count(1),
 };
 const PlainLimitsSchema = closed(toolLimits);
-const OrientLimitsSchema = closed({ ...toolLimits, maxFiles: count(1) });
 const ModelLimitsSchema = closed({ ...limits, maxOutputTokens: count(1) });
 const AssembleLimitsSchema = closed(limits);
 export const ExecutionLimitsSchema = Type.Union(
-  [PlainLimitsSchema, OrientLimitsSchema, ModelLimitsSchema, AssembleLimitsSchema],
+  [PlainLimitsSchema, ModelLimitsSchema, AssembleLimitsSchema],
   { $id: 'kernel.execution.ExecutionLimits.v1' },
 );
 export type ExecutionLimits = Static<typeof ExecutionLimitsSchema>;
@@ -161,7 +150,6 @@ export const AssembleExecutorInputSchema = Type.Refine(
       tokenBudget: count(1),
       instructions: Type.String({ maxLength: 100000 }),
       toolSpecs: Type.Array(ModelToolSpecSchema),
-      orientPack: Type.Optional(OrientContextPackSchema),
       history: Type.Array(ResolvedHistoryEntrySchema),
       status: StatusFactsSchema,
       /**
@@ -249,12 +237,6 @@ const request = <K extends string, I extends TSchema, S extends TSchema, L exten
 
 export const ExecutionRequestSchema = Type.Union(
   [
-    request(
-      'REPOSITORY_ORIENT',
-      OrientExecutorInputSchema,
-      RepositoryScopeSchema,
-      OrientLimitsSchema,
-    ),
     request(
       'REPOSITORY_SEARCH',
       SearchExecutorInputSchema,

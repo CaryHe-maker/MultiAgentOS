@@ -13,7 +13,7 @@ Execution 负责 UnitAttempt、执行队列、产物与内建 Unit；还负责�
 |---|---|---|
 | 产物归属按运行登记，引用只能在本运行内使用 | 按 Session 登记（Session 级状态），写入 `artifact-owners.jsonl`；引用在本 Session 内有效 | M2Design 第 10.1 节 |
 | 正文只有执行产物、报告与运行摘要 | 增加用户输入的正文（`storeUserInput`）与发布的消息（`message-publish`） | M2Design 第 4.2、8.1 节 |
-| 只有内建 Unit `report-publish` | 增加 `message-publish` | M2Design 第 8.1 节 |
+| 只有内建 Unit `report-publish` | 换成 `message-publish`（`report-publish` 随 `analyze` 删除） | M2Design 第 8.1 节 |
 | 不读取项目文件 | `readProjectFile`：按白名单读取 `AGENTS.md` 与模板文件，正文存为产物 | M2Design 第 7.5 节 |
 | 产物没有保留类别 | 登记 `SESSION`、`EXPIRING` 或 `ONCE`：工具结果的预览长期保留，完整输出 7 天过期，ContextPack 只给一次模型调用用，调用结束即释放（7 天兜底） | M2Design 第 8.2、10.1 节 |
 | 启动时不回收产物 | 启动时与每小时回收：只按 ACTIVE 的 Session 的登记与保留期标记，其余在本次回收开始之前写入的正文删除 | [ArtifactStore](../Infrastructure/ArtifactStore.md) 第 4 节 |
@@ -58,7 +58,7 @@ UnitAttempt 的状态机、技术重试（等待时间见第 4a 节）、`Execut
 
 设计以 M2Design 第 7.1、7.2 节为准。`RunExecution` 的队列由纯函数部分 `AttemptQueues`（`session/execution-queues.ts`）管理，它不启动任何东西，只回答"现在哪些可以开始"。
 
-- **并发类别**：`concurrencyClassOf`（`run-execution.ts`）由执行类型得出：`MODEL`；`FILE_WRITE`、`FILE_EDIT`、`MESSAGE_PUBLISH`、`REPORT_PUBLISH` 为 WRITE；`COMMAND` 为 EXEC，**但可写根目录为空的沙盒命令（只读名单上的命令行，M2Design 第 5.2 节）为 READ**，不占全局 EXEC 互斥、也不是屏障；`WEB_SEARCH`、`WEB_FETCH` 为 WEB；其余为 READ。
+- **并发类别**：`concurrencyClassOf`（`run-execution.ts`）由执行类型得出：`MODEL`；`FILE_WRITE`、`FILE_EDIT`、`MESSAGE_PUBLISH` 为 WRITE；`COMMAND` 为 EXEC，**但可写根目录为空的沙盒命令（只读名单上的命令行，M2Design 第 5.2 节）为 READ**，不占全局 EXEC 互斥、也不是屏障；`WEB_SEARCH`、`WEB_FETCH` 为 WEB；其余为 READ。
 - **同一 AgentRun 内**：按建立先后开始；相邻的 READ 与 WEB 一起开始；WRITE、EXEC、MODEL 是屏障——前面的全部结束后才开始，它结束之后后面的才开始。
 - **不同 AgentRun**：队列并行，受四项全局约束：`kernel.maxConcurrentAttempts`（缺省 6，**不数 WEB**）、`kernel.maxConcurrentWeb`（缺省 10，只数 WEB：网页的搜索与抓取有自己的池，慢的网站占不了模型调用的名额，超出的排队）、`kernel.maxConcurrentExec`（缺省 1，只数 EXEC）、`kernel.serialExecution`（缺省 `false`；开启时每个 Unit 都是屏障、全局只有一个在执行，WEB 也数在内）。多个可以开始时先开始最早的（FCFS，不区分 Agent）。
 - **只有真正在执行的尝试占用并发计数**：排队的、等待调用机会的、挂在授权询问上的都不占。
@@ -120,24 +120,21 @@ M1 的技术重试规则不变（至多 `technicalRetryLimit` 次，`retryBackof
 
 ## 4b. 目标引用的解析
 
-`repository-orient` 的 `objectiveRef`、`report-publish` 的 `goalRef` 都按第 3 节检查归属，解析为文字后填入 Executor 输入的 `objective` 或报告的 `goal`。
+需要用户正文的 Unit 输入只写引用，按第 3 节检查归属后再解析为文字（M1 的 `repository-orient` 与 `report-publish` 已删除，现在只有 `message-publish` 的模型输出引用）。
 
 ## 5. 内建 Unit：`message-publish`
 
-与 `report-publish` 相同，不派发给 Supervisor，由 Execution 在 Session actor 的处理中完成：
+不派发给 Supervisor，由 Execution 在 Session actor 的处理中完成：
 
 ```text
 取到 message-publish 尝试；输入已在受理时按 Schema 校验：
   { kind: 'REPLY', agentLabel, source: { modelOutputRef, toolCallId } }
   { kind: 'DEGRADED_REPLY', agentLabel, reason }                              // 降级回复，只有结构化原因
-  { kind: 'RUN_RESULT', agentLabel, report: RunReport }                       // 确定性运行报告
 REPLY：
   → modelOutputRef 必须属于本 Session（第 3 节）；从中取出 toolCallId 对应的 reply 调用的 text 参数
   → 把 text 以 text/markdown 存为新的产物，登记归属
 DEGRADED_REPLY：
   → 把 { reason } 以 JSON 存为产物，登记归属；不经过额度检查，额度耗尽时也要能发布
-RUN_RESULT：
-  → report 按 Schema 校验后以 JSON 存为产物，登记归属
 → submitResultCheck(COMPLETED, output = { kind }, outputRef = 新产物)
 Core 在结果检查后向 UserInteraction 发出 MessagePublished(messageRef = 新产物)
 ```

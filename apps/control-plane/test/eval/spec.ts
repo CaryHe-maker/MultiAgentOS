@@ -26,8 +26,8 @@ export type ChatStep =
   | { readonly awaitInput: true }
   /** Waits until `until` holds, looking at what the console printed. */
   | { readonly waitFor: (look: Look) => boolean; readonly what: string }
-  /** Mission mode only: `mas run "<goal>"` with a template, waited for until the run ends. */
-  | { readonly run: string; readonly template?: string };
+  /** Mission mode only: `mas run "<goal>"`, waited for until the run ends. */
+  | { readonly run: string };
 
 /** What a step may look at without reaching into the product. */
 export interface Look {
@@ -58,7 +58,7 @@ export interface Observation {
 export interface TaskSpec {
   /** Unique, stable: records of different versions are compared by it. */
   readonly id: string;
-  /** `chat`: the interactive console; `mission`: `mas run` with a template, no conversation. */
+  /** `chat`: the interactive console; `mission`: `mas run`, no conversation. */
   readonly mode: 'chat' | 'mission';
   /** Free labels for reports: `chat`, `write`, `safety`, ... */
   readonly tags: readonly string[];

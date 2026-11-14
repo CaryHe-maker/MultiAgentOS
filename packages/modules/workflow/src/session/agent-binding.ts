@@ -50,13 +50,8 @@ export function agentBindingOf(
     if (tool === undefined) throw new Error(`Agent ${agent.id} has no tool ${ref.id}`);
     return tool;
   };
-  const orient = units.find(
-    (unit) =>
-      unit.executionKind === 'REPOSITORY_ORIENT' &&
-      agent.startUnitRefs.some((ref) => ref.id === unit.id && ref.version === unit.version),
-  );
-  // The catalog allows one publishing Unit per Agent: a message or a report. A SubAgent has none.
-  const publish = byKind('MESSAGE_PUBLISH') ?? byKind('REPORT_PUBLISH');
+  // The catalog allows one publishing Unit per Agent. A SubAgent has none.
+  const publish = byKind('MESSAGE_PUBLISH');
   if (publish === undefined && agent.actions.onDegraded !== 'RETURN_PARTIAL')
     throw new Error(`Agent ${agent.id} has no publishing Unit`);
 
@@ -66,7 +61,6 @@ export function agentBindingOf(
       maxRounds: agent.limits.maxRounds,
       maxToolCallsPerRound: agent.limits.maxToolCallsPerRound,
     },
-    ...(orient === undefined ? {} : { orient: unitOf(orient) }),
     contextAssemble: required('CONTEXT_ASSEMBLE'),
     modelCall: required('MODEL'),
     ...(publish === undefined ? {} : { publish: unitOf(publish) }),

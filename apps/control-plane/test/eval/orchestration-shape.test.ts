@@ -40,12 +40,7 @@ function log(options: { readonly subRootWrites: boolean; readonly checkFirst: bo
           name: 'fix',
           agentRef: { id: 'lead' },
           mission: { id: 'm_fix', parentId: 'm_root' },
-          spawn: {
-            submission: {
-              template: { id: 'fix-verify' },
-              params: {},
-            },
-          },
+          spawn: { specialist: { template: { id: 'fix-verify' } } },
         },
         {
           name: 'feature',
@@ -118,7 +113,7 @@ describe('the shape of a mission run', () => {
         feedback: { PLAYBOOK: 1 },
       }),
     );
-    expect(shape.subMissions).toEqual([
+    expect(shape.specialists).toEqual([
       expect.objectContaining({
         template: 'fix-verify',
         status: 'SUCCEEDED',
@@ -132,10 +127,10 @@ describe('the shape of a mission run', () => {
   });
 
   it('finds a sub-root that changed files through a command and skipped the first check', () => {
-    const [sub] = shapeOf(log({ subRootWrites: true, checkFirst: false })).subMissions;
+    const [sub] = shapeOf(log({ subRootWrites: true, checkFirst: false })).specialists;
     expect(sub?.ownChangedFiles).toEqual(['src/a.py']);
     expect(sub?.violations).toEqual(['changed files itself (1 calls)']);
-    const [skipped] = shapeOf(log({ subRootWrites: false, checkFirst: false })).subMissions;
+    const [skipped] = shapeOf(log({ subRootWrites: false, checkFirst: false })).specialists;
     expect(skipped?.violations).toEqual(['did not run the check before the first fix']);
   });
 });

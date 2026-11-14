@@ -224,7 +224,7 @@ export const MessagePublishedSchema = closed(
     type: Type.Literal('MessagePublished'),
     messageRef: ArtifactRefSchema,
     agentLabel: text(80),
-    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY', 'RUN_RESULT']),
+    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY']),
     wrapUpReason: Type.Optional(WrapUpReasonSchema),
   },
   'kernel.control.MessagePublished.v1',

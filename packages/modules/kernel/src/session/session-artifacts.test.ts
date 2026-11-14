@@ -9,7 +9,7 @@ import {
   type ArtifactStorePort,
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import { publishMessage, publishReport } from './built-in-units.js';
+import { publishMessage } from './built-in-units.js';
 import { SessionArtifacts } from './session-artifacts.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -250,21 +250,6 @@ describe('message-publish', () => {
     expect(await artifacts.read(result.outputRef)).toEqual({
       ok: true,
       text: '{"reason":"BUDGET_EXHAUSTED"}',
-    });
-  });
-});
-
-describe('report-publish', () => {
-  it('refuses a goal it cannot resolve and a report that is not valid', async () => {
-    const { artifacts } = setup();
-    const other = setup();
-    const foreign = await other.artifacts.put('goal', 'text/plain', 'SESSION');
-    expect(await publishReport({ goalRef: foreign, report: {} }, artifacts, 1000)).toMatchObject({
-      reasonCode: 'INVALID_ARTIFACT_REF',
-    });
-    const goalRef = await artifacts.put('goal', 'text/plain', 'SESSION');
-    expect(await publishReport({ goalRef, report: {} }, artifacts, 1000)).toMatchObject({
-      reasonCode: 'INVALID_INPUT',
     });
   });
 });

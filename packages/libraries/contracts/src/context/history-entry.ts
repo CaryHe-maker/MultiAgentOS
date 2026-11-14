@@ -50,13 +50,6 @@ export const ContextHistoryEntrySchema = Type.Union(
       requestId: Type.Optional(IdSchemas.requestId),
       fullRef: Type.Optional(ArtifactRefSchema),
     }),
-    /** A predecessor's handoff, by the tool call that holds it; PINNED in the target's view. */
-    closed({
-      ...entry,
-      kind: Type.Literal('HANDOFF'),
-      outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
-      toolCallId: ToolCallIdSchema,
-    }),
     /** Answers a tool call that did not run, or corrects a reply without one. */
     closed({
       ...entry,
@@ -172,7 +165,6 @@ export const WRAP_UP_REASONS = [
   'MEMORY_LIMIT',
 ] as const;
 
-/** Shared with `AnalysisReport.wrapUp`, which adds the endings that are not wrap-ups. */
 export const WrapUpReasonSchema = Type.Enum(WRAP_UP_REASONS);
 export type WrapUpReason = Static<typeof WrapUpReasonSchema>;
 
@@ -190,7 +182,6 @@ export const ContextAssembleInputSchema = Type.Refine(
   closed(
     {
       final: Type.Boolean(),
-      orientPackRef: Type.Optional(artifactRefOf(MEDIA_TYPES.contextPack)),
       history: Type.Array(ContextHistoryEntrySchema),
       status: StatusFactsSchema,
       /** Tools the model is no longer offered, by model name (M2Design 3.6). */

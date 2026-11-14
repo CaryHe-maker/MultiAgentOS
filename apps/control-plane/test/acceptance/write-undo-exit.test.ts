@@ -717,21 +717,16 @@ describe('H5: an Orchestration run that has ended', () => {
     async () => {
       const place = await roots({ 'a.txt': 'one\n' });
       const file = join(place.repository, 'a.txt');
-      const handoff = scriptedChat(
-        tool('handoff_to_code_viewer', { task: 'look', focusAreas: [], openQuestions: [] }),
-      );
-      const provider = scriptedChat(
-        {
-          // No Agent of the analyze template writes yet , so the change comes from here.
-          response: async () => {
-            await writeFile(file, 'two\n');
-            return handoff.fetch('https://api.invalid', { body: '{}' });
-          },
+      const answer = scriptedChat(tool('reply', { text: 'done' }));
+      const provider = scriptedChat({
+        // The change comes from outside the run, while it works: the run leaves a Session behind.
+        response: async () => {
+          await writeFile(file, 'two\n');
+          return answer.fetch('https://api.invalid', { body: '{}' });
         },
-        tool('finish_analysis', { summary: 'done', conclusions: [], unconfirmed: [] }),
-      );
+      });
       const first = await chatOn(place, provider);
-      await first.console.run({ id: 'analyze', version: 'v0.1.0' }, 'look around');
+      await first.console.run({ id: 'mission', version: 'v0.1.0' }, 'look around');
       await first.close();
       expect(await readFile(file, 'utf8')).toBe('two\n');
 

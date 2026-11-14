@@ -411,8 +411,6 @@ function runExecutor(
   environment: ExecutorEnvironment,
 ): Promise<ExecutorOutcome> {
   switch (request.executionKind) {
-    case 'REPOSITORY_ORIENT':
-      return registry.REPOSITORY_ORIENT.execute(request.input, environment);
     case 'REPOSITORY_SEARCH':
       return registry.REPOSITORY_SEARCH.execute(request.input, environment);
     case 'REPOSITORY_LIST':

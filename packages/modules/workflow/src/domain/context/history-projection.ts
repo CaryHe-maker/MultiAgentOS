@@ -17,8 +17,8 @@ import { workspaceChangedNote } from '../workspace/workspace-binding.js';
 /**
  * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
  * the same entries and a later call only appends to an earlier one (invariants 7 and 27). main
- * sees every input of the Session and its work, across runs; a template node sees the run's goal, the handoff it
- * takes as input and its own steps. Tool results name their preview only; `fullRef` never enters
+ * sees every input of the Session and its work, across runs; a template node sees the run's goal
+ * and its own steps. Tool results name their preview only; `fullRef` never enters
  * a projection. The category is the one field that may change: a prompt is PINNED while its input
  * is the current one.
  */
@@ -38,7 +38,7 @@ export interface TaskScope {
    * step; a spawned task works from its task alone.
    */
   readonly withPrompt?: boolean;
-  /** The playbook of a subMission's root, in words (Orchestration 3.9). */
+  /** The playbook of a specialist, in words (Orchestration 3.9). */
   readonly playbook?: string;
   /**
    * The ended tasks this one takes up again (`continues`, Orchestration 5.3): their segments are
@@ -77,7 +77,6 @@ export type ProjectionScope =
       readonly workflowRunId: string;
       readonly agentRunId: string;
       readonly missionId?: string;
-      readonly handoff?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
       readonly task?: TaskScope;
     };
 
@@ -490,13 +489,6 @@ function projectOwn(
               ),
             });
           }
-          if (scope.handoff !== undefined)
-            entries.push({
-              seq: record.seq,
-              category: 'PINNED',
-              kind: 'HANDOFF',
-              ...scope.handoff,
-            });
         } else if (
           ownMission !== undefined && record.missionId !== undefined
             ? record.missionId === ownMission

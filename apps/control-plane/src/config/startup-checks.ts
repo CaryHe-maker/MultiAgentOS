@@ -82,20 +82,13 @@ function assertAgent(
     .flatMap((end) =>
       tools.filter((tool) => tool.id === end.toolRef.id && tool.version === end.toolRef.version),
     );
-  const orients = units.some(
-    (unit) =>
-      unit.executionKind === 'REPOSITORY_ORIENT' &&
-      agent.startUnitRefs.some((ref) => ref.id === unit.id),
-  );
   const fixed = (toolSpecs: readonly ModelToolSpec[]): number =>
     estimatePackTokens({
       items: [
         { role: 'system', content: prompt.template },
         { role: 'system', content: '', toolSpecs },
       ],
-    }) +
-    estimateItemTokens({ role: 'user', content: '\u0001'.repeat(STATUS_MAX_BYTES) }) +
-    (orients ? config.budget.orientBudget : 0);
+    }) + estimateItemTokens({ role: 'user', content: '\u0001'.repeat(STATUS_MAX_BYTES) });
   const normal = fixed(tools.map(specOf));
   const final = fixed(finalTools.map(specOf));
   if (normal >= perCallInputLimit)

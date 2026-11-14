@@ -142,7 +142,6 @@ const registry = createProtocolRegistry();
 
 /** The contracts of each kind's Unit; a Unit must name exactly these. */
 const UNIT_CONTRACTS: { readonly [K in ExecutionKind]?: readonly [string, string] } = {
-  REPOSITORY_ORIENT: ['context.RepositoryOrientInput.v1', 'context.RepositoryOrientOutput.v1'],
   REPOSITORY_SEARCH: ['context.RepositorySearchInput.v1', 'context.RepositorySearchOutput.v1'],
   REPOSITORY_LIST: ['executor.RepositoryListInput.v1', 'executor.RepositoryListOutput.v1'],
   FILE_READ: ['executor.FileReadInput.v1', 'executor.FileReadOutput.v1'],
@@ -156,7 +155,6 @@ const UNIT_CONTRACTS: { readonly [K in ExecutionKind]?: readonly [string, string
   CONTEXT_ASSEMBLE: ['context.ContextAssembleInput.v1', 'context.ContextAssembleOutput.v1'],
   MODEL: ['executor.ModelCallInput.v1', 'executor.ModelCallOutput.v1'],
   MESSAGE_PUBLISH: ['kernel.unit.MessagePublishInput.v1', 'kernel.unit.MessagePublishOutput.v1'],
-  REPORT_PUBLISH: ['kernel.unit.ReportPublishInput.v1', 'kernel.unit.ReportPublishOutput.v1'],
 };
 /** Where Workflow fills in part of the input, the tool's parameters are the rest (AgentToolPool 5). */
 const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
@@ -166,12 +164,8 @@ const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
   COMMAND: 'executor.RunCommandArgs.v1',
 };
 /** The arguments of each end action, as the model writes them. */
-const END_CONTRACTS: Readonly<
-  Record<'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT', readonly string[]>
-> = {
+const END_CONTRACTS: Readonly<Record<'PUBLISH_REPLY' | 'FINISH_SUBAGENT', readonly string[]>> = {
   PUBLISH_REPLY: ['workflow.ReplyArgs.v1'],
-  PUBLISH_REPORT: ['workflow.AnalysisReportDraft.v1'],
-  HANDOFF: ['workflow.HandoffBrief.v1'],
   // Each spawnable Agent declares the result it returns (M2Design 3.7).
   FINISH_SUBAGENT: ['workflow.ExplorerResult.v1', 'workflow.WorkerResult.v1'],
 };
@@ -519,30 +513,12 @@ function checkAgent(
       );
   const thens = new Set(body.actions.end.map((end) => end.then));
   const needsMessage = thens.has('PUBLISH_REPLY') || body.actions.onDegraded === 'PUBLISH_NOTICE';
-  const needsReport = thens.has('PUBLISH_REPORT') || body.actions.onDegraded === 'PUBLISH_REPORT';
   if (count('MESSAGE_PUBLISH') !== (needsMessage ? 1 : 0))
     report(
       origin,
       'AGENT_INVALID',
       `needs ${needsMessage ? 'exactly one' : 'no'} MESSAGE_PUBLISH unit`,
     );
-  if (count('REPORT_PUBLISH') !== (needsReport ? 1 : 0))
-    report(
-      origin,
-      'AGENT_INVALID',
-      `needs ${needsReport ? 'exactly one' : 'no'} REPORT_PUBLISH unit`,
-    );
-  const unitKeys = new Set(body.unitRefs.map((ref) => `${ref.id}@${ref.version}`));
-  for (const ref of body.startUnitRefs)
-    if (
-      !unitKeys.has(`${ref.id}@${ref.version}`) ||
-      get('UNIT', ref)?.executionKind !== 'REPOSITORY_ORIENT'
-    )
-      report(
-        origin,
-        'AGENT_INVALID',
-        `start unit ${ref.id} must be a REPOSITORY_ORIENT unit of this agent`,
-      );
 
   const { allowedEfforts, defaultEffort } = body.thinking;
   if (!allowedEfforts.includes(defaultEffort))
@@ -728,43 +704,14 @@ function checkTemplate(
     if (outputs.length !== 1 || outputs[0]?.kind !== 'AGENT' || outputs[0].role !== 'owner')
       report(origin, 'TEMPLATE_INVALID', 'exactly one output, and it is a step of the owner');
   }
-  const edges = new Map<
-    string,
-    readonly { readonly node: string; readonly conditional: boolean }[]
-  >();
+  const edges = new Map<string, readonly string[]>();
   for (const node of body.nodes) {
     if (node.kind !== 'AGENT') continue;
-    const dependencies = (node.dependsOn ?? []).map((dependency) =>
-      typeof dependency === 'string'
-        ? { node: dependency, conditional: false }
-        : { node: dependency.node, conditional: true },
-    );
+    const dependencies = node.dependsOn ?? [];
     edges.set(node.name, dependencies);
-    for (const dependency of dependencies) {
-      if (!nodes.has(dependency.node))
-        report(origin, 'TEMPLATE_INVALID', `${node.name} depends on unknown ${dependency.node}`);
-      if (dependency.conditional && body.origin !== 'BUILTIN')
-        report(
-          origin,
-          'TEMPLATE_INVALID',
-          `${node.name}: conditional edges are for built-in templates only`,
-        );
-    }
-    if (node.inputFrom === 'HANDOFF') {
-      const source = dependencies.find((dependency) => {
-        const before = nodes.get(dependency.node);
-        if (!dependency.conditional || before?.kind !== 'AGENT') return false;
-        return (
-          get('AGENT', before.agent)?.actions.end.some((end) => end.then === 'HANDOFF') === true
-        );
-      });
-      if (source === undefined)
-        report(
-          origin,
-          'TEMPLATE_INVALID',
-          `${node.name} takes a handoff, so it must depend conditionally on an agent that can hand off`,
-        );
-    }
+    for (const dependency of dependencies)
+      if (!nodes.has(dependency))
+        report(origin, 'TEMPLATE_INVALID', `${node.name} depends on unknown ${dependency}`);
   }
   const visiting = new Set<string>();
   const done = new Set<string>();
@@ -772,7 +719,7 @@ function checkTemplate(
     if (done.has(name)) return false;
     if (visiting.has(name)) return true;
     visiting.add(name);
-    const found = (edges.get(name) ?? []).some((dependency) => cyclic(dependency.node));
+    const found = (edges.get(name) ?? []).some((dependency) => cyclic(dependency));
     visiting.delete(name);
     done.add(name);
     return found;

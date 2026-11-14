@@ -3,7 +3,6 @@ kind: TEMPLATE
 id: fix-verify
 version: v0.1.0
 description: 'Pre-orchestrated: find the cause of a failure, fix it, and check until it passes.'
-origin: BUILTIN
 agent: fixer
 nodes:
   - name: root

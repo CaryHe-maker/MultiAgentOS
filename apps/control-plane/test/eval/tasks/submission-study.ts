@@ -103,7 +103,7 @@ const read = (repository: string, path: string) =>
 /** What every task judges besides its own outcome, and the shape it records. */
 function common(observation: Observation, expected: string): Check[] {
   const shape = shapeOf(observation.log);
-  const kept = shape.subMissions.filter((each) => each.violations.length === 0).length;
+  const kept = shape.specialists.filter((each) => each.violations.length === 0).length;
   return [
     check('mas run exited 0', 'OUTCOME', observation.exitCode === 0, String(observation.exitCode)),
     check(
@@ -119,7 +119,7 @@ function common(observation: Observation, expected: string): Check[] {
       true,
       JSON.stringify({
         expected,
-        subMissions: shape.subMissions.map((each) => ({
+        specialists: shape.specialists.map((each) => ({
           template: each.template,
           status: each.status,
           children: each.children.map((child) => `${child.agent}:${String(child.status)}`),
@@ -128,7 +128,7 @@ function common(observation: Observation, expected: string): Check[] {
           ownCommands: each.ownCommands,
           violations: each.violations,
         })),
-        kept: `${String(kept)}/${String(shape.subMissions.length)}`,
+        kept: `${String(kept)}/${String(shape.specialists.length)}`,
         runSubagentsCalls: shape.runSubagentsCalls,
         tasksByAgent: shape.tasksByAgent,
         rootWrites: shape.rootWrites,

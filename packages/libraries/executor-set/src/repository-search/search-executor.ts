@@ -99,13 +99,7 @@ async function search(
   if (scope === undefined) return violation('SCOPE_MISSING');
   const query = prepareQuery(input.query, input.mode);
   if (query === undefined) return rejected('INVALID_QUERY');
-  const maxFiles = 'maxFiles' in environment.limits ? environment.limits.maxFiles : undefined;
-  const built = await buildFileSet(scope, {
-    signal: environment.signal,
-    maxFiles,
-    cache: options.cache,
-  });
-  if (!built.ok) return rejected('LIMIT_EXCEEDED');
+  const built = await buildFileSet(scope, { signal: environment.signal, cache: options.cache });
   // Only below `path`; an external call also stays below the path it was allowed for.
   const asked = input.path === undefined ? '' : normalizeRequestPath(input.path);
   if (asked === undefined) return rejected('OUT_OF_SCOPE');
@@ -115,10 +109,10 @@ async function search(
   const prefix = within.length >= below.length ? within : below;
   const set: FileSet =
     prefix === ''
-      ? built.set
+      ? built
       : {
-          ...built.set,
-          files: built.set.files.filter(
+          ...built,
+          files: built.files.filter(
             (file) => file.path === prefix || file.path.startsWith(`${prefix}/`),
           ),
         };
@@ -161,7 +155,7 @@ async function search(
     });
   }
 
-  // Greedy fit as in orient: a hit that does not fit is skipped, smaller ones after it may fit.
+  // Greedy fit: a hit that does not fit is skipped, smaller ones after it may fit.
   const kept: string[] = [];
   const keptHits: SearchHit[] = [];
   let used = 0;

@@ -33,19 +33,16 @@ describe('pinnedAgentOf', () => {
 
   it('refuses an effort the Agent does not allow', async () => {
     expect(
-      pinnedAgentOf(await pinned('planner'), 'high', createProtocolRegistry(), ['repo.read']),
+      pinnedAgentOf(await pinned('explorer'), 'high', createProtocolRegistry(), ['repo.read']),
     ).toBe('FORBIDDEN');
   });
 
   it('offers only the end tools allowed in a final call', async () => {
-    const agent = pinnedAgentOf(await pinned('planner'), 'none', createProtocolRegistry(), [
+    const agent = pinnedAgentOf(await pinned('explorer'), 'none', createProtocolRegistry(), [
       'repo.read',
     ]);
     if (agent === 'FORBIDDEN') throw new Error('forbidden');
-    expect(agent.toolSpecs(false).map((spec) => spec.name)).toEqual([
-      'finish_analysis',
-      'handoff_to_code_viewer',
-    ]);
-    expect(agent.toolSpecs(true).map((spec) => spec.name)).toEqual(['finish_analysis']);
+    expect(agent.toolSpecs(false).map((spec) => spec.name)).toContain('read_file');
+    expect(agent.toolSpecs(true).map((spec) => spec.name)).toEqual(['finish_subagent']);
   });
 });

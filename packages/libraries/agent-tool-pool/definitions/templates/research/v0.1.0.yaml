@@ -5,7 +5,6 @@ version: v0.1.0
 description:
   'Pre-orchestrated: study questions from sources outside or inside the repository and hand back
   a written report in which every claim has its source.'
-origin: BUILTIN
 agent: researcher
 nodes:
   - name: root

@@ -19,7 +19,7 @@ import {
 import { parseCli, runCommand } from '@multiagentos/cli';
 import { composeSystem } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
-import { answeringTerminal } from '../system/analyze-template/harness.js';
+import { answeringTerminal } from '../support/answering-terminal.js';
 import { metricsOf } from './metrics.js';
 import type { Check, ChatStep, Observation, RunRecord, TaskSpec } from './spec.js';
 
@@ -133,13 +133,7 @@ async function runMission(
   let command: Parameters<typeof runCommand>[0];
   try {
     const parsed = await parseCli(
-      [
-        'run',
-        '--repo',
-        places.repository,
-        ...(step.template === undefined ? [] : [step.template]),
-        step.run,
-      ],
+      ['run', '--repo', places.repository, step.run],
       (text) => void terminal.written.push(text),
     );
     if (!parsed.ok || parsed.command.kind !== 'RUN') throw new Error('the CLI refused the run');
@@ -169,7 +163,7 @@ async function runMission(
     globalThis.fetch = original;
   }
   await system.start();
-  const template = system.templateRef(command.kind === 'RUN' ? command.template : 'mission');
+  const template = system.templateRef('mission');
   let timer: NodeJS.Timeout | undefined;
   const timedOut = new Promise<'TIMEOUT'>((resolve) => {
     timer = setTimeout(() => resolve('TIMEOUT'), timeoutMs);

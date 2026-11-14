@@ -39,18 +39,18 @@ const AGENT = 'agents/main/v0.1.0.yaml';
 const WORKER = 'agents/worker/v0.1.0.yaml';
 const FILE_READ = 'units/file-read/v0.1.0.yaml';
 const MODEL_CALL = 'units/model-call/v0.1.0.yaml';
-const TEMPLATE = 'templates/analyze/v0.1.0.yaml';
+const TEMPLATE = 'templates/mission/v0.1.0.yaml';
 
 describe('the repository catalog', () => {
   it('loads every v1 definition and pins each agent and the template', async () => {
     const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
-    for (const id of ['main', 'planner', 'code-viewer', 'explorer', 'worker']) {
+    for (const id of ['main', 'lead', 'explorer', 'worker']) {
       const pinned = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
       expect(pinned.ok).toBe(true);
     }
-    expect(catalog.template({ id: 'analyze', version: 'v0.1.0' }, context).ok).toBe(true);
+    expect(catalog.template({ id: 'mission', version: 'v0.1.0' }, context).ok).toBe(true);
   });
 
   it('pins the end tools with the unit tools', async () => {
@@ -236,8 +236,8 @@ describe('the rules of a v1 catalog', () => {
   it('refuses an end tool whose arguments do not fit its action', async () => {
     const issues = await issuesWhen(AGENT, (content) => {
       const actions = content['actions'] as { end: { then: string }[] };
-      actions.end = actions.end.map((end) => ({ ...end, then: 'PUBLISH_REPORT' }));
-      return { ...content, actions: { ...actions, onDegraded: 'PUBLISH_REPORT' } };
+      actions.end = actions.end.map((end) => ({ ...end, then: 'FINISH_SUBAGENT' }));
+      return { ...content, actions: { ...actions, onDegraded: 'RETURN_PARTIAL' } };
     });
     expect(issues).toContain(`AGENT_INVALID ${AGENT}`);
   });
@@ -246,22 +246,22 @@ describe('the rules of a v1 catalog', () => {
     [
       'a cycle',
       (c: Content) => {
-        const nodes = c['nodes'] as Content[];
-        return { ...c, nodes: [{ ...nodes[0], dependsOn: ['view'] }, nodes[1]] };
+        const [deliver] = c['nodes'] as Content[];
+        const check = { name: 'check', kind: 'AGENT', agent: deliver?.['agent'] };
+        return {
+          ...c,
+          nodes: [
+            { ...deliver, dependsOn: ['check'] },
+            { ...check, dependsOn: ['deliver'] },
+          ],
+        };
       },
     ],
     [
-      'a conditional edge in a repository template',
-      (c: Content) => ({ ...c, origin: 'REPOSITORY' }),
-    ],
-    [
-      'a handoff input without an agent that hands off',
+      'a dependency on a node that is not there',
       (c: Content) => {
-        const nodes = c['nodes'] as Content[];
-        return {
-          ...c,
-          nodes: [{ ...nodes[0], agent: { id: 'code-viewer', version: 'v0.1.0' } }, nodes[1]],
-        };
+        const [deliver] = c['nodes'] as Content[];
+        return { ...c, nodes: [{ ...deliver, dependsOn: ['missing'] }] };
       },
     ],
   ])('refuses a template with %s', async (_name, change) => {

@@ -32,7 +32,7 @@ export const DefinitionKindSchema = Type.Enum(DEFINITION_KINDS, {
   $id: 'catalog.DefinitionKind.v1',
 });
 
-/** Stable logical identity, lower kebab-case, e.g. `code-viewer`. */
+/** Stable logical identity, lower kebab-case, e.g. `fix-verify`. */
 export const DefinitionIdSchema = Type.String({
   pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$',
   maxLength: 64,
@@ -192,7 +192,6 @@ export const AgentDefinitionSchema = Type.Object(
     ),
     promptRef: DefinitionRefSchema,
     unitRefs: UniqueRefs({ minItems: 1 }),
-    startUnitRefs: UniqueRefs({ minItems: 0 }),
     /** How this Agent may end; a tool that is not declared here cannot end it. */
     actions: Type.Object(
       {
@@ -200,14 +199,14 @@ export const AgentDefinitionSchema = Type.Object(
           Type.Object(
             {
               toolRef: DefinitionRefSchema,
-              then: Type.Enum(['PUBLISH_REPLY', 'PUBLISH_REPORT', 'HANDOFF', 'FINISH_SUBAGENT']),
+              then: Type.Enum(['PUBLISH_REPLY', 'FINISH_SUBAGENT']),
               allowedInFinal: Type.Boolean(),
             },
             { additionalProperties: false },
           ),
           { minItems: 1 },
         ),
-        onDegraded: Type.Enum(['PUBLISH_NOTICE', 'PUBLISH_REPORT', 'RETURN_PARTIAL']),
+        onDegraded: Type.Enum(['PUBLISH_NOTICE', 'RETURN_PARTIAL']),
         /** The `update_todos` tool, which ends nothing (M2Design 3.5). */
         todos: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
@@ -489,32 +488,11 @@ export const ModelDefinitionSchema = Type.Object(
 export type ModelDefinition = DeepReadonly<Static<typeof ModelDefinitionSchema>>;
 
 const NodeNameSchema = Type.String({ pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$', maxLength: 64 });
-const ScalarSchema = Type.Union([Type.String(), Type.Boolean()]);
-
-/** Exactly one of `equals` and `in`; the field is a path into the predecessor's result. */
-export const EdgeConditionSchema = Type.Refine(
-  Type.Object(
-    {
-      field: TextSchema(128),
-      equals: Type.Optional(ScalarSchema),
-      in: Type.Optional(Type.Array(ScalarSchema, { minItems: 1 })),
-    },
-    { additionalProperties: false },
-  ),
-  (condition) => (condition.equals === undefined) !== (condition.in === undefined),
-  () => 'exactly one of equals and in must be present',
-);
-export type EdgeCondition = Static<typeof EdgeConditionSchema>;
-
-const TemplateDependencySchema = Type.Union([
-  NodeNameSchema,
-  Type.Object({ node: NodeNameSchema, when: EdgeConditionSchema }, { additionalProperties: false }),
-]);
 
 /**
- * The playbook of a pre-orchestrated template (Orchestration 3.9, D31): what the root of a
- * subMission follows. Phases come in order; a phase with `tasks` is one `run_subagents` call of the
- * root, of tasks of that Agent and in that number, which the system checks; `repeat` lets it come
+ * The playbook of a pre-orchestrated template (Orchestration 3.9, D39): what its specialist
+ * follows. Phases come in order; a phase with `tasks` is one `run_subagents` call of the
+ * specialist, of tasks of that Agent and in that number, which the system checks; `repeat` lets it come
  * again (a bounded loop); `optional` lets it be passed over. `example` is a worked plan the root
  * reads first (D32).
  */
@@ -530,9 +508,8 @@ export const PlaybookPhaseSchema = Type.Object(
           min: Type.Integer({ minimum: 1, maximum: 8 }),
           max: Type.Integer({ minimum: 1, maximum: 8 }),
           /**
-           * `inherit`: the tasks of this phase start with the whole context of the root of the
-           * subMission as it stood at the call, so they read nothing again (Orchestration 3.9,
-           * D35). Set by the template, never chosen by the model.
+           * `inherit`: the tasks of this phase start with the whole context of the specialist as
+           * it stood at the call, so they read nothing again (Orchestration 3.9, D35). Set by the template, never chosen by the model.
            */
           context: Type.Optional(Type.Literal('inherit')),
         },
@@ -582,8 +559,7 @@ export const TemplateNodeSchema = Type.Union([
       kind: Type.Literal('AGENT'),
       agent: DefinitionRefSchema,
       goal: Type.Optional(TextSchema(4_000)),
-      dependsOn: Type.Optional(Type.Array(TemplateDependencySchema)),
-      inputFrom: Type.Optional(Type.Literal('HANDOFF')),
+      dependsOn: Type.Optional(Type.Array(NodeNameSchema)),
       output: Type.Optional(Type.Boolean()),
       /** A step of the template's root task, its one responsible owner (Orchestration 3.5). */
       role: Type.Optional(Type.Literal('owner')),
@@ -605,7 +581,6 @@ export type TemplateNode = Static<typeof TemplateNodeSchema>;
 export const TemplateDefinitionSchema = Type.Object(
   {
     ...header('TEMPLATE'),
-    origin: Type.Enum(['BUILTIN', 'REPOSITORY']),
     /**
      * The one responsible owner of the graph (Orchestration 3.5): the Agent of every node marked
      * `role: owner`, which are the steps of the root task; every other AGENT node is a task below
@@ -616,8 +591,8 @@ export const TemplateDefinitionSchema = Type.Object(
     ),
     nodes: Type.Array(TemplateNodeSchema, { minItems: 1 }),
     /**
-     * A pre-orchestrated template (Orchestration 3.9): what the root of a subMission started with
-     * it follows. Its one node is that root.
+     * A pre-orchestrated template (Orchestration 3.9): what the specialist started with it
+     * follows. Its one node is that specialist.
      */
     playbook: Type.Optional(PlaybookSchema),
     /**

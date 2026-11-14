@@ -13,13 +13,6 @@ export {
 } from './domain/catalog-issue.js';
 export { isPeakTime, modelCallCost, type CallCost } from './domain/model-cost.js';
 export { DEFAULT_DEFINITIONS_DIRECTORY } from './definitions-directory.js';
-export {
-  REPOSITORY_TEMPLATE_RULES,
-  readRepositoryTemplate,
-  type RepositoryTemplateIssue,
-  type RepositoryTemplateRule,
-  type TemplateAgent,
-} from './catalog/repository-template.js';
 export type {
   DefinitionSource,
   SealPatch,

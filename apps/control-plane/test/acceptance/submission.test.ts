@@ -110,7 +110,7 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
               plan: 'One part: make the value check pass, handed to a fixer.',
             }),
             tool('sleep', { until: [{ kind: 'children' }] }),
-            tool('reply', { text: 'the value is fixed by the subMission' }),
+            tool('reply', { text: 'the value is fixed by the specialist' }),
           ],
           lead: [
             // reproduce
@@ -162,12 +162,12 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
         'src/value.txt': 'broken\n',
       });
       expect(run.code).toBe(0);
-      expect(run.notices.join('\n')).toContain('the value is fixed by the subMission');
+      expect(run.notices.join('\n')).toContain('the value is fixed by the specialist');
       expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
       const said = provider.requests
         .flatMap((request) => request.messages.map((message) => textOf(message)))
         .join('\n');
-      // The root of the subMission read its playbook and its example with its task.
+      // The specialist read its playbook and its example with its task.
       expect(said).toContain('You run a pre-orchestrated part of the work: template fix-verify');
       expect(said).toContain('An example of a good plan with this playbook');
       // What the playbook needs comes from the goal and acceptance main wrote (D39).
@@ -181,19 +181,19 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
       expect(said).toContain('this call does not follow your playbook');
       // Main read the report of the subtree's root like any subtask's.
       expect(said).toContain('Result of task fix-value');
-      // On the tree: the root of the subMission below main, its fixer below it.
+      // On the tree: the specialist below main, its fixer below it.
       const log = await logOf(run.dataDir);
       const spawned = log
         .filter((record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN')
         .flatMap((record) => record['nodes'] as Record<string, unknown>[]);
       const root = spawned.find((node) => node['name'] === 'fix-value');
       const fixer = spawned.find((node) => node['name'] === 'fixer');
-      expect((root?.['spawn'] as Record<string, unknown>)['submission']).toBeDefined();
+      expect((root?.['spawn'] as Record<string, unknown>)['specialist']).toBeDefined();
       expect((fixer?.['mission'] as Record<string, unknown>)['parentId']).toBe(
         (root?.['mission'] as Record<string, unknown>)['id'],
       );
       // The fix phase of fix-verify says `context: inherit` (D35): the fixer runs as the Agent of
-      // the root of the subMission and starts with that root's context.
+      // the specialist and starts with its context.
       expect((fixer?.['spawn'] as Record<string, unknown>)['inherits']).toMatchObject({
         missionId: (root?.['mission'] as Record<string, unknown>)['id'],
         as: 'worker',

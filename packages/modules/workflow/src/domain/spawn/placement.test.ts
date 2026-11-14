@@ -15,7 +15,6 @@ const node = (task?: GraphNodeRecord['spawn']): GraphNodeRecord => ({
   name: 'fix-api',
   kind: 'AGENT',
   trigger: 'all_success',
-  iteration: 1,
   ...(task === undefined ? {} : { spawn: task }),
 });
 const dispatch = { parentAgentRunId: 'agr_main', delegationId: 'dlg_1' };

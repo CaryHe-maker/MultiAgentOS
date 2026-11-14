@@ -263,18 +263,14 @@ describe('project instructions', () => {
 });
 
 describe('a template node', () => {
-  const handoff = { outputRef: ref('7'), toolCallId: 'call_9' };
-
-  it('sees the goal, its handoff and its own steps only', () => {
+  it('sees the goal and its own steps only', () => {
     const entries = projectHistory(conversation, {
       kind: 'NODE',
       workflowRunId: run,
       agentRunId: viewerRun,
-      handoff,
     });
-    expect(entries.map((entry) => entry.kind)).toEqual(['HUMAN', 'HANDOFF']);
+    expect(entries.map((entry) => entry.kind)).toEqual(['HUMAN']);
     expect(entries.every((entry) => entry.category === 'PINNED')).toBe(true);
-    expect(entries[1]).toMatchObject(handoff);
   });
 
   it('does not see the steps of another Agent', () => {

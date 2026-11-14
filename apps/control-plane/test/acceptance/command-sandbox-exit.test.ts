@@ -965,7 +965,12 @@ real('A: the authorization of commands', () => {
       );
       const chat = await chatOn(place, provider, {
         configure: kernel({
-          command: { deniedCommands: ['rm -rf'], criticalCommands: [], readOnlyCommands: [] },
+          command: {
+            deniedCommands: ['rm -rf'],
+            criticalCommands: [],
+            readOnlyCommands: [],
+            approval: 'ask',
+          },
         }),
       });
       await chat.say('clean up');

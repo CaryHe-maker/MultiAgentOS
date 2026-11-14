@@ -8,8 +8,7 @@ import { WrapUpReasonSchema } from '../context/history-entry.js';
 /**
  * The reply's text exists only in the model output, so the input carries a reference and a
  * `toolCallId` and the session log stays free of bodies (Kernel/Execution 5). A degraded reply
- * carries only the reason, as structured data; UserInteraction words it. RUN_RESULT comes with
- * the user templates.
+ * carries only the reason, as structured data; UserInteraction words it.
  */
 export const MessagePublishInputSchema = Type.Union(
   [
@@ -35,7 +34,7 @@ export type MessagePublishInput = Static<typeof MessagePublishInputSchema>;
 
 export const MessagePublishOutputSchema = closed(
   {
-    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY', 'RUN_RESULT']),
+    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY']),
     wrapUpReason: Type.Optional(WrapUpReasonSchema),
   },
   'kernel.unit.MessagePublishOutput.v1',

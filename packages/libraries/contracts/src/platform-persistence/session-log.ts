@@ -65,16 +65,10 @@ export const SpawnNodeSchema = closed({
     }),
   ),
   /**
-   * The root of a subMission (Orchestration 3.9): the template it follows, with its playbook as it
-   * was when the work was handed over, and the parameters given; the log alone says what it must do.
+   * A specialist (Orchestration 3.9, D39): the template whose playbook it follows, with the
+   * playbook as it was when the task was started, so the log alone says what it must do.
    */
-  submission: Type.Optional(
-    closed({
-      template: DefinitionRefSchema,
-      playbook: PlaybookSchema,
-      params: Type.Record(Type.String({ maxLength: 40 }), text(2000)),
-    }),
-  ),
+  specialist: Type.Optional(closed({ template: DefinitionRefSchema, playbook: PlaybookSchema })),
 });
 export type SpawnNode = Static<typeof SpawnNodeSchema>;
 
@@ -124,13 +118,10 @@ export const GraphNodeRecordSchema = closed({
   name: text(64),
   kind: Type.Enum(['AGENT', 'HUMAN']),
   trigger: Type.Enum(['all_success', 'all_done']),
-  iteration: count(1),
-  loopId: Type.Optional(text(64)),
   agentRef: Type.Optional(DefinitionRefSchema),
   goal: Type.Optional(text(4000)),
   /** What the step's Agent reads with its goal: the template's worked examples (D32). */
   guide: Type.Optional(Type.String({ maxLength: 30_000 })),
-  inputFrom: Type.Optional(Type.Literal('HANDOFF')),
   output: Type.Optional(Type.Boolean()),
   /** Of an AGENT node: the task it is a segment of. */
   mission: Type.Optional(NodeMissionSchema),
@@ -166,15 +157,8 @@ export const GraphEdgeRecordSchema = closed({
    * that waits for it (M2Design 3.1). Both carry `call`. `CONTINUES`: from a segment that slept to
    * the segment that took over when its task woke (Orchestration 3.2); no readiness follows it.
    */
-  kind: Type.Enum(['DEPENDS', 'CONDITIONAL', 'DELEGATE', 'RESUME', 'CONTINUES']),
+  kind: Type.Enum(['DEPENDS', 'DELEGATE', 'RESUME', 'CONTINUES']),
   call: Type.Optional(EdgeCallSchema),
-  when: Type.Optional(
-    closed({
-      field: text(128),
-      equals: Type.Optional(Type.Union([Type.String(), Type.Boolean()])),
-      in: Type.Optional(Type.Array(Type.Union([Type.String(), Type.Boolean()]))),
-    }),
-  ),
 });
 export type GraphEdgeRecord = Static<typeof GraphEdgeRecordSchema>;
 
@@ -307,9 +291,9 @@ export const SessionLogRecordSchema = Type.Union(
       nodeId: IdSchemas.nodeId,
       /** `YIELDED`: the segment went to wait before its work was done; its task goes on. */
       status: Type.Enum(['SUCCEEDED', 'FAILED', 'SKIPPED', 'INTERRUPTED', 'YIELDED']),
-      skipReason: Type.Optional(Type.Enum(['DEPENDENCY_FAILED', 'NOT_TAKEN'])),
+      skipReason: Type.Optional(Type.Enum(['DEPENDENCY_FAILED'])),
       resultRef: Type.Optional(ArtifactRefSchema),
-      /** The structured result conditions read, such as a planner's `action`. */
+      /** What a task's segment ended with: its status, notes and the call that holds its result. */
       result: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
     }),
     record('HUMAN_REQUESTED', inTurn, {

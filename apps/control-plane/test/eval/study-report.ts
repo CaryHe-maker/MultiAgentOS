@@ -19,7 +19,7 @@ const archive = argv.includes('--archive') ? argv[argv.indexOf('--archive') + 1]
 if (recordsFile === undefined) throw new Error('study-report.ts <records.jsonl> [--archive <dir>]');
 
 interface Recorded {
-  readonly subMissions: readonly {
+  readonly specialists: readonly {
     readonly template: string;
     readonly status?: string;
     readonly children: readonly string[];
@@ -37,7 +37,7 @@ interface Recorded {
 
 const fromShape = (shape: RunShape): Recorded => ({
   ...shape,
-  subMissions: shape.subMissions.map((each) => ({
+  specialists: shape.specialists.map((each) => ({
     ...each,
     children: each.children.map((child) => `${child.agent}:${String(child.status)}`),
   })),
@@ -92,8 +92,8 @@ async function main(): Promise<void> {
   out.push('|---|---|---|---|---|---|---|---|---|---|');
   for (const { record, shape, source } of rows)
     out.push(
-      `| ${record.taskId} | ${String(record.run)} | ${record.ok ? 'yes' : 'no'} | ${String(shape.subMissions.length)} | ${
-        shape.subMissions
+      `| ${record.taskId} | ${String(record.run)} | ${record.ok ? 'yes' : 'no'} | ${String(shape.specialists.length)} | ${
+        shape.specialists
           .map((each) => `${each.template}: ${each.violations.length === 0 ? 'kept' : 'broke'}`)
           .join(', ') || '-'
       } | ${String(shape.runSubagentsCalls)} | ${
@@ -112,7 +112,7 @@ async function main(): Promise<void> {
   for (const { record, shape } of rows) {
     out.push(`### ${record.taskId} #${String(record.run)}`, '');
     out.push(
-      '| task | Agent | parent | in subMission | status | segments | requests | tokens in/out | peak input | compactions (pruned/summarised) | tools | not OK | feedback | files changed |',
+      '| task | Agent | parent | in specialist | status | segments | requests | tokens in/out | peak input | compactions (pruned/summarised) | tools | not OK | feedback | files changed |',
     );
     out.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
     for (const task of shape.tasks ?? [])
@@ -125,7 +125,7 @@ async function main(): Promise<void> {
   const byAgent = new Map<string, Record<string, number>>();
   for (const { shape } of rows)
     for (const task of shape.tasks ?? []) {
-      const key = task.template === undefined ? task.agent : `${task.agent} (subMission root)`;
+      const key = task.template === undefined ? task.agent : `${task.agent} (specialist)`;
       const into = byAgent.get(key) ?? {};
       for (const [tool, count] of Object.entries(task.tools))
         into[tool] = (into[tool] ?? 0) + count;
@@ -134,7 +134,7 @@ async function main(): Promise<void> {
   for (const [agent, tools] of byAgent) out.push(`- ${agent}: ${counts(tools)}`);
 
   out.push('', '## Use of specialists by task', '');
-  out.push('| task | runs | runs that used it | subMissions | kept to the playbook | passed |');
+  out.push('| task | runs | runs that used it | specialists | kept to the playbook | passed |');
   out.push('|---|---|---|---|---|---|');
   const tasks = [...new Set(rows.map((row) => row.record.taskId))];
   let allRuns = 0;
@@ -143,8 +143,8 @@ async function main(): Promise<void> {
   let allKept = 0;
   for (const task of tasks) {
     const mine = rows.filter((row) => row.record.taskId === task);
-    const used = mine.filter((row) => row.shape.subMissions.length > 0).length;
-    const subs = mine.flatMap((row) => row.shape.subMissions);
+    const used = mine.filter((row) => row.shape.specialists.length > 0).length;
+    const subs = mine.flatMap((row) => row.shape.specialists);
     const kept = subs.filter((each) => each.violations.length === 0).length;
     allRuns += mine.length;
     allUsed += used;
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
 
   out.push('', '## Violations of a playbook', '');
   const broken = rows.flatMap((row) =>
-    row.shape.subMissions
+    row.shape.specialists
       .filter((each) => each.violations.length > 0)
       .map(
         (each) =>
@@ -170,7 +170,7 @@ async function main(): Promise<void> {
   out.push(...(broken.length === 0 ? ['none'] : broken));
   out.push('', '## Calls sent back by the runner for the playbook', '');
   const sent = rows.flatMap((row) =>
-    row.shape.subMissions
+    row.shape.specialists
       .filter((each) => Object.keys(each.sentBack).length > 0)
       .map(
         (each) =>

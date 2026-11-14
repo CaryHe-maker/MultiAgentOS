@@ -201,13 +201,12 @@ async function prepare(): Promise<number> {
   await writeFile(config, `${JSON.stringify({ dataDir })}\n`);
   const exitFile = `${dataDir}.exit`;
   const bin = resolve('apps/control-plane/dist/bin.js');
-  const template = step.template === undefined ? '' : ` ${quoted(step.template)}`;
   process.stdout.write(
     [
       `The repository of ${task.id} is ready in ${repository}; its run keeps its Session in ${dataDir}.`,
       '',
       'Run it and watch it (the key in DEEPSEEK_API_KEY, as for mas):',
-      `  MULTIAGENTOS_CONFIG=${quoted(config)} node ${quoted(bin)} run --repo ${quoted(repository)}${template} ${quoted(step.run)}; echo $? > ${quoted(exitFile)}`,
+      `  MULTIAGENTOS_CONFIG=${quoted(config)} node ${quoted(bin)} run --repo ${quoted(repository)} ${quoted(step.run)}; echo $? > ${quoted(exitFile)}`,
       '',
       'Then judge it, as a run of the evaluation is judged (EVAL_ARCHIVE keeps it for study-report.ts):',
       `  pnpm run eval judge --tasks ${task.id} --repo ${quoted(repository)} --data ${quoted(dataDir)} --exit "$(cat ${quoted(exitFile)})" --out <records.jsonl>`,

@@ -17,7 +17,7 @@ import {
   type ExecutionConfig,
 } from './attempt-request.js';
 import type { Fingerprints } from './change-scan.js';
-import { publishMessage, publishReport, type BuiltInResult } from './built-in-units.js';
+import { publishMessage, type BuiltInResult } from './built-in-units.js';
 import {
   AttemptQueues,
   type ConcurrencyClass,
@@ -166,7 +166,6 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
     case 'FILE_WRITE':
     case 'FILE_EDIT':
     case 'MESSAGE_PUBLISH':
-    case 'REPORT_PUBLISH':
       return 'WRITE';
     case 'COMMAND':
       return spec.scope.kind === 'SANDBOX' &&
@@ -189,12 +188,10 @@ type Completed = Exclude<
 >;
 type NotCompleted = Exclude<ExecutionFact, { outcome: 'COMPLETED' }>;
 
-/** The overview is a structure with its own token budget, not a preview of an output. */
+/** Model work has no preview limits: its output is not cut for the model. */
 const toolLimitOf = (fact: Completed, config: ExecutionConfig) => {
   const { executionKind } = fact;
-  return executionKind === 'MODEL' ||
-    executionKind === 'CONTEXT_ASSEMBLE' ||
-    executionKind === 'REPOSITORY_ORIENT'
+  return executionKind === 'MODEL' || executionKind === 'CONTEXT_ASSEMBLE'
     ? undefined
     : config.executionLimits[executionKind];
 };
@@ -357,14 +354,11 @@ export class RunExecution {
 
   async #run(attempt: Attempt): Promise<void> {
     const { unit, input } = attempt.spec;
-    const { artifacts, config } = this.#deps;
-    if (unit.executionKind === 'MESSAGE_PUBLISH' || unit.executionKind === 'REPORT_PUBLISH') {
+    const { artifacts } = this.#deps;
+    if (unit.executionKind === 'MESSAGE_PUBLISH') {
       let result: BuiltInResult;
       try {
-        result =
-          unit.executionKind === 'MESSAGE_PUBLISH'
-            ? await publishMessage(input, artifacts)
-            : await publishReport(input, artifacts, config.maxReportBytes);
+        result = await publishMessage(input, artifacts);
       } catch {
         result = { outcome: 'FAILED', reasonCode: 'INTERNAL' };
       }

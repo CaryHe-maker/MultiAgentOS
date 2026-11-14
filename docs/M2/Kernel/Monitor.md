@@ -32,7 +32,7 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 ### 3.2 Turn 账本
 
 - 记账单位：结算额 = 未命中的输入 + 命中的输入 × 命中权重 + 输出；命中权重由预留时给出（模型定义的命中单价 ÷ 未命中单价）。预留额 = 校准后的输入估算 × 1.05 + 该次调用的输出上限（M2Design 第 7.3、9.3 节）。
-- 开启：`L_turn = min(budget.turnTokenLimit, 运行级剩余)`；从运行级账本扣除。`L_turn < minShare(main)` 时照常开启，状态直接为 WRAP_UP（[Core](Core.md) 第 6 节）。
+- 开启：`L_turn = min(budget.inputTokenLimit, 运行级剩余)`；从运行级账本扣除。`L_turn < minShare(main)` 时照常开启，状态直接为 WRAP_UP（[Core](Core.md) 第 6 节）。
 - Turn 账本就是 main 的账本：`F = F(main)`，`wrapUpMargin = wrapUpMargin(main)`，预留与状态按 M1 Monitor 第 3.2、3.3 节计算。
 - 结束：未结算的预留按 UNKNOWN 结算（M1 的 `finalize` 规则），剩余返还运行级账本；返回 `TurnUsage`。
 
@@ -73,7 +73,7 @@ M2Design 第 7.3 节"压缩的额度"：
 
 | 上限 | 计数 | 触顶时 |
 |---|---|---|
-| `maxToolUnits` | 该 AgentRun 被受理的工具 Unit 数（不含 `context-assemble`、`model-call` 与两个发布 Unit `message-publish`、`report-publish`：它们用于结束 Agent，触顶后仍须可用） | 拒绝该 AgentRun 后续的非收尾 Unit，原因码 `QUOTA_EXHAUSTED`，`quota = 'TOOL_UNITS'` |
+| `maxToolUnits` | 该 AgentRun 被受理的工具 Unit 数（不含 `context-assemble`、`model-call` 与发布 Unit `message-publish`：它们用于结束 Agent，触顶后仍须可用） | 拒绝该 AgentRun 后续的非收尾 Unit，原因码 `QUOTA_EXHAUSTED`，`quota = 'TOOL_UNITS'` |
 | `maxWallClockMs` | 从登记开始计时；等待人类、等待授权的时间不计入（暂停与等待子任务也不计入）。判定与 Turn 超时的暂停相同：该 AgentRun 没有已派发或待派发的尝试（挂起在授权询问上的不算）且有待答复的询问时停止计时，Core 在每次处理消息的末尾重新判断，只为最早可能到点的墙钟设一个定时器；没有设置该上限的 Agent 不计时 | 同上，`quota = 'WALL_CLOCK'` |
 
 Monitor 只计数与判断，计时器由 Core 持有并在到点时调用 Monitor。重复意图与连续出错是业务判断，归 Workflow（M2Design 第 3.4 节）。
@@ -109,16 +109,17 @@ main 的 `agentRun` 一项等于 `turn`。
 | 配置 | 缺省（初值） | 说明 |
 |---|---|---|
 | `runTokenLimit` | 24000000 | 运行级上限 |
-| `turnTokenLimit` | 8000000 | 每个 Turn 的上限 |
+| `inputTokenLimit` | 8000000 | 每个 Turn（一次输入引出的全部工作）的上限 |
+| `reserveShare` | 0.3 | 估算收尾保留、余量、最小份额与预留时输入按这个比例计（M2Design 第 7.3 节规则 10） |
 
 M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxOutputTokens` 从全局配置移入 Agent 定义；
-`orientBudget`、`searchBudget` 仍是全局配置（M1 Monitor 第 4 节）。
+`searchBudget` 仍是全局配置（M1 Monitor 第 4 节）；M1 的 `orientBudget` 随仓库概览删除。
 
 **启动检查**（沿用 M1 Monitor 第 4 节的做法，作用于每个可登记的 Agent）：
 
 1. 每个 Agent 的四个额度参数为正安全整数，求和不溢出；
 2. 每个 Agent 的普通调用与收尾调用的估算不超过其模型的上下文窗口与输出上限；
-3. `turnTokenLimit ≥ minShare(main)`；`runTokenLimit ≥ turnTokenLimit`；
+3. `inputTokenLimit ≥ minShare(main)`；`runTokenLimit ≥ inputTokenLimit`；
 4. 固定部分（system 段、`PINNED` 条目的上限、STATUS 与收尾提示）的估算严格小于该 Agent 的 `perCallInputLimit` 与 `finalInputBudget`（M1 的第 4、5 条，改为按 Agent 计算）。
 
 ## 7. 不变量与测试

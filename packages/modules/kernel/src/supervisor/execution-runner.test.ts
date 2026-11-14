@@ -17,7 +17,7 @@ import { createExecutorEnvironment } from './environment.js';
 import { ExecutionRunner } from './execution-runner.js';
 import { toExecutionFact, toTerminationFact } from './fact-mapper.js';
 
-type OrientRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_ORIENT' }>;
+type ListRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_LIST' }>;
 type ModelRequest = Extract<ExecutionRequest, { executionKind: 'MODEL' }>;
 
 const SHA = 'a'.repeat(64);
@@ -27,18 +27,11 @@ const TOOL_LIMITS = {
   preview: { maxBytes: 1024, maxLines: 100 },
   maxFullOutputBytes: 4096,
 };
-const completedOrient: ExecutorOutcome = {
+const completedList: ExecutorOutcome = {
   outcome: 'COMPLETED',
   result: {
-    output: {
-      snapshotId: `snp_${SHA}`,
-      fileCount: 0,
-      totalBytes: 0,
-      summary: 'empty',
-      tokenCount: 0,
-      truncated: false,
-    },
-    artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
+    output: { path: '.', directoryCount: 0, fileCount: 0, omittedEntries: 0 },
+    artifact: { mediaType: MEDIA_TYPES.fileText, text: '' },
   },
 };
 
@@ -56,22 +49,21 @@ afterEach(() => {
   for (const runner of runners.splice(0)) runner.stop();
 });
 
-function orientRequest(executionId = 'exe_123456'): OrientRequest {
+function listRequest(executionId = 'exe_123456'): ListRequest {
   return {
     sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId,
     runEpoch: 1,
-    executionKind: 'REPOSITORY_ORIENT',
-    input: { objective: 'analyze', tokenBudget: 4000 },
+    executionKind: 'REPOSITORY_LIST',
+    input: {},
     scope: { kind: 'REPOSITORY', repositoryRoot: '/repo', exclusions: [] },
     limits: {
       deadline: '2026-10-19T01:00:00.000Z',
       maxOutputBytes: 1024,
       preview: { maxBytes: 1024, maxLines: 100 },
       maxFullOutputBytes: 4096,
-      maxFiles: 10,
     },
   };
 }
@@ -117,25 +109,18 @@ function modelRequest(): ModelRequest {
 
 function requestFor(kind: ExecutorKind): ExecutionRequest {
   switch (kind) {
-    case 'REPOSITORY_ORIENT':
-      return orientRequest();
+    case 'REPOSITORY_LIST':
+      return listRequest();
     case 'REPOSITORY_SEARCH':
       return {
-        ...orientRequest(),
+        ...listRequest(),
         executionKind: 'REPOSITORY_SEARCH',
         input: { query: 'x', mode: 'AUTO', maxItems: 10, tokenBudget: 1000 },
         limits: TOOL_LIMITS,
       };
-    case 'REPOSITORY_LIST':
-      return {
-        ...orientRequest(),
-        executionKind: 'REPOSITORY_LIST',
-        input: {},
-        limits: TOOL_LIMITS,
-      };
     case 'FILE_READ':
       return {
-        ...orientRequest(),
+        ...listRequest(),
         executionKind: 'FILE_READ',
         input: { path: 'a.ts' },
         limits: TOOL_LIMITS,
@@ -173,22 +158,14 @@ function requestFor(kind: ExecutorKind): ExecutionRequest {
 
 function completedFor(kind: ExecutorKind): ExecutorOutcome {
   switch (kind) {
-    case 'REPOSITORY_ORIENT':
-      return completedOrient;
+    case 'REPOSITORY_LIST':
+      return completedList;
     case 'REPOSITORY_SEARCH':
       return {
         outcome: 'COMPLETED',
         result: {
           output: { snapshotId: `snp_${SHA}`, hits: [], truncated: false },
           artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
-        },
-      };
-    case 'REPOSITORY_LIST':
-      return {
-        outcome: 'COMPLETED',
-        result: {
-          output: { path: '.', directoryCount: 0, fileCount: 0, omittedEntries: 0 },
-          artifact: { mediaType: MEDIA_TYPES.fileText, text: '' },
         },
       };
     case 'FILE_READ':
@@ -248,13 +225,12 @@ function executor<K extends ExecutorKind>(kind: K, execute: Executor<K>['execute
   return { executionKind: kind, execute };
 }
 
-function registry(orient: Executor<'REPOSITORY_ORIENT'>): ExecutorRegistry {
+function registry(list: Executor<'REPOSITORY_LIST'>): ExecutorRegistry {
   const unused = <K extends ExecutorKind>(kind: K): Executor<K> =>
     executor(kind, () => Promise.resolve({ outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' }));
   return {
-    REPOSITORY_ORIENT: orient,
+    REPOSITORY_LIST: list,
     REPOSITORY_SEARCH: unused('REPOSITORY_SEARCH'),
-    REPOSITORY_LIST: unused('REPOSITORY_LIST'),
     FILE_READ: unused('FILE_READ'),
     FILE_WRITE: unused('FILE_WRITE'),
     FILE_EDIT: unused('FILE_EDIT'),
@@ -269,11 +245,11 @@ function registry(orient: Executor<'REPOSITORY_ORIENT'>): ExecutorRegistry {
   };
 }
 
-function makeRunner(orient: Executor<'REPOSITORY_ORIENT'>): {
+function makeRunner(list: Executor<'REPOSITORY_LIST'>): {
   readonly runner: ExecutionRunner;
   readonly sink: RecordingSink;
 } {
-  return makeRunnerWith(registry(orient));
+  return makeRunnerWith(registry(list));
 }
 
 function makeRunnerWith(
@@ -299,12 +275,12 @@ function makeRunnerWith(
 }
 
 function registryFor<K extends ExecutorKind>(kind: K, target: Executor<K>): ExecutorRegistry {
-  const base = registry(executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient)));
+  const base = registry(executor('REPOSITORY_LIST', () => Promise.resolve(completedList)));
   return { ...base, [kind]: target };
 }
 
-function pendingUntilAbort(outcome: ExecutorOutcome): Executor<'REPOSITORY_ORIENT'> {
-  return executor('REPOSITORY_ORIENT', (_input, environment) => {
+function pendingUntilAbort(outcome: ExecutorOutcome): Executor<'REPOSITORY_LIST'> {
+  return executor('REPOSITORY_LIST', (_input, environment) => {
     if (environment.signal.aborted) return Promise.resolve(outcome);
     return new Promise((resolve) => {
       environment.signal.addEventListener('abort', () => resolve(outcome), { once: true });
@@ -312,8 +288,8 @@ function pendingUntilAbort(outcome: ExecutorOutcome): Executor<'REPOSITORY_ORIEN
   });
 }
 
-function hanging(): Executor<'REPOSITORY_ORIENT'> {
-  return executor('REPOSITORY_ORIENT', () => new Promise(() => undefined));
+function hanging(): Executor<'REPOSITORY_LIST'> {
+  return executor('REPOSITORY_LIST', () => new Promise(() => undefined));
 }
 
 async function waitForFact(sink: RecordingSink): Promise<ExecutionFact> {
@@ -329,20 +305,20 @@ describe('ExecutionRunner', () => {
   it('accepts before starting and reports a completed fact', async () => {
     let started = false;
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => {
+      executor('REPOSITORY_LIST', () => {
         started = true;
-        return Promise.resolve(completedOrient);
+        return Promise.resolve(completedList);
       }),
     );
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     expect(started).toBe(false);
 
     await vi.waitFor(() => expect(started).toBe(true));
     const fact = await waitForFact(sink);
     expect(fact).toMatchObject({
       outcome: 'COMPLETED',
-      executionKind: 'REPOSITORY_ORIENT',
+      executionKind: 'REPOSITORY_LIST',
       workflowRunId: 'wfr_123456',
       unitAttemptId: 'una_123456',
       executionId: 'exe_123456',
@@ -356,12 +332,12 @@ describe('ExecutionRunner', () => {
   it('honours notBefore before starting the Executor', async () => {
     let started = false;
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => {
+      executor('REPOSITORY_LIST', () => {
         started = true;
-        return Promise.resolve(completedOrient);
+        return Promise.resolve(completedList);
       }),
     );
-    const request = { ...orientRequest(), notBefore: '2026-10-19T00:00:00.050Z' };
+    const request = { ...listRequest(), notBefore: '2026-10-19T00:00:00.050Z' };
 
     runner.execute(request, 'cor_123456');
     await delay(10);
@@ -373,20 +349,20 @@ describe('ExecutionRunner', () => {
   });
 
   it.each<ExecutorOutcome>([
-    completedOrient,
+    completedList,
     { outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' },
     { outcome: 'FAILED', reasonCode: 'INTERNAL', retryable: true },
     { outcome: 'VIOLATION', reasonCode: 'PATH_ESCAPE' },
   ])('maps the normal Executor outcome %# without duplicates', async (outcome) => {
     let calls = 0;
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => {
+      executor('REPOSITORY_LIST', () => {
         calls += 1;
         return Promise.resolve(outcome);
       }),
     );
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     const fact = await waitForFact(sink);
     expect(fact.outcome).toBe(outcome.outcome);
     expect(calls).toBe(1);
@@ -396,10 +372,10 @@ describe('ExecutionRunner', () => {
 
   it('normalizes an Executor throw to FAILED(INTERNAL, retryable=false)', async () => {
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => Promise.reject(new Error('boom'))),
+      executor('REPOSITORY_LIST', () => Promise.reject(new Error('boom'))),
     );
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     const fact = await waitForFact(sink);
     expect(fact).toMatchObject({
       outcome: 'FAILED',
@@ -413,13 +389,13 @@ describe('ExecutionRunner', () => {
   it('ignores a duplicate executionId and reports one fact', async () => {
     let calls = 0;
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => {
+      executor('REPOSITORY_LIST', () => {
         calls += 1;
-        return Promise.resolve(completedOrient);
+        return Promise.resolve(completedList);
       }),
     );
 
-    const request = orientRequest();
+    const request = listRequest();
     runner.execute(request, 'cor_123456');
     runner.execute(request, 'cor_123456');
     await waitForFact(sink);
@@ -429,7 +405,7 @@ describe('ExecutionRunner', () => {
   });
 
   it.each<ExecutorKind>([
-    'REPOSITORY_ORIENT',
+    'REPOSITORY_LIST',
     'REPOSITORY_SEARCH',
     'FILE_READ',
     'CONTEXT_ASSEMBLE',
@@ -451,7 +427,7 @@ describe('ExecutionRunner', () => {
 
   it('turns a missing executor into FAILED(INTERNAL)', async () => {
     const { runner, sink } = makeRunnerWith({} as ExecutorRegistry);
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     const fact = await waitForFact(sink);
     expect(fact).toMatchObject({ outcome: 'FAILED', reasonCode: 'INTERNAL', retryable: false });
   });
@@ -459,12 +435,12 @@ describe('ExecutionRunner', () => {
   it('stop clears a scheduled start and rejects later requests', async () => {
     let started = false;
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => {
+      executor('REPOSITORY_LIST', () => {
         started = true;
-        return Promise.resolve(completedOrient);
+        return Promise.resolve(completedList);
       }),
     );
-    const request = { ...orientRequest(), notBefore: '2026-10-19T00:00:00.050Z' };
+    const request = { ...listRequest(), notBefore: '2026-10-19T00:00:00.050Z' };
 
     runner.execute(request, 'cor_123456');
     runner.stop();
@@ -472,7 +448,7 @@ describe('ExecutionRunner', () => {
 
     expect(started).toBe(false);
     expect(sink.facts).toHaveLength(0);
-    expect(() => runner.execute(orientRequest('exe_654321'), 'cor_123456')).toThrow('stopped');
+    expect(() => runner.execute(listRequest('exe_654321'), 'cor_123456')).toThrow('stopped');
   });
 
   it('reports STOP_UNCONFIRMED when stop happens while the Executor is running', async () => {
@@ -480,13 +456,13 @@ describe('ExecutionRunner', () => {
     const pending = new Promise<ExecutorOutcome>((resolve) => {
       release = resolve;
     });
-    const { runner, sink } = makeRunner(executor('REPOSITORY_ORIENT', () => pending));
+    const { runner, sink } = makeRunner(executor('REPOSITORY_LIST', () => pending));
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
     runner.stop();
     const fact = await waitForFact(sink);
-    release?.(completedOrient);
+    release?.(completedList);
     await delay(10);
 
     expect(fact).toMatchObject({
@@ -498,9 +474,9 @@ describe('ExecutionRunner', () => {
   });
 
   it('is idempotent across repeated stop calls', async () => {
-    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedList)), 50);
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
     runner.stop();
     runner.stop();
@@ -513,7 +489,7 @@ describe('ExecutionRunner', () => {
 
   it('keeps the existing abort reason when stop follows a deadline', async () => {
     const { runner, sink } = makeRunnerWith(registry(hanging()), 50);
-    const request = orientRequest();
+    const request = listRequest();
     request.limits = { ...request.limits, deadline: '2026-10-19T00:00:00.010Z' };
 
     runner.execute(request, 'cor_123456');
@@ -530,7 +506,7 @@ describe('ExecutionRunner', () => {
       report: () => Promise.reject(new Error('stop inbox unavailable')),
     };
     const runner = new ExecutionRunner({
-      executors: registry(pendingUntilAbort(completedOrient)),
+      executors: registry(pendingUntilAbort(completedList)),
       credentials,
       subprocess,
       sandbox: DENY_SANDBOX,
@@ -541,7 +517,7 @@ describe('ExecutionRunner', () => {
     });
     runners.push(runner);
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
     runner.stop();
     await vi.waitFor(() =>
@@ -556,7 +532,7 @@ describe('ExecutionRunner', () => {
       report: () => Promise.reject(new Error('inbox unavailable')),
     };
     const runner = new ExecutionRunner({
-      executors: registry(executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient))),
+      executors: registry(executor('REPOSITORY_LIST', () => Promise.resolve(completedList))),
       credentials,
       subprocess,
       sandbox: DENY_SANDBOX,
@@ -567,7 +543,7 @@ describe('ExecutionRunner', () => {
     });
     runners.push(runner);
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     await vi.waitFor(() =>
       expect(runner.healthDetails().some((line) => line.includes('inbox unavailable'))).toBe(true),
     );
@@ -576,12 +552,12 @@ describe('ExecutionRunner', () => {
   it('cancels a scheduled execution before it starts', async () => {
     let started = false;
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => {
+      executor('REPOSITORY_LIST', () => {
         started = true;
-        return Promise.resolve(completedOrient);
+        return Promise.resolve(completedList);
       }),
     );
-    const request = { ...orientRequest(), notBefore: '2026-10-19T00:00:00.050Z' };
+    const request = { ...listRequest(), notBefore: '2026-10-19T00:00:00.050Z' };
 
     runner.execute(request, 'cor_123456');
     runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
@@ -597,9 +573,9 @@ describe('ExecutionRunner', () => {
   });
 
   it('cancels a running execution and reports TERMINATED within grace', async () => {
-    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedList)), 50);
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
     runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
     const fact = await waitForFact(sink);
@@ -613,8 +589,8 @@ describe('ExecutionRunner', () => {
   });
 
   it('reports TERMINATED(UNIT_TIMEOUT) when the deadline aborts a running execution', async () => {
-    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
-    const request = orientRequest();
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedList)), 50);
+    const request = listRequest();
     request.limits = { ...request.limits, deadline: '2026-10-19T00:00:00.020Z' };
 
     runner.execute(request, 'cor_123456');
@@ -631,12 +607,12 @@ describe('ExecutionRunner', () => {
   it('does not start an Executor whose deadline is already past', async () => {
     let calls = 0;
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => {
+      executor('REPOSITORY_LIST', () => {
         calls += 1;
-        return Promise.resolve(completedOrient);
+        return Promise.resolve(completedList);
       }),
     );
-    const request = orientRequest();
+    const request = listRequest();
     request.limits = { ...request.limits, deadline: '2026-10-18T23:59:59.000Z' };
 
     runner.execute(request, 'cor_123456');
@@ -650,12 +626,12 @@ describe('ExecutionRunner', () => {
   it('treats an unparsable deadline as an immediate timeout', async () => {
     let calls = 0;
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => {
+      executor('REPOSITORY_LIST', () => {
         calls += 1;
-        return Promise.resolve(completedOrient);
+        return Promise.resolve(completedList);
       }),
     );
-    const request = orientRequest();
+    const request = listRequest();
     request.limits = { ...request.limits, deadline: 'not-a-timestamp' };
 
     runner.execute(request, 'cor_123456');
@@ -666,9 +642,9 @@ describe('ExecutionRunner', () => {
   });
 
   it('is idempotent across repeated cancelRun calls', async () => {
-    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedList)), 50);
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
     runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
     runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 3 });
@@ -684,7 +660,7 @@ describe('ExecutionRunner', () => {
 
   it('reports STOP_UNCONFIRMED when the Executor ignores abort', async () => {
     const { runner, sink } = makeRunnerWith(registry(hanging()), 20);
-    const request = orientRequest();
+    const request = listRequest();
     request.limits = { ...request.limits, deadline: '2026-10-19T00:00:00.010Z' };
 
     runner.execute(request, 'cor_123456');
@@ -705,15 +681,15 @@ describe('ExecutionRunner', () => {
       release = resolve;
     });
     const { runner, sink } = makeRunnerWith(
-      registry(executor('REPOSITORY_ORIENT', () => pending)),
+      registry(executor('REPOSITORY_LIST', () => pending)),
       20,
     );
-    const request = orientRequest();
+    const request = listRequest();
     request.limits = { ...request.limits, deadline: '2026-10-19T00:00:00.010Z' };
 
     runner.execute(request, 'cor_123456');
     await waitForFact(sink);
-    release?.(completedOrient);
+    release?.(completedList);
     await delay(10);
 
     expect(sink.facts).toHaveLength(1);
@@ -721,8 +697,8 @@ describe('ExecutionRunner', () => {
   });
 
   it('keeps the first abort reason when cancel arrives after deadline', async () => {
-    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 30);
-    const request = orientRequest();
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedList)), 30);
+    const request = listRequest();
     request.limits = { ...request.limits, deadline: '2026-10-19T00:00:00.010Z' };
 
     runner.execute(request, 'cor_123456');
@@ -738,7 +714,7 @@ describe('ExecutionRunner', () => {
     const violation: ExecutorOutcome = { outcome: 'VIOLATION', reasonCode: 'PATH_ESCAPE' };
     const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(violation)), 50);
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
     runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
 
@@ -747,7 +723,7 @@ describe('ExecutionRunner', () => {
   });
 
   it('reports TERMINATED when the Executor rejects during abort', async () => {
-    const failing = executor('REPOSITORY_ORIENT', (_input, environment) => {
+    const failing = executor('REPOSITORY_LIST', (_input, environment) => {
       if (environment.signal.aborted) return Promise.reject(new Error('aborted'));
       return new Promise<ExecutorOutcome>((_resolve, reject) => {
         environment.signal.addEventListener('abort', () => reject(new Error('aborted')), {
@@ -757,7 +733,7 @@ describe('ExecutionRunner', () => {
     });
     const { runner, sink } = makeRunnerWith(registry(failing), 50);
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
     runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
 
@@ -774,7 +750,7 @@ describe('ExecutionRunner', () => {
     const rejected: ExecutorOutcome = { outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' };
     const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(rejected)), 50);
 
-    runner.execute(orientRequest(), 'cor_123456');
+    runner.execute(listRequest(), 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
     runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
 
@@ -787,14 +763,14 @@ describe('ExecutionRunner', () => {
   it('rejects a late execute after cancelRun using the recorded epoch', async () => {
     let calls = 0;
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => {
+      executor('REPOSITORY_LIST', () => {
         calls += 1;
-        return Promise.resolve(completedOrient);
+        return Promise.resolve(completedList);
       }),
     );
 
     runner.cancelRun({ workflowRunId: 'wfr_123456', runEpoch: 2 });
-    runner.execute(orientRequest('exe_654321'), 'cor_123456');
+    runner.execute(listRequest('exe_654321'), 'cor_123456');
     const fact = await waitForFact(sink);
 
     expect(calls).toBe(0);
@@ -846,7 +822,7 @@ describe('ExecutionFact normalization', () => {
   });
 
   it('drops usage and requestState for non-MODEL outcomes', () => {
-    const fact = toExecutionFact(orientRequest(), startedAt, endedAt, {
+    const fact = toExecutionFact(listRequest(), startedAt, endedAt, {
       outcome: 'FAILED',
       reasonCode: 'INTERNAL',
       retryable: true,
@@ -887,7 +863,7 @@ describe('ExecutionFact normalization', () => {
   });
 
   it('does not add requestState to a non-MODEL termination', () => {
-    const fact = toTerminationFact(orientRequest(), startedAt, endedAt, {
+    const fact = toTerminationFact(listRequest(), startedAt, endedAt, {
       outcome: 'TERMINATED',
       reasonCode: 'UNIT_TIMEOUT',
       requestState: 'UNKNOWN',
@@ -901,7 +877,7 @@ describe('ExecutionFact normalization', () => {
 
 describe('Executor environment', () => {
   it('gives repository Executors no credentials or subprocess', async () => {
-    const environment = createExecutorEnvironment(orientRequest(), new AbortController().signal, {
+    const environment = createExecutorEnvironment(listRequest(), new AbortController().signal, {
       credentials,
       subprocess,
       sandbox: DENY_SANDBOX,
@@ -928,7 +904,7 @@ describe('Executor environment', () => {
 
     const search = createExecutorEnvironment(
       {
-        ...orientRequest(),
+        ...listRequest(),
         executionKind: 'REPOSITORY_SEARCH',
         input: { query: 'x', mode: 'AUTO', maxItems: 10, tokenBudget: 1000 },
         limits: TOOL_LIMITS,
@@ -948,10 +924,10 @@ describe('Executor environment', () => {
 
 describe('cancelExecution', () => {
   it('stops one running execution and says why, leaving the others alone', async () => {
-    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
-    const first = orientRequest('exe_000001');
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedList)), 50);
+    const first = listRequest('exe_000001');
     runner.execute(first, 'cor_123456');
-    runner.execute(orientRequest('exe_000002'), 'cor_123456');
+    runner.execute(listRequest('exe_000002'), 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(2));
 
     runner.cancelExecution({
@@ -974,9 +950,9 @@ describe('cancelExecution', () => {
 
   it('answers an execution that has not started at once, without a start time', async () => {
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient)),
+      executor('REPOSITORY_LIST', () => Promise.resolve(completedList)),
     );
-    const request = { ...orientRequest(), notBefore: '2026-10-19T00:00:10.000Z' };
+    const request = { ...listRequest(), notBefore: '2026-10-19T00:00:10.000Z' };
     runner.execute(request, 'cor_123456');
 
     runner.cancelExecution({
@@ -991,8 +967,8 @@ describe('cancelExecution', () => {
   });
 
   it('reports a cancelled execution once, however often it is asked', async () => {
-    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
-    const request = orientRequest();
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedList)), 50);
+    const request = listRequest();
     runner.execute(request, 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
 
@@ -1013,8 +989,8 @@ describe('cancelExecution', () => {
     ['an unknown execution', { executionId: 'exe_999999' }],
     ['an execution of another epoch', { runEpoch: 99 }],
   ])('ignores %s', async (_name, over) => {
-    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedOrient)), 50);
-    const request = orientRequest();
+    const { runner, sink } = makeRunnerWith(registry(pendingUntilAbort(completedList)), 50);
+    const request = listRequest();
     runner.execute(request, 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
 
@@ -1032,9 +1008,9 @@ describe('cancelExecution', () => {
 
   it('does not touch an execution that already ended', async () => {
     const { runner, sink } = makeRunner(
-      executor('REPOSITORY_ORIENT', () => Promise.resolve(completedOrient)),
+      executor('REPOSITORY_LIST', () => Promise.resolve(completedList)),
     );
-    const request = orientRequest();
+    const request = listRequest();
     runner.execute(request, 'cor_123456');
     await waitForFact(sink);
 
@@ -1051,7 +1027,7 @@ describe('cancelExecution', () => {
 
   it('still escalates to STOP_UNCONFIRMED when the Executor will not stop', async () => {
     const { runner, sink } = makeRunnerWith(registry(hanging()), 40);
-    const request = orientRequest();
+    const request = listRequest();
     runner.execute(request, 'cor_123456');
     await vi.waitFor(() => expect(runner.activeCount()).toBe(1));
 

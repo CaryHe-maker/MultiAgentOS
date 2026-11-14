@@ -1,7 +1,7 @@
 import type { SessionLogRecord } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { projectGraph, spawnRevision } from '../graph/session-graph.js';
-import { callOf, callResultsOf, spawnNodeOf, spawnedIn, taskScopeOf } from './spawn-graph.js';
+import { callOf, callResultsOf, spawnNodeOf, taskScopeOf } from './spawn-graph.js';
 
 const call = { toolCallId: 'call_1', delegationId: 'dlg_1' };
 const at = '2026-11-06T00:00:00.000Z';
@@ -64,13 +64,6 @@ describe('what the tasks of a call look like in the log', () => {
       taskScopeOf([extended()], 'wfr_a', projected, one ?? revision.nodes[0]!, spec('x').spawn)
         .dependencies,
     ).toEqual([]);
-  });
-
-  it('counts what the work since an input has dispatched from the graph revisions alone', () => {
-    const records = [extended(), extended(), extended()];
-    const since = records[1]?.seq ?? 0;
-    expect(spawnedIn(records, since)).toEqual({ tasks: 4, calls: 2 });
-    expect(spawnedIn(records, (records[2]?.seq ?? 0) + 1)).toEqual({ tasks: 0, calls: 0 });
   });
 
   it('writes the task as the caller asked, with the share the Kernel granted', () => {

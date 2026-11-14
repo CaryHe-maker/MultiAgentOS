@@ -1,7 +1,7 @@
 /**
- * The TaskGraph as pure functions of what the session log records (M2Design 3.1-3.3): readiness,
- * skipping and loop expansion read only nodes, edges and finished nodes' structured results, so
- * replaying any log prefix gives the same answer as the run that wrote it.
+ * The TaskGraph as pure functions of what the session log records (M2Design 3.1-3.3): readiness
+ * and skipping read only nodes, edges and how finished nodes ended, so replaying any log prefix
+ * gives the same answer as the run that wrote it.
  */
 import { pathDerivedId } from '@multiagentos/contracts';
 
@@ -29,25 +29,16 @@ export type NodeStatus =
 /** Ended for good: nothing more happens to the node. */
 export const isTerminal = (status: NodeStatus): boolean =>
   status !== 'PENDING' && status !== 'RUNNING' && status !== 'WAITING';
-export type SkipReason = 'DEPENDENCY_FAILED' | 'NOT_TAKEN';
+export type SkipReason = 'DEPENDENCY_FAILED';
 
 export interface GraphNode {
   readonly nodeId: string;
-  /** Name within its revision; unique together with `iteration`. */
+  /** Unique within its revision. */
   readonly name: string;
-  readonly kind: NodeKind | 'INTEGRATE';
+  readonly kind: NodeKind;
   readonly trigger: Trigger;
-  readonly iteration: number;
-  /** The loop whose body holds this node; absent outside loops. */
-  readonly loopId?: string;
   /** Of an AGENT node: the task it is a segment of (Orchestration 3.2). */
   readonly missionId?: string;
-}
-
-export interface EdgeCondition {
-  readonly field: string;
-  readonly equals?: string | boolean;
-  readonly in?: readonly (string | boolean)[];
 }
 
 /** The call a `DELEGATE` or `RESUME` edge belongs to: the model's tool call and the Kernel's reservation. */
@@ -58,7 +49,7 @@ export interface EdgeCall {
 }
 
 /**
- * `DEPENDS` and `CONDITIONAL` decide when a node first starts. `DELEGATE` runs from a node that is
+ * `DEPENDS` decides when a node first starts. `DELEGATE` runs from a node that is
  * running to a node it dispatched, and `RESUME` back from that node to the caller, saying the call
  * came back. A `RESUME` edge does not start anything: it takes no part in readiness or in the check
  * for cycles (M2Design 3.1). What the caller does while it waits is the AgentRun's business.
@@ -66,13 +57,9 @@ export interface EdgeCall {
 export interface GraphEdge {
   readonly from: string;
   readonly to: string;
-  readonly kind: 'DEPENDS' | 'CONDITIONAL' | 'DELEGATE' | 'RESUME' | 'CONTINUES';
-  readonly when?: EdgeCondition;
+  readonly kind: 'DEPENDS' | 'DELEGATE' | 'RESUME' | 'CONTINUES';
   readonly call?: EdgeCall;
 }
-
-/** The edges that lead somewhere: they are followed for ancestors, loops and cycles. */
-export const isForward = (edge: GraphEdge): boolean => edge.kind !== 'RESUME';
 
 /**
  * The edges readiness reads. `CONTINUES` only says which segment took over a task: the segment it
@@ -80,15 +67,6 @@ export const isForward = (edge: GraphEdge): boolean => edge.kind !== 'RESUME';
  */
 const decidesReadiness = (edge: GraphEdge): boolean =>
   edge.kind !== 'RESUME' && edge.kind !== 'CONTINUES';
-
-/** A back edge from `source` to its ancestor `target`; never part of readiness (M2Design 3.2). */
-export interface LoopEdge {
-  readonly loopId: string;
-  readonly source: string;
-  readonly target: string;
-  readonly maxIterations: number;
-  readonly when?: EdgeCondition;
-}
 
 export interface Graph {
   readonly nodes: readonly GraphNode[];
@@ -98,8 +76,6 @@ export interface Graph {
 export interface NodeRecord {
   readonly status: NodeStatus;
   readonly skipReason?: SkipReason;
-  /** The structured result conditions read: a confirmation, a review, a planner's `action`. */
-  readonly result?: unknown;
   /** The calls of this node that came back, by the tool call that made them. */
   readonly resumed?: readonly string[];
 }
@@ -107,49 +83,18 @@ export interface NodeRecord {
 /** Nodes with no record are PENDING. */
 export type NodeView = ReadonlyMap<string, NodeRecord>;
 
-export type EdgeState = 'WAITING' | 'TAKEN' | 'NOT_TAKEN' | 'FAILED';
+export type EdgeState = 'WAITING' | 'TAKEN' | 'FAILED';
 
 export function nodeIdOf(path: string): string {
   return pathDerivedId('nod', path);
 }
 
-export function nodePath(
-  workflowRunId: string,
-  revision: number,
-  name: string,
-  iteration: number,
-): string {
-  return `${workflowRunId}/${String(revision)}/${name}#${String(iteration)}`;
-}
-
-/** Evaluates a declarative predicate; a missing field never satisfies it. */
-export function conditionHolds(condition: EdgeCondition, result: unknown): boolean {
-  let value: unknown = result;
-  for (const key of condition.field.split('.')) {
-    if (typeof value !== 'object' || value === null) return false;
-    value = (value as Record<string, unknown>)[key];
-  }
-  if (typeof value !== 'string' && typeof value !== 'boolean') return false;
-  return condition.in !== undefined ? condition.in.includes(value) : condition.equals === value;
+export function nodePath(workflowRunId: string, revision: number, name: string): string {
+  return `${workflowRunId}/${String(revision)}/${name}`;
 }
 
 function statusOf(view: NodeView, nodeId: string): NodeRecord {
   return view.get(nodeId) ?? { status: 'PENDING' };
-}
-
-/**
- * The predecessor an edge reads. A node outside a loop depends on the loop's last iteration, so
- * an iteration that will be expanded never skips it (M2Design 3.2).
- */
-function effectiveSource(graph: Graph, edge: GraphEdge): GraphNode | undefined {
-  const source = graph.nodes.find((node) => node.nodeId === edge.from);
-  const target = graph.nodes.find((node) => node.nodeId === edge.to);
-  if (source === undefined || source.loopId === undefined || source.loopId === target?.loopId) {
-    return source;
-  }
-  return graph.nodes
-    .filter((node) => node.name === source.name && node.loopId === source.loopId)
-    .reduce((last, node) => (node.iteration > last.iteration ? node : last), source);
 }
 
 /**
@@ -173,7 +118,7 @@ export function takenOver(graph: Graph, node: GraphNode, view: NodeView): GraphN
 }
 
 export function edgeState(graph: Graph, edge: GraphEdge, view: NodeView): EdgeState {
-  const effective = effectiveSource(graph, edge);
+  const effective = graph.nodes.find((node) => node.nodeId === edge.from);
   // A DELEGATE edge reads its caller as it is: the segment that dispatched, not its successor.
   const source =
     effective === undefined || edge.kind === 'DELEGATE'
@@ -196,11 +141,8 @@ export function edgeState(graph: Graph, edge: GraphEdge, view: NodeView): EdgeSt
     case 'YIELDED':
       return 'WAITING';
     case 'SUCCEEDED':
-      return edge.when === undefined || conditionHolds(edge.when, record.result)
-        ? 'TAKEN'
-        : 'NOT_TAKEN';
+      return 'TAKEN';
     case 'SKIPPED':
-      return record.skipReason === 'NOT_TAKEN' ? 'NOT_TAKEN' : 'FAILED';
     case 'FAILED':
     case 'INTERRUPTED':
       return 'FAILED';
@@ -288,9 +230,7 @@ export function skippedNodes(graph: Graph, view: NodeView): readonly SkippedNode
       return [];
     const states = incomingStates(graph, node, view);
     if (states.includes('WAITING') || states.every((state) => state === 'TAKEN')) return [];
-    return [
-      { node, reason: states.includes('FAILED') ? 'DEPENDENCY_FAILED' : 'NOT_TAKEN' } as const,
-    ];
+    return [{ node, reason: 'DEPENDENCY_FAILED' } as const];
   });
 }
 
@@ -317,159 +257,11 @@ export function settleSkips(
   return { view: settled, skipped };
 }
 
-export type GraphValidationCode =
-  | 'DUPLICATE_NODE'
-  | 'UNKNOWN_DEPENDENCY'
-  | 'CYCLE'
-  | 'UNKNOWN_AGENT'
-  | 'CONDITION_NOT_ALLOWED'
-  | 'UNSUPPORTED_NODE_KIND'
-  | 'INVALID_LOOP'
-  /** Two steps of a template's root task could run at once (Orchestration 3.5). */
-  | 'OWNER_NOT_LINEAR';
-
+/** What a template's graph can get wrong when it is compiled (Orchestration 3.5). */
 export interface GraphValidationError {
-  readonly code: GraphValidationCode;
+  readonly code:
+    | 'UNKNOWN_DEPENDENCY'
+    /** Two steps of a template's root task could run at once. */
+    | 'OWNER_NOT_LINEAR';
   readonly node?: string;
-}
-
-export interface ProposedNode {
-  readonly node: GraphNode;
-  /** Absent for HUMAN nodes. */
-  readonly agentId?: string;
-}
-
-export interface GraphExtension {
-  readonly nodes: readonly ProposedNode[];
-  readonly edges: readonly GraphEdge[];
-}
-
-export interface ExtensionRules {
-  readonly builtInAgents: ReadonlySet<string>;
-  /** Conditional edges are allowed only in built-in templates. */
-  readonly allowConditions: boolean;
-}
-
-/** Every revision goes through here, whatever its source (M2Design 3.2). */
-export function validateExtension(
-  current: Graph,
-  extension: GraphExtension,
-  rules: ExtensionRules,
-): readonly GraphValidationError[] {
-  const errors: GraphValidationError[] = [];
-  const known = new Set(current.nodes.map((node) => node.nodeId));
-  for (const { node, agentId } of extension.nodes) {
-    if (node.kind === 'INTEGRATE') errors.push({ code: 'UNSUPPORTED_NODE_KIND', node: node.name });
-    if (known.has(node.nodeId)) errors.push({ code: 'DUPLICATE_NODE', node: node.name });
-    known.add(node.nodeId);
-    if (node.kind === 'AGENT' && (agentId === undefined || !rules.builtInAgents.has(agentId))) {
-      errors.push({ code: 'UNKNOWN_AGENT', node: node.name });
-    }
-  }
-  for (const edge of extension.edges) {
-    if (!known.has(edge.from) || !known.has(edge.to)) {
-      errors.push({ code: 'UNKNOWN_DEPENDENCY', node: edge.to });
-    }
-    if (edge.kind === 'CONDITIONAL' && !rules.allowConditions) {
-      errors.push({ code: 'CONDITION_NOT_ALLOWED', node: edge.to });
-    }
-  }
-  const merged: Graph = {
-    nodes: [...current.nodes, ...extension.nodes.map(({ node }) => node)],
-    edges: [...current.edges, ...extension.edges],
-  };
-  if (known.size === merged.nodes.length && hasCycle(merged)) errors.push({ code: 'CYCLE' });
-  return errors;
-}
-
-function hasCycle(graph: Graph): boolean {
-  const indegree = new Map(graph.nodes.map((node) => [node.nodeId, 0]));
-  for (const edge of graph.edges.filter(isForward)) {
-    if (indegree.has(edge.to)) indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
-  }
-  const queue = [...indegree].filter(([, degree]) => degree === 0).map(([nodeId]) => nodeId);
-  let visited = 0;
-  for (let nodeId = queue.pop(); nodeId !== undefined; nodeId = queue.pop()) {
-    visited += 1;
-    for (const edge of graph.edges.filter(isForward)) {
-      if (edge.from !== nodeId || !indegree.has(edge.to)) continue;
-      const degree = (indegree.get(edge.to) ?? 0) - 1;
-      indegree.set(edge.to, degree);
-      if (degree === 0) queue.push(edge.to);
-    }
-  }
-  return visited !== graph.nodes.length;
-}
-
-function reachable(edges: readonly GraphEdge[], start: string, follow: 'from' | 'to'): Set<string> {
-  const seen = new Set([start]);
-  const stack = [start];
-  for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
-    for (const edge of edges.filter(isForward)) {
-      const [here, next] = follow === 'to' ? [edge.from, edge.to] : [edge.to, edge.from];
-      if (here === current && !seen.has(next)) {
-        seen.add(next);
-        stack.push(next);
-      }
-    }
-  }
-  return seen;
-}
-
-/** The nodes on every path from the loop's target to its source, in graph order. */
-export function loopBody(graph: Graph, loop: LoopEdge): readonly GraphNode[] {
-  const after = reachable(graph.edges, loop.target, 'to');
-  const before = reachable(graph.edges, loop.source, 'from');
-  return graph.nodes.filter((node) => after.has(node.nodeId) && before.has(node.nodeId));
-}
-
-export type LoopDecision =
-  | { readonly action: 'NONE' }
-  | { readonly action: 'EXHAUSTED' }
-  | { readonly action: 'EXPAND'; readonly extension: GraphExtension };
-
-/**
- * What the loop does once its source's iteration `k` has ended (M2Design 3.2). Nothing expands
- * unless the source SUCCEEDED and the condition holds; the copy's target depends on `source#k`.
- */
-export function decideLoop(
-  graph: Graph,
-  loop: LoopEdge,
-  source: GraphNode,
-  view: NodeView,
-  newNodeId: (name: string, iteration: number) => string,
-): LoopDecision {
-  const record = statusOf(view, source.nodeId);
-  if (record.status !== 'SUCCEEDED') return { action: 'NONE' };
-  if (loop.when !== undefined && !conditionHolds(loop.when, record.result))
-    return { action: 'NONE' };
-  if (source.iteration >= loop.maxIterations) return { action: 'EXHAUSTED' };
-
-  const body = loopBody(graph, loop).filter((node) => node.iteration === source.iteration);
-  const copies = new Map(
-    body.map((node) => [node.nodeId, newNodeId(node.name, node.iteration + 1)]),
-  );
-  const target = body.find(
-    (node) => node.name === graph.nodes.find((n) => n.nodeId === loop.target)?.name,
-  );
-  const copiedTarget = target === undefined ? undefined : copies.get(target.nodeId);
-  if (copiedTarget === undefined) return { action: 'NONE' };
-  const inner = graph.edges.flatMap((edge) => {
-    const from = copies.get(edge.from);
-    const to = copies.get(edge.to);
-    return from === undefined || to === undefined ? [] : [{ ...edge, from, to }];
-  });
-  return {
-    action: 'EXPAND',
-    extension: {
-      nodes: body.map((node) => ({
-        node: {
-          ...node,
-          nodeId: copies.get(node.nodeId) ?? node.nodeId,
-          iteration: node.iteration + 1,
-        },
-      })),
-      edges: [{ from: source.nodeId, to: copiedTarget, kind: 'DEPENDS' }, ...inner],
-    },
-  };
 }

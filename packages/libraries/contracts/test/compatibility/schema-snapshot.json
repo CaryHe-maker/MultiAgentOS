@@ -15,7 +15,6 @@
         "thinking",
         "promptRef",
         "unitRefs",
-        "startUnitRefs",
         "actions",
         "capabilities",
         "limits",
@@ -149,31 +148,6 @@
           "minItems": 1,
           "uniqueItems": true
         },
-        "startUnitRefs": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "id",
-              "version"
-            ],
-            "properties": {
-              "id": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                "maxLength": 64
-              },
-              "version": {
-                "type": "string",
-                "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-              }
-            },
-            "additionalProperties": false,
-            "$id": "catalog.DefinitionRef.v1"
-          },
-          "minItems": 0,
-          "uniqueItems": true
-        },
         "actions": {
           "type": "object",
           "required": [
@@ -214,8 +188,6 @@
                   "then": {
                     "enum": [
                       "PUBLISH_REPLY",
-                      "PUBLISH_REPORT",
-                      "HANDOFF",
                       "FINISH_SUBAGENT"
                     ]
                   },
@@ -230,7 +202,6 @@
             "onDegraded": {
               "enum": [
                 "PUBLISH_NOTICE",
-                "PUBLISH_REPORT",
                 "RETURN_PARTIAL"
               ]
             },
@@ -1214,7 +1185,6 @@
             "thinking",
             "promptRef",
             "unitRefs",
-            "startUnitRefs",
             "actions",
             "capabilities",
             "limits",
@@ -1348,31 +1318,6 @@
               "minItems": 1,
               "uniqueItems": true
             },
-            "startUnitRefs": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "id",
-                  "version"
-                ],
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                    "maxLength": 64
-                  },
-                  "version": {
-                    "type": "string",
-                    "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-                  }
-                },
-                "additionalProperties": false,
-                "$id": "catalog.DefinitionRef.v1"
-              },
-              "minItems": 0,
-              "uniqueItems": true
-            },
             "actions": {
               "type": "object",
               "required": [
@@ -1413,8 +1358,6 @@
                       "then": {
                         "enum": [
                           "PUBLISH_REPLY",
-                          "PUBLISH_REPORT",
-                          "HANDOFF",
                           "FINISH_SUBAGENT"
                         ]
                       },
@@ -1429,7 +1372,6 @@
                 "onDegraded": {
                   "enum": [
                     "PUBLISH_NOTICE",
-                    "PUBLISH_REPORT",
                     "RETURN_PARTIAL"
                   ]
                 },
@@ -2277,15 +2219,12 @@
               },
               "executionKind": {
                 "enum": [
-                  "REPOSITORY_ORIENT",
                   "REPOSITORY_SEARCH",
                   "FILE_READ",
                   "CONTEXT_ASSEMBLE",
                   "MODEL",
-                  "REPORT_PUBLISH",
                   "FILE_WRITE",
                   "COMMAND",
-                  "TEST",
                   "REPOSITORY_LIST",
                   "MESSAGE_PUBLISH",
                   "FILE_EDIT",
@@ -3040,7 +2979,6 @@
         "version",
         "digest",
         "description",
-        "origin",
         "nodes"
       ],
       "properties": {
@@ -3069,12 +3007,6 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 2000
-        },
-        "origin": {
-          "enum": [
-            "BUILTIN",
-            "REPOSITORY"
-          ]
         },
         "owner": {
           "type": "object",
@@ -3154,71 +3086,10 @@
                   "dependsOn": {
                     "type": "array",
                     "items": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                          "maxLength": 64
-                        },
-                        {
-                          "type": "object",
-                          "required": [
-                            "node",
-                            "when"
-                          ],
-                          "properties": {
-                            "node": {
-                              "type": "string",
-                              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                              "maxLength": 64
-                            },
-                            "when": {
-                              "type": "object",
-                              "required": [
-                                "field"
-                              ],
-                              "properties": {
-                                "field": {
-                                  "type": "string",
-                                  "minLength": 1,
-                                  "maxLength": 128
-                                },
-                                "equals": {
-                                  "anyOf": [
-                                    {
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "boolean"
-                                    }
-                                  ]
-                                },
-                                "in": {
-                                  "type": "array",
-                                  "items": {
-                                    "anyOf": [
-                                      {
-                                        "type": "string"
-                                      },
-                                      {
-                                        "type": "boolean"
-                                      }
-                                    ]
-                                  },
-                                  "minItems": 1
-                                }
-                              },
-                              "additionalProperties": false
-                            }
-                          },
-                          "additionalProperties": false
-                        }
-                      ]
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                      "maxLength": 64
                     }
-                  },
-                  "inputFrom": {
-                    "type": "string",
-                    "const": "HANDOFF"
                   },
                   "output": {
                     "type": "boolean"
@@ -3575,15 +3446,12 @@
         },
         "executionKind": {
           "enum": [
-            "REPOSITORY_ORIENT",
             "REPOSITORY_SEARCH",
             "FILE_READ",
             "CONTEXT_ASSEMBLE",
             "MODEL",
-            "REPORT_PUBLISH",
             "FILE_WRITE",
             "COMMAND",
-            "TEST",
             "REPOSITORY_LIST",
             "MESSAGE_PUBLISH",
             "FILE_EDIT",
@@ -4184,34 +4052,6 @@
         "final": {
           "type": "boolean"
         },
-        "orientPackRef": {
-          "type": "object",
-          "required": [
-            "artifactId",
-            "sha256",
-            "size",
-            "mediaType"
-          ],
-          "properties": {
-            "artifactId": {
-              "type": "string",
-              "pattern": "^art_[a-f0-9]{64}$"
-            },
-            "sha256": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
-            },
-            "size": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "mediaType": {
-              "type": "string",
-              "const": "application/vnd.multiagentos.context-pack+json"
-            }
-          },
-          "additionalProperties": false
-        },
         "history": {
           "type": "array",
           "items": {
@@ -4516,7 +4356,6 @@
                       "SESSION_NOT_FOUND",
                       "SESSION_IN_USE",
                       "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                      "TEMPLATE_UNSUPPORTED",
                       "HUMAN_REQUEST_NOT_PENDING",
                       "CONTEXT_OVERFLOW",
                       "QUOTA_EXHAUSTED",
@@ -4599,66 +4438,6 @@
                     },
                     "additionalProperties": false,
                     "$id": "platform.common.ArtifactRef.v1"
-                  }
-                },
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "required": [
-                  "seq",
-                  "category",
-                  "kind",
-                  "outputRef",
-                  "toolCallId"
-                ],
-                "properties": {
-                  "seq": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "category": {
-                    "enum": [
-                      "PINNED",
-                      "NORMAL"
-                    ]
-                  },
-                  "kind": {
-                    "type": "string",
-                    "const": "HANDOFF"
-                  },
-                  "outputRef": {
-                    "type": "object",
-                    "required": [
-                      "artifactId",
-                      "sha256",
-                      "size",
-                      "mediaType"
-                    ],
-                    "properties": {
-                      "artifactId": {
-                        "type": "string",
-                        "pattern": "^art_[a-f0-9]{64}$"
-                      },
-                      "sha256": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "size": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "mediaType": {
-                        "type": "string",
-                        "const": "application/vnd.multiagentos.model-output+json"
-                      }
-                    },
-                    "additionalProperties": false
-                  },
-                  "toolCallId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
                   }
                 },
                 "additionalProperties": false
@@ -5771,7 +5550,6 @@
                 "SESSION_NOT_FOUND",
                 "SESSION_IN_USE",
                 "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "CONTEXT_OVERFLOW",
                 "QUOTA_EXHAUSTED",
@@ -5854,66 +5632,6 @@
               },
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "seq",
-            "category",
-            "kind",
-            "outputRef",
-            "toolCallId"
-          ],
-          "properties": {
-            "seq": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "category": {
-              "enum": [
-                "PINNED",
-                "NORMAL"
-              ]
-            },
-            "kind": {
-              "type": "string",
-              "const": "HANDOFF"
-            },
-            "outputRef": {
-              "type": "object",
-              "required": [
-                "artifactId",
-                "sha256",
-                "size",
-                "mediaType"
-              ],
-              "properties": {
-                "artifactId": {
-                  "type": "string",
-                  "pattern": "^art_[a-f0-9]{64}$"
-                },
-                "sha256": {
-                  "type": "string",
-                  "pattern": "^[a-f0-9]{64}$"
-                },
-                "size": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "mediaType": {
-                  "type": "string",
-                  "const": "application/vnd.multiagentos.model-output+json"
-                }
-              },
-              "additionalProperties": false
-            },
-            "toolCallId": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
             }
           },
           "additionalProperties": false
@@ -6594,140 +6312,6 @@
             "contextPackId",
             "tokenCount",
             "tokenBudget",
-            "truncated",
-            "droppedCount",
-            "createdAt",
-            "operation",
-            "snapshotId",
-            "items"
-          ],
-          "properties": {
-            "contextPackId": {
-              "type": "string",
-              "pattern": "^ctx_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "tokenCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "tokenBudget": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "truncated": {
-              "type": "boolean"
-            },
-            "droppedCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "createdAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "operation": {
-              "type": "string",
-              "const": "ORIENT"
-            },
-            "snapshotId": {
-              "type": "string",
-              "pattern": "^snp_[a-f0-9]{64}$"
-            },
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "itemId",
-                  "content",
-                  "contentSha256",
-                  "tokenCount",
-                  "reason",
-                  "segment",
-                  "role",
-                  "provenance"
-                ],
-                "properties": {
-                  "itemId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "content": {
-                    "type": "string"
-                  },
-                  "contentSha256": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "tokenCount": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "reason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "segment": {
-                    "type": "string",
-                    "const": "ORIENT"
-                  },
-                  "role": {
-                    "type": "string",
-                    "const": "user"
-                  },
-                  "provenance": {
-                    "type": "object",
-                    "required": [
-                      "path",
-                      "startLine",
-                      "endLine",
-                      "contentSha256",
-                      "retrieval"
-                    ],
-                    "properties": {
-                      "path": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 1024
-                      },
-                      "startLine": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      "endLine": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      "contentSha256": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "snapshotId": {
-                        "type": "string",
-                        "pattern": "^snp_[a-f0-9]{64}$"
-                      },
-                      "retrieval": {
-                        "type": "string",
-                        "const": "TREE"
-                      }
-                    },
-                    "additionalProperties": false
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "contextPackId",
-            "tokenCount",
-            "tokenBudget",
             "createdAt",
             "operation",
             "prefixSha256",
@@ -6756,10 +6340,6 @@
             "operation": {
               "type": "string",
               "const": "ASSEMBLE"
-            },
-            "snapshotId": {
-              "type": "string",
-              "pattern": "^snp_[a-f0-9]{64}$"
             },
             "prefixSha256": {
               "type": "string",
@@ -6953,89 +6533,6 @@
                       "role": {
                         "type": "string",
                         "const": "user"
-                      }
-                    },
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "required": [
-                      "itemId",
-                      "content",
-                      "contentSha256",
-                      "tokenCount",
-                      "reason",
-                      "segment",
-                      "role",
-                      "provenance"
-                    ],
-                    "properties": {
-                      "itemId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "content": {
-                        "type": "string"
-                      },
-                      "contentSha256": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "tokenCount": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "reason": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "segment": {
-                        "type": "string",
-                        "const": "ORIENT"
-                      },
-                      "role": {
-                        "type": "string",
-                        "const": "user"
-                      },
-                      "provenance": {
-                        "type": "object",
-                        "required": [
-                          "path",
-                          "startLine",
-                          "endLine",
-                          "contentSha256",
-                          "retrieval"
-                        ],
-                        "properties": {
-                          "path": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 1024
-                          },
-                          "startLine": {
-                            "type": "integer",
-                            "minimum": 1
-                          },
-                          "endLine": {
-                            "type": "integer",
-                            "minimum": 1
-                          },
-                          "contentSha256": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "snapshotId": {
-                            "type": "string",
-                            "pattern": "^snp_[a-f0-9]{64}$"
-                          },
-                          "retrieval": {
-                            "type": "string",
-                            "const": "TREE"
-                          }
-                        },
-                        "additionalProperties": false
                       }
                     },
                     "additionalProperties": false
@@ -7471,85 +6968,6 @@
       },
       "additionalProperties": false,
       "$id": "context.PrunedItem.v1"
-    },
-    "context.RepositoryOrientInput.v1": {
-      "type": "object",
-      "required": [
-        "objectiveRef"
-      ],
-      "properties": {
-        "objectiveRef": {
-          "type": "object",
-          "required": [
-            "artifactId",
-            "sha256",
-            "size",
-            "mediaType"
-          ],
-          "properties": {
-            "artifactId": {
-              "type": "string",
-              "pattern": "^art_[a-f0-9]{64}$"
-            },
-            "sha256": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
-            },
-            "size": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "mediaType": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          },
-          "additionalProperties": false,
-          "$id": "platform.common.ArtifactRef.v1"
-        }
-      },
-      "additionalProperties": false,
-      "$id": "context.RepositoryOrientInput.v1"
-    },
-    "context.RepositoryOrientOutput.v1": {
-      "type": "object",
-      "required": [
-        "snapshotId",
-        "fileCount",
-        "totalBytes",
-        "summary",
-        "tokenCount",
-        "truncated"
-      ],
-      "properties": {
-        "snapshotId": {
-          "type": "string",
-          "pattern": "^snp_[a-f0-9]{64}$"
-        },
-        "fileCount": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "totalBytes": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "summary": {
-          "type": "string",
-          "minLength": 0,
-          "maxLength": 4000
-        },
-        "tokenCount": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "truncated": {
-          "type": "boolean"
-        }
-      },
-      "additionalProperties": false,
-      "$id": "context.RepositoryOrientOutput.v1"
     },
     "context.RepositorySearchInput.v1": {
       "type": "object",
@@ -11746,7 +11164,6 @@
                               "SESSION_NOT_FOUND",
                               "SESSION_IN_USE",
                               "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                              "TEMPLATE_UNSUPPORTED",
                               "HUMAN_REQUEST_NOT_PENDING",
                               "CONTEXT_OVERFLOW",
                               "QUOTA_EXHAUSTED",
@@ -11829,66 +11246,6 @@
                             },
                             "additionalProperties": false,
                             "$id": "platform.common.ArtifactRef.v1"
-                          }
-                        },
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "required": [
-                          "seq",
-                          "category",
-                          "kind",
-                          "outputRef",
-                          "toolCallId"
-                        ],
-                        "properties": {
-                          "seq": {
-                            "type": "integer",
-                            "minimum": 1
-                          },
-                          "category": {
-                            "enum": [
-                              "PINNED",
-                              "NORMAL"
-                            ]
-                          },
-                          "kind": {
-                            "type": "string",
-                            "const": "HANDOFF"
-                          },
-                          "outputRef": {
-                            "type": "object",
-                            "required": [
-                              "artifactId",
-                              "sha256",
-                              "size",
-                              "mediaType"
-                            ],
-                            "properties": {
-                              "artifactId": {
-                                "type": "string",
-                                "pattern": "^art_[a-f0-9]{64}$"
-                              },
-                              "sha256": {
-                                "type": "string",
-                                "pattern": "^[a-f0-9]{64}$"
-                              },
-                              "size": {
-                                "type": "integer",
-                                "minimum": 0
-                              },
-                              "mediaType": {
-                                "type": "string",
-                                "const": "application/vnd.multiagentos.model-output+json"
-                              }
-                            },
-                            "additionalProperties": false
-                          },
-                          "toolCallId": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 128
                           }
                         },
                         "additionalProperties": false
@@ -12720,46 +12077,6 @@
                     {
                       "type": "object",
                       "required": [
-                        "objectiveRef"
-                      ],
-                      "properties": {
-                        "objectiveRef": {
-                          "type": "object",
-                          "required": [
-                            "artifactId",
-                            "sha256",
-                            "size",
-                            "mediaType"
-                          ],
-                          "properties": {
-                            "artifactId": {
-                              "type": "string",
-                              "pattern": "^art_[a-f0-9]{64}$"
-                            },
-                            "sha256": {
-                              "type": "string",
-                              "pattern": "^[a-f0-9]{64}$"
-                            },
-                            "size": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "mediaType": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 128
-                            }
-                          },
-                          "additionalProperties": false,
-                          "$id": "platform.common.ArtifactRef.v1"
-                        }
-                      },
-                      "additionalProperties": false,
-                      "$id": "context.RepositoryOrientInput.v1"
-                    },
-                    {
-                      "type": "object",
-                      "required": [
                         "query"
                       ],
                       "properties": {
@@ -12823,34 +12140,6 @@
                       "properties": {
                         "final": {
                           "type": "boolean"
-                        },
-                        "orientPackRef": {
-                          "type": "object",
-                          "required": [
-                            "artifactId",
-                            "sha256",
-                            "size",
-                            "mediaType"
-                          ],
-                          "properties": {
-                            "artifactId": {
-                              "type": "string",
-                              "pattern": "^art_[a-f0-9]{64}$"
-                            },
-                            "sha256": {
-                              "type": "string",
-                              "pattern": "^[a-f0-9]{64}$"
-                            },
-                            "size": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "mediaType": {
-                              "type": "string",
-                              "const": "application/vnd.multiagentos.context-pack+json"
-                            }
-                          },
-                          "additionalProperties": false
                         },
                         "history": {
                           "type": "array",
@@ -13156,7 +12445,6 @@
                                       "SESSION_NOT_FOUND",
                                       "SESSION_IN_USE",
                                       "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                                      "TEMPLATE_UNSUPPORTED",
                                       "HUMAN_REQUEST_NOT_PENDING",
                                       "CONTEXT_OVERFLOW",
                                       "QUOTA_EXHAUSTED",
@@ -13239,66 +12527,6 @@
                                     },
                                     "additionalProperties": false,
                                     "$id": "platform.common.ArtifactRef.v1"
-                                  }
-                                },
-                                "additionalProperties": false
-                              },
-                              {
-                                "type": "object",
-                                "required": [
-                                  "seq",
-                                  "category",
-                                  "kind",
-                                  "outputRef",
-                                  "toolCallId"
-                                ],
-                                "properties": {
-                                  "seq": {
-                                    "type": "integer",
-                                    "minimum": 1
-                                  },
-                                  "category": {
-                                    "enum": [
-                                      "PINNED",
-                                      "NORMAL"
-                                    ]
-                                  },
-                                  "kind": {
-                                    "type": "string",
-                                    "const": "HANDOFF"
-                                  },
-                                  "outputRef": {
-                                    "type": "object",
-                                    "required": [
-                                      "artifactId",
-                                      "sha256",
-                                      "size",
-                                      "mediaType"
-                                    ],
-                                    "properties": {
-                                      "artifactId": {
-                                        "type": "string",
-                                        "pattern": "^art_[a-f0-9]{64}$"
-                                      },
-                                      "sha256": {
-                                        "type": "string",
-                                        "pattern": "^[a-f0-9]{64}$"
-                                      },
-                                      "size": {
-                                        "type": "integer",
-                                        "minimum": 0
-                                      },
-                                      "mediaType": {
-                                        "type": "string",
-                                        "const": "application/vnd.multiagentos.model-output+json"
-                                      }
-                                    },
-                                    "additionalProperties": false
-                                  },
-                                  "toolCallId": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 128
                                   }
                                 },
                                 "additionalProperties": false
@@ -14108,53 +13336,6 @@
                     },
                     {
                       "type": "object",
-                      "required": [
-                        "goalRef",
-                        "report"
-                      ],
-                      "properties": {
-                        "goalRef": {
-                          "type": "object",
-                          "required": [
-                            "artifactId",
-                            "sha256",
-                            "size",
-                            "mediaType"
-                          ],
-                          "properties": {
-                            "artifactId": {
-                              "type": "string",
-                              "pattern": "^art_[a-f0-9]{64}$"
-                            },
-                            "sha256": {
-                              "type": "string",
-                              "pattern": "^[a-f0-9]{64}$"
-                            },
-                            "size": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "mediaType": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 128
-                            }
-                          },
-                          "additionalProperties": false,
-                          "$id": "platform.common.ArtifactRef.v1"
-                        },
-                        "report": {
-                          "type": "object",
-                          "patternProperties": {
-                            "^.*$": {}
-                          }
-                        }
-                      },
-                      "additionalProperties": false,
-                      "$id": "kernel.unit.ReportPublishInput.v1"
-                    },
-                    {
-                      "type": "object",
                       "properties": {
                         "path": {
                           "type": "string",
@@ -14786,7 +13967,6 @@
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
                             "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                            "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
                             "QUOTA_EXHAUSTED",
@@ -15100,7 +14280,7 @@
                 },
                 "path": {
                   "type": "string",
-                  "pattern": "^(?:(?:(?!\\.\\.?/)[^/]+/)*AGENTS\\.md|\\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\\.yaml)$",
+                  "pattern": "^(?:(?!\\.\\.?/)[^/]+/)*AGENTS\\.md$",
                   "maxLength": 512
                 }
               },
@@ -17681,8 +16861,7 @@
                 "kind": {
                   "enum": [
                     "REPLY",
-                    "DEGRADED_REPLY",
-                    "RUN_RESULT"
+                    "DEGRADED_REPLY"
                   ]
                 },
                 "wrapUpReason": {
@@ -18123,7 +17302,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -18286,7 +17464,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -18426,7 +17603,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -18576,7 +17752,6 @@
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
                             "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                            "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
                             "QUOTA_EXHAUSTED",
@@ -18719,7 +17894,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -18845,7 +18019,6 @@
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
                             "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                            "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
                             "QUOTA_EXHAUSTED",
@@ -18988,7 +18161,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -19180,7 +18352,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -19662,8 +18833,7 @@
         "kind": {
           "enum": [
             "REPLY",
-            "DEGRADED_REPLY",
-            "RUN_RESULT"
+            "DEGRADED_REPLY"
           ]
         },
         "wrapUpReason": {
@@ -20172,7 +19342,6 @@
             "SESSION_NOT_FOUND",
             "SESSION_IN_USE",
             "WORKSPACE_CHANGE_NOT_CONFIRMED",
-            "TEMPLATE_UNSUPPORTED",
             "HUMAN_REQUEST_NOT_PENDING",
             "CONTEXT_OVERFLOW",
             "QUOTA_EXHAUSTED",
@@ -20313,7 +19482,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -20476,7 +19644,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -20616,7 +19783,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -20766,7 +19932,6 @@
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
                     "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                    "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
                     "QUOTA_EXHAUSTED",
@@ -20909,7 +20074,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -21035,7 +20199,6 @@
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
                     "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                    "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
                     "QUOTA_EXHAUSTED",
@@ -21178,7 +20341,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -21370,7 +20532,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -21772,7 +20933,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -22088,7 +21248,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -22210,7 +21369,6 @@
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
                     "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                    "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
                     "QUOTA_EXHAUSTED",
@@ -22533,7 +21691,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -22990,7 +22147,6 @@
                 "SESSION_NOT_FOUND",
                 "SESSION_IN_USE",
                 "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "ARTIFACT_EXPIRED",
                 "USER_DECLINED",
@@ -23249,7 +22405,6 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "FILE_READ",
                 "CONTEXT_ASSEMBLE",
@@ -23336,140 +22491,6 @@
             "additionalProperties": false,
             "$id": "context.ModelToolSpec.v1"
           }
-        },
-        "orientPack": {
-          "type": "object",
-          "required": [
-            "contextPackId",
-            "tokenCount",
-            "tokenBudget",
-            "truncated",
-            "droppedCount",
-            "createdAt",
-            "operation",
-            "snapshotId",
-            "items"
-          ],
-          "properties": {
-            "contextPackId": {
-              "type": "string",
-              "pattern": "^ctx_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "tokenCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "tokenBudget": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "truncated": {
-              "type": "boolean"
-            },
-            "droppedCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "createdAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "operation": {
-              "type": "string",
-              "const": "ORIENT"
-            },
-            "snapshotId": {
-              "type": "string",
-              "pattern": "^snp_[a-f0-9]{64}$"
-            },
-            "items": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "itemId",
-                  "content",
-                  "contentSha256",
-                  "tokenCount",
-                  "reason",
-                  "segment",
-                  "role",
-                  "provenance"
-                ],
-                "properties": {
-                  "itemId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "content": {
-                    "type": "string"
-                  },
-                  "contentSha256": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "tokenCount": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "reason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "segment": {
-                    "type": "string",
-                    "const": "ORIENT"
-                  },
-                  "role": {
-                    "type": "string",
-                    "const": "user"
-                  },
-                  "provenance": {
-                    "type": "object",
-                    "required": [
-                      "path",
-                      "startLine",
-                      "endLine",
-                      "contentSha256",
-                      "retrieval"
-                    ],
-                    "properties": {
-                      "path": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 1024
-                      },
-                      "startLine": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      "endLine": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      "contentSha256": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "snapshotId": {
-                        "type": "string",
-                        "pattern": "^snp_[a-f0-9]{64}$"
-                      },
-                      "retrieval": {
-                        "type": "string",
-                        "const": "TREE"
-                      }
-                    },
-                    "additionalProperties": false
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          },
-          "additionalProperties": false
         },
         "history": {
           "type": "array",
@@ -23715,7 +22736,6 @@
                       "SESSION_NOT_FOUND",
                       "SESSION_IN_USE",
                       "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                      "TEMPLATE_UNSUPPORTED",
                       "HUMAN_REQUEST_NOT_PENDING",
                       "CONTEXT_OVERFLOW",
                       "QUOTA_EXHAUSTED",
@@ -24060,139 +23080,6 @@
     },
     "kernel.execution.ExecutionFact.v1": {
       "anyOf": [
-        {
-          "type": "object",
-          "required": [
-            "workflowRunId",
-            "unitAttemptId",
-            "executionId",
-            "runEpoch",
-            "endedAt",
-            "startedAt",
-            "sessionId",
-            "executionKind",
-            "outcome",
-            "result"
-          ],
-          "properties": {
-            "workflowRunId": {
-              "type": "string",
-              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "unitAttemptId": {
-              "type": "string",
-              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "executionId": {
-              "type": "string",
-              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "runEpoch": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "endedAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "startedAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "sessionId": {
-              "type": "string",
-              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "executionKind": {
-              "type": "string",
-              "const": "REPOSITORY_ORIENT"
-            },
-            "outcome": {
-              "type": "string",
-              "const": "COMPLETED"
-            },
-            "result": {
-              "type": "object",
-              "required": [
-                "output",
-                "artifact"
-              ],
-              "properties": {
-                "output": {
-                  "type": "object",
-                  "required": [
-                    "snapshotId",
-                    "fileCount",
-                    "totalBytes",
-                    "summary",
-                    "tokenCount",
-                    "truncated"
-                  ],
-                  "properties": {
-                    "snapshotId": {
-                      "type": "string",
-                      "pattern": "^snp_[a-f0-9]{64}$"
-                    },
-                    "fileCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "totalBytes": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "summary": {
-                      "type": "string",
-                      "minLength": 0,
-                      "maxLength": 4000
-                    },
-                    "tokenCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "truncated": {
-                      "type": "boolean"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "$id": "context.RepositoryOrientOutput.v1"
-                },
-                "artifact": {
-                  "type": "object",
-                  "required": [
-                    "mediaType",
-                    "text"
-                  ],
-                  "properties": {
-                    "mediaType": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128
-                    },
-                    "text": {
-                      "type": "string"
-                    }
-                  },
-                  "additionalProperties": false
-                },
-                "fullOutput": {
-                  "type": "object",
-                  "required": [
-                    "text"
-                  ],
-                  "properties": {
-                    "text": {
-                      "type": "string"
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
         {
           "type": "object",
           "required": [
@@ -26218,7 +25105,6 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
@@ -26309,7 +25195,6 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
@@ -26390,7 +25275,6 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
@@ -26469,7 +25353,6 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
@@ -26542,7 +25425,6 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
@@ -27119,53 +26001,6 @@
           "required": [
             "deadline",
             "maxOutputBytes",
-            "preview",
-            "maxFullOutputBytes",
-            "maxFiles"
-          ],
-          "properties": {
-            "deadline": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "maxOutputBytes": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "preview": {
-              "type": "object",
-              "required": [
-                "maxBytes",
-                "maxLines"
-              ],
-              "properties": {
-                "maxBytes": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "maxLines": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "additionalProperties": false
-            },
-            "maxFullOutputBytes": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "maxFiles": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "deadline",
-            "maxOutputBytes",
             "maxOutputTokens"
           ],
           "properties": {
@@ -27207,159 +26042,6 @@
     },
     "kernel.execution.ExecutionRequest.v1": {
       "anyOf": [
-        {
-          "type": "object",
-          "required": [
-            "sessionId",
-            "workflowRunId",
-            "unitAttemptId",
-            "executionId",
-            "runEpoch",
-            "executionKind",
-            "input",
-            "scope",
-            "limits"
-          ],
-          "properties": {
-            "sessionId": {
-              "type": "string",
-              "pattern": "^ses_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "workflowRunId": {
-              "type": "string",
-              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "unitAttemptId": {
-              "type": "string",
-              "pattern": "^una_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "executionId": {
-              "type": "string",
-              "pattern": "^exe_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "runEpoch": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "executionKind": {
-              "type": "string",
-              "const": "REPOSITORY_ORIENT"
-            },
-            "input": {
-              "type": "object",
-              "required": [
-                "objective",
-                "tokenBudget"
-              ],
-              "properties": {
-                "objective": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4000
-                },
-                "tokenBudget": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "additionalProperties": false,
-              "$id": "kernel.execution.OrientExecutorInput.v1"
-            },
-            "scope": {
-              "type": "object",
-              "required": [
-                "kind",
-                "repositoryRoot",
-                "exclusions"
-              ],
-              "properties": {
-                "kind": {
-                  "type": "string",
-                  "const": "REPOSITORY"
-                },
-                "repositoryRoot": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4096
-                },
-                "exclusions": {
-                  "type": "array",
-                  "items": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 512
-                  }
-                },
-                "external": {
-                  "type": "object",
-                  "required": [
-                    "below"
-                  ],
-                  "properties": {
-                    "below": {
-                      "type": "string",
-                      "maxLength": 1024
-                    }
-                  },
-                  "additionalProperties": false
-                }
-              },
-              "additionalProperties": false
-            },
-            "limits": {
-              "type": "object",
-              "required": [
-                "deadline",
-                "maxOutputBytes",
-                "preview",
-                "maxFullOutputBytes",
-                "maxFiles"
-              ],
-              "properties": {
-                "deadline": {
-                  "type": "string",
-                  "format": "date-time"
-                },
-                "maxOutputBytes": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "preview": {
-                  "type": "object",
-                  "required": [
-                    "maxBytes",
-                    "maxLines"
-                  ],
-                  "properties": {
-                    "maxBytes": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "maxLines": {
-                      "type": "integer",
-                      "minimum": 1
-                    }
-                  },
-                  "additionalProperties": false
-                },
-                "maxFullOutputBytes": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "maxFiles": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "additionalProperties": false
-            },
-            "notBefore": {
-              "type": "string",
-              "format": "date-time"
-            }
-          },
-          "additionalProperties": false
-        },
         {
           "type": "object",
           "required": [
@@ -27929,140 +26611,6 @@
                     "$id": "context.ModelToolSpec.v1"
                   }
                 },
-                "orientPack": {
-                  "type": "object",
-                  "required": [
-                    "contextPackId",
-                    "tokenCount",
-                    "tokenBudget",
-                    "truncated",
-                    "droppedCount",
-                    "createdAt",
-                    "operation",
-                    "snapshotId",
-                    "items"
-                  ],
-                  "properties": {
-                    "contextPackId": {
-                      "type": "string",
-                      "pattern": "^ctx_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                    },
-                    "tokenCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "tokenBudget": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "truncated": {
-                      "type": "boolean"
-                    },
-                    "droppedCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "createdAt": {
-                      "type": "string",
-                      "format": "date-time"
-                    },
-                    "operation": {
-                      "type": "string",
-                      "const": "ORIENT"
-                    },
-                    "snapshotId": {
-                      "type": "string",
-                      "pattern": "^snp_[a-f0-9]{64}$"
-                    },
-                    "items": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": [
-                          "itemId",
-                          "content",
-                          "contentSha256",
-                          "tokenCount",
-                          "reason",
-                          "segment",
-                          "role",
-                          "provenance"
-                        ],
-                        "properties": {
-                          "itemId": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "content": {
-                            "type": "string"
-                          },
-                          "contentSha256": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "tokenCount": {
-                            "type": "integer",
-                            "minimum": 0
-                          },
-                          "reason": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 200
-                          },
-                          "segment": {
-                            "type": "string",
-                            "const": "ORIENT"
-                          },
-                          "role": {
-                            "type": "string",
-                            "const": "user"
-                          },
-                          "provenance": {
-                            "type": "object",
-                            "required": [
-                              "path",
-                              "startLine",
-                              "endLine",
-                              "contentSha256",
-                              "retrieval"
-                            ],
-                            "properties": {
-                              "path": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 1024
-                              },
-                              "startLine": {
-                                "type": "integer",
-                                "minimum": 1
-                              },
-                              "endLine": {
-                                "type": "integer",
-                                "minimum": 1
-                              },
-                              "contentSha256": {
-                                "type": "string",
-                                "pattern": "^[a-f0-9]{64}$"
-                              },
-                              "snapshotId": {
-                                "type": "string",
-                                "pattern": "^snp_[a-f0-9]{64}$"
-                              },
-                              "retrieval": {
-                                "type": "string",
-                                "const": "TREE"
-                              }
-                            },
-                            "additionalProperties": false
-                          }
-                        },
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "additionalProperties": false
-                },
                 "history": {
                   "type": "array",
                   "items": {
@@ -28307,7 +26855,6 @@
                               "SESSION_NOT_FOUND",
                               "SESSION_IN_USE",
                               "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                              "TEMPLATE_UNSUPPORTED",
                               "HUMAN_REQUEST_NOT_PENDING",
                               "CONTEXT_OVERFLOW",
                               "QUOTA_EXHAUSTED",
@@ -28815,10 +27362,6 @@
                       "type": "string",
                       "const": "ASSEMBLE"
                     },
-                    "snapshotId": {
-                      "type": "string",
-                      "pattern": "^snp_[a-f0-9]{64}$"
-                    },
                     "prefixSha256": {
                       "type": "string",
                       "pattern": "^[a-f0-9]{64}$"
@@ -29011,89 +27554,6 @@
                               "role": {
                                 "type": "string",
                                 "const": "user"
-                              }
-                            },
-                            "additionalProperties": false
-                          },
-                          {
-                            "type": "object",
-                            "required": [
-                              "itemId",
-                              "content",
-                              "contentSha256",
-                              "tokenCount",
-                              "reason",
-                              "segment",
-                              "role",
-                              "provenance"
-                            ],
-                            "properties": {
-                              "itemId": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 200
-                              },
-                              "content": {
-                                "type": "string"
-                              },
-                              "contentSha256": {
-                                "type": "string",
-                                "pattern": "^[a-f0-9]{64}$"
-                              },
-                              "tokenCount": {
-                                "type": "integer",
-                                "minimum": 0
-                              },
-                              "reason": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 200
-                              },
-                              "segment": {
-                                "type": "string",
-                                "const": "ORIENT"
-                              },
-                              "role": {
-                                "type": "string",
-                                "const": "user"
-                              },
-                              "provenance": {
-                                "type": "object",
-                                "required": [
-                                  "path",
-                                  "startLine",
-                                  "endLine",
-                                  "contentSha256",
-                                  "retrieval"
-                                ],
-                                "properties": {
-                                  "path": {
-                                    "type": "string",
-                                    "minLength": 1,
-                                    "maxLength": 1024
-                                  },
-                                  "startLine": {
-                                    "type": "integer",
-                                    "minimum": 1
-                                  },
-                                  "endLine": {
-                                    "type": "integer",
-                                    "minimum": 1
-                                  },
-                                  "contentSha256": {
-                                    "type": "string",
-                                    "pattern": "^[a-f0-9]{64}$"
-                                  },
-                                  "snapshotId": {
-                                    "type": "string",
-                                    "pattern": "^snp_[a-f0-9]{64}$"
-                                  },
-                                  "retrieval": {
-                                    "type": "string",
-                                    "const": "TREE"
-                                  }
-                                },
-                                "additionalProperties": false
                               }
                             },
                             "additionalProperties": false
@@ -30631,85 +29091,6 @@
     },
     "kernel.execution.ExecutionResult.v1": {
       "anyOf": [
-        {
-          "type": "object",
-          "required": [
-            "output",
-            "artifact"
-          ],
-          "properties": {
-            "output": {
-              "type": "object",
-              "required": [
-                "snapshotId",
-                "fileCount",
-                "totalBytes",
-                "summary",
-                "tokenCount",
-                "truncated"
-              ],
-              "properties": {
-                "snapshotId": {
-                  "type": "string",
-                  "pattern": "^snp_[a-f0-9]{64}$"
-                },
-                "fileCount": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "totalBytes": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "summary": {
-                  "type": "string",
-                  "minLength": 0,
-                  "maxLength": 4000
-                },
-                "tokenCount": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "truncated": {
-                  "type": "boolean"
-                }
-              },
-              "additionalProperties": false,
-              "$id": "context.RepositoryOrientOutput.v1"
-            },
-            "artifact": {
-              "type": "object",
-              "required": [
-                "mediaType",
-                "text"
-              ],
-              "properties": {
-                "mediaType": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                },
-                "text": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            },
-            "fullOutput": {
-              "type": "object",
-              "required": [
-                "text"
-              ],
-              "properties": {
-                "text": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
         {
           "type": "object",
           "required": [
@@ -32458,10 +30839,6 @@
               "type": "string",
               "const": "ASSEMBLE"
             },
-            "snapshotId": {
-              "type": "string",
-              "pattern": "^snp_[a-f0-9]{64}$"
-            },
             "prefixSha256": {
               "type": "string",
               "pattern": "^[a-f0-9]{64}$"
@@ -32654,89 +31031,6 @@
                       "role": {
                         "type": "string",
                         "const": "user"
-                      }
-                    },
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "required": [
-                      "itemId",
-                      "content",
-                      "contentSha256",
-                      "tokenCount",
-                      "reason",
-                      "segment",
-                      "role",
-                      "provenance"
-                    ],
-                    "properties": {
-                      "itemId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "content": {
-                        "type": "string"
-                      },
-                      "contentSha256": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "tokenCount": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "reason": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 200
-                      },
-                      "segment": {
-                        "type": "string",
-                        "const": "ORIENT"
-                      },
-                      "role": {
-                        "type": "string",
-                        "const": "user"
-                      },
-                      "provenance": {
-                        "type": "object",
-                        "required": [
-                          "path",
-                          "startLine",
-                          "endLine",
-                          "contentSha256",
-                          "retrieval"
-                        ],
-                        "properties": {
-                          "path": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 1024
-                          },
-                          "startLine": {
-                            "type": "integer",
-                            "minimum": 1
-                          },
-                          "endLine": {
-                            "type": "integer",
-                            "minimum": 1
-                          },
-                          "contentSha256": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "snapshotId": {
-                            "type": "string",
-                            "pattern": "^snp_[a-f0-9]{64}$"
-                          },
-                          "retrieval": {
-                            "type": "string",
-                            "const": "TREE"
-                          }
-                        },
-                        "additionalProperties": false
                       }
                     },
                     "additionalProperties": false
@@ -33206,26 +31500,6 @@
         }
       ],
       "$id": "kernel.execution.ModelProgress.v1"
-    },
-    "kernel.execution.OrientExecutorInput.v1": {
-      "type": "object",
-      "required": [
-        "objective",
-        "tokenBudget"
-      ],
-      "properties": {
-        "objective": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4000
-        },
-        "tokenBudget": {
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "additionalProperties": false,
-      "$id": "kernel.execution.OrientExecutorInput.v1"
     },
     "kernel.execution.OutputReadExecutorInput.v1": {
       "type": "object",
@@ -34154,7 +32428,6 @@
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
                     "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                    "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
                     "QUOTA_EXHAUSTED",
@@ -35361,8 +33634,7 @@
         "kind": {
           "enum": [
             "REPLY",
-            "DEGRADED_REPLY",
-            "RUN_RESULT"
+            "DEGRADED_REPLY"
           ]
         },
         "wrapUpReason": {
@@ -35482,75 +33754,6 @@
             }
           },
           "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "requestId",
-            "outcome",
-            "path",
-            "exists",
-            "ref",
-            "sha256",
-            "text"
-          ],
-          "properties": {
-            "requestId": {
-              "type": "string",
-              "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "outcome": {
-              "type": "string",
-              "const": "ACCEPTED"
-            },
-            "path": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512
-            },
-            "exists": {
-              "type": "boolean",
-              "const": true
-            },
-            "ref": {
-              "type": "object",
-              "required": [
-                "artifactId",
-                "sha256",
-                "size",
-                "mediaType"
-              ],
-              "properties": {
-                "artifactId": {
-                  "type": "string",
-                  "pattern": "^art_[a-f0-9]{64}$"
-                },
-                "sha256": {
-                  "type": "string",
-                  "pattern": "^[a-f0-9]{64}$"
-                },
-                "size": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "mediaType": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                }
-              },
-              "additionalProperties": false,
-              "$id": "platform.common.ArtifactRef.v1"
-            },
-            "sha256": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
-            },
-            "text": {
-              "type": "string"
-            }
-          },
-          "additionalProperties": false
         }
       ],
       "$id": "kernel.unit.ProjectFileContent.v1"
@@ -35578,7 +33781,7 @@
         },
         "path": {
           "type": "string",
-          "pattern": "^(?:(?:(?!\\.\\.?/)[^/]+/)*AGENTS\\.md|\\.multiagentos/workflows/[a-z0-9][a-z0-9-]{0,63}\\.yaml)$",
+          "pattern": "^(?:(?!\\.\\.?/)[^/]+/)*AGENTS\\.md$",
           "maxLength": 512
         }
       },
@@ -36109,7 +34312,6 @@
                       "SESSION_NOT_FOUND",
                       "SESSION_IN_USE",
                       "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                      "TEMPLATE_UNSUPPORTED",
                       "HUMAN_REQUEST_NOT_PENDING",
                       "CONTEXT_OVERFLOW",
                       "QUOTA_EXHAUSTED",
@@ -36192,66 +34394,6 @@
                     },
                     "additionalProperties": false,
                     "$id": "platform.common.ArtifactRef.v1"
-                  }
-                },
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "required": [
-                  "seq",
-                  "category",
-                  "kind",
-                  "outputRef",
-                  "toolCallId"
-                ],
-                "properties": {
-                  "seq": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "category": {
-                    "enum": [
-                      "PINNED",
-                      "NORMAL"
-                    ]
-                  },
-                  "kind": {
-                    "type": "string",
-                    "const": "HANDOFF"
-                  },
-                  "outputRef": {
-                    "type": "object",
-                    "required": [
-                      "artifactId",
-                      "sha256",
-                      "size",
-                      "mediaType"
-                    ],
-                    "properties": {
-                      "artifactId": {
-                        "type": "string",
-                        "pattern": "^art_[a-f0-9]{64}$"
-                      },
-                      "sha256": {
-                        "type": "string",
-                        "pattern": "^[a-f0-9]{64}$"
-                      },
-                      "size": {
-                        "type": "integer",
-                        "minimum": 0
-                      },
-                      "mediaType": {
-                        "type": "string",
-                        "const": "application/vnd.multiagentos.model-output+json"
-                      }
-                    },
-                    "additionalProperties": false
-                  },
-                  "toolCallId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 128
                   }
                 },
                 "additionalProperties": false
@@ -36928,76 +35070,6 @@
       },
       "additionalProperties": false,
       "$id": "kernel.unit.ReportCompactionSourceRequest.v1"
-    },
-    "kernel.unit.ReportPublishInput.v1": {
-      "type": "object",
-      "required": [
-        "goalRef",
-        "report"
-      ],
-      "properties": {
-        "goalRef": {
-          "type": "object",
-          "required": [
-            "artifactId",
-            "sha256",
-            "size",
-            "mediaType"
-          ],
-          "properties": {
-            "artifactId": {
-              "type": "string",
-              "pattern": "^art_[a-f0-9]{64}$"
-            },
-            "sha256": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
-            },
-            "size": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "mediaType": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 128
-            }
-          },
-          "additionalProperties": false,
-          "$id": "platform.common.ArtifactRef.v1"
-        },
-        "report": {
-          "type": "object",
-          "patternProperties": {
-            "^.*$": {}
-          }
-        }
-      },
-      "additionalProperties": false,
-      "$id": "kernel.unit.ReportPublishInput.v1"
-    },
-    "kernel.unit.ReportPublishOutput.v1": {
-      "type": "object",
-      "required": [
-        "conclusionCount",
-        "unconfirmedCount",
-        "degraded"
-      ],
-      "properties": {
-        "conclusionCount": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "unconfirmedCount": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "degraded": {
-          "type": "boolean"
-        }
-      },
-      "additionalProperties": false,
-      "$id": "kernel.unit.ReportPublishOutput.v1"
     },
     "kernel.unit.ReportSessionCommandRequest.v1": {
       "type": "object",
@@ -37814,7 +35886,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -37977,7 +36048,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -38117,7 +36187,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -38267,7 +36336,6 @@
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
                     "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                    "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
                     "QUOTA_EXHAUSTED",
@@ -38410,7 +36478,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -38536,7 +36603,6 @@
                     "SESSION_NOT_FOUND",
                     "SESSION_IN_USE",
                     "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                    "TEMPLATE_UNSUPPORTED",
                     "HUMAN_REQUEST_NOT_PENDING",
                     "CONTEXT_OVERFLOW",
                     "QUOTA_EXHAUSTED",
@@ -38679,7 +36745,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -38871,7 +36936,6 @@
                       },
                       "executionKind": {
                         "enum": [
-                          "REPOSITORY_ORIENT",
                           "REPOSITORY_SEARCH",
                           "FILE_READ",
                           "CONTEXT_ASSEMBLE",
@@ -39297,46 +37361,6 @@
             {
               "type": "object",
               "required": [
-                "objectiveRef"
-              ],
-              "properties": {
-                "objectiveRef": {
-                  "type": "object",
-                  "required": [
-                    "artifactId",
-                    "sha256",
-                    "size",
-                    "mediaType"
-                  ],
-                  "properties": {
-                    "artifactId": {
-                      "type": "string",
-                      "pattern": "^art_[a-f0-9]{64}$"
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "pattern": "^[a-f0-9]{64}$"
-                    },
-                    "size": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "mediaType": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128
-                    }
-                  },
-                  "additionalProperties": false,
-                  "$id": "platform.common.ArtifactRef.v1"
-                }
-              },
-              "additionalProperties": false,
-              "$id": "context.RepositoryOrientInput.v1"
-            },
-            {
-              "type": "object",
-              "required": [
                 "query"
               ],
               "properties": {
@@ -39400,34 +37424,6 @@
               "properties": {
                 "final": {
                   "type": "boolean"
-                },
-                "orientPackRef": {
-                  "type": "object",
-                  "required": [
-                    "artifactId",
-                    "sha256",
-                    "size",
-                    "mediaType"
-                  ],
-                  "properties": {
-                    "artifactId": {
-                      "type": "string",
-                      "pattern": "^art_[a-f0-9]{64}$"
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "pattern": "^[a-f0-9]{64}$"
-                    },
-                    "size": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "mediaType": {
-                      "type": "string",
-                      "const": "application/vnd.multiagentos.context-pack+json"
-                    }
-                  },
-                  "additionalProperties": false
                 },
                 "history": {
                   "type": "array",
@@ -39733,7 +37729,6 @@
                               "SESSION_NOT_FOUND",
                               "SESSION_IN_USE",
                               "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                              "TEMPLATE_UNSUPPORTED",
                               "HUMAN_REQUEST_NOT_PENDING",
                               "CONTEXT_OVERFLOW",
                               "QUOTA_EXHAUSTED",
@@ -39816,66 +37811,6 @@
                             },
                             "additionalProperties": false,
                             "$id": "platform.common.ArtifactRef.v1"
-                          }
-                        },
-                        "additionalProperties": false
-                      },
-                      {
-                        "type": "object",
-                        "required": [
-                          "seq",
-                          "category",
-                          "kind",
-                          "outputRef",
-                          "toolCallId"
-                        ],
-                        "properties": {
-                          "seq": {
-                            "type": "integer",
-                            "minimum": 1
-                          },
-                          "category": {
-                            "enum": [
-                              "PINNED",
-                              "NORMAL"
-                            ]
-                          },
-                          "kind": {
-                            "type": "string",
-                            "const": "HANDOFF"
-                          },
-                          "outputRef": {
-                            "type": "object",
-                            "required": [
-                              "artifactId",
-                              "sha256",
-                              "size",
-                              "mediaType"
-                            ],
-                            "properties": {
-                              "artifactId": {
-                                "type": "string",
-                                "pattern": "^art_[a-f0-9]{64}$"
-                              },
-                              "sha256": {
-                                "type": "string",
-                                "pattern": "^[a-f0-9]{64}$"
-                              },
-                              "size": {
-                                "type": "integer",
-                                "minimum": 0
-                              },
-                              "mediaType": {
-                                "type": "string",
-                                "const": "application/vnd.multiagentos.model-output+json"
-                              }
-                            },
-                            "additionalProperties": false
-                          },
-                          "toolCallId": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 128
                           }
                         },
                         "additionalProperties": false
@@ -40685,53 +38620,6 @@
             },
             {
               "type": "object",
-              "required": [
-                "goalRef",
-                "report"
-              ],
-              "properties": {
-                "goalRef": {
-                  "type": "object",
-                  "required": [
-                    "artifactId",
-                    "sha256",
-                    "size",
-                    "mediaType"
-                  ],
-                  "properties": {
-                    "artifactId": {
-                      "type": "string",
-                      "pattern": "^art_[a-f0-9]{64}$"
-                    },
-                    "sha256": {
-                      "type": "string",
-                      "pattern": "^[a-f0-9]{64}$"
-                    },
-                    "size": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "mediaType": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 128
-                    }
-                  },
-                  "additionalProperties": false,
-                  "$id": "platform.common.ArtifactRef.v1"
-                },
-                "report": {
-                  "type": "object",
-                  "patternProperties": {
-                    "^.*$": {}
-                  }
-                }
-              },
-              "additionalProperties": false,
-              "$id": "kernel.unit.ReportPublishInput.v1"
-            },
-            {
-              "type": "object",
               "properties": {
                 "path": {
                   "type": "string",
@@ -41334,46 +39222,6 @@
         {
           "type": "object",
           "required": [
-            "objectiveRef"
-          ],
-          "properties": {
-            "objectiveRef": {
-              "type": "object",
-              "required": [
-                "artifactId",
-                "sha256",
-                "size",
-                "mediaType"
-              ],
-              "properties": {
-                "artifactId": {
-                  "type": "string",
-                  "pattern": "^art_[a-f0-9]{64}$"
-                },
-                "sha256": {
-                  "type": "string",
-                  "pattern": "^[a-f0-9]{64}$"
-                },
-                "size": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "mediaType": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                }
-              },
-              "additionalProperties": false,
-              "$id": "platform.common.ArtifactRef.v1"
-            }
-          },
-          "additionalProperties": false,
-          "$id": "context.RepositoryOrientInput.v1"
-        },
-        {
-          "type": "object",
-          "required": [
             "query"
           ],
           "properties": {
@@ -41437,34 +39285,6 @@
           "properties": {
             "final": {
               "type": "boolean"
-            },
-            "orientPackRef": {
-              "type": "object",
-              "required": [
-                "artifactId",
-                "sha256",
-                "size",
-                "mediaType"
-              ],
-              "properties": {
-                "artifactId": {
-                  "type": "string",
-                  "pattern": "^art_[a-f0-9]{64}$"
-                },
-                "sha256": {
-                  "type": "string",
-                  "pattern": "^[a-f0-9]{64}$"
-                },
-                "size": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "mediaType": {
-                  "type": "string",
-                  "const": "application/vnd.multiagentos.context-pack+json"
-                }
-              },
-              "additionalProperties": false
             },
             "history": {
               "type": "array",
@@ -41770,7 +39590,6 @@
                           "SESSION_NOT_FOUND",
                           "SESSION_IN_USE",
                           "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                          "TEMPLATE_UNSUPPORTED",
                           "HUMAN_REQUEST_NOT_PENDING",
                           "CONTEXT_OVERFLOW",
                           "QUOTA_EXHAUSTED",
@@ -41853,66 +39672,6 @@
                         },
                         "additionalProperties": false,
                         "$id": "platform.common.ArtifactRef.v1"
-                      }
-                    },
-                    "additionalProperties": false
-                  },
-                  {
-                    "type": "object",
-                    "required": [
-                      "seq",
-                      "category",
-                      "kind",
-                      "outputRef",
-                      "toolCallId"
-                    ],
-                    "properties": {
-                      "seq": {
-                        "type": "integer",
-                        "minimum": 1
-                      },
-                      "category": {
-                        "enum": [
-                          "PINNED",
-                          "NORMAL"
-                        ]
-                      },
-                      "kind": {
-                        "type": "string",
-                        "const": "HANDOFF"
-                      },
-                      "outputRef": {
-                        "type": "object",
-                        "required": [
-                          "artifactId",
-                          "sha256",
-                          "size",
-                          "mediaType"
-                        ],
-                        "properties": {
-                          "artifactId": {
-                            "type": "string",
-                            "pattern": "^art_[a-f0-9]{64}$"
-                          },
-                          "sha256": {
-                            "type": "string",
-                            "pattern": "^[a-f0-9]{64}$"
-                          },
-                          "size": {
-                            "type": "integer",
-                            "minimum": 0
-                          },
-                          "mediaType": {
-                            "type": "string",
-                            "const": "application/vnd.multiagentos.model-output+json"
-                          }
-                        },
-                        "additionalProperties": false
-                      },
-                      "toolCallId": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128
                       }
                     },
                     "additionalProperties": false
@@ -42722,53 +40481,6 @@
         },
         {
           "type": "object",
-          "required": [
-            "goalRef",
-            "report"
-          ],
-          "properties": {
-            "goalRef": {
-              "type": "object",
-              "required": [
-                "artifactId",
-                "sha256",
-                "size",
-                "mediaType"
-              ],
-              "properties": {
-                "artifactId": {
-                  "type": "string",
-                  "pattern": "^art_[a-f0-9]{64}$"
-                },
-                "sha256": {
-                  "type": "string",
-                  "pattern": "^[a-f0-9]{64}$"
-                },
-                "size": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "mediaType": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 128
-                }
-              },
-              "additionalProperties": false,
-              "$id": "platform.common.ArtifactRef.v1"
-            },
-            "report": {
-              "type": "object",
-              "patternProperties": {
-                "^.*$": {}
-              }
-            }
-          },
-          "additionalProperties": false,
-          "$id": "kernel.unit.ReportPublishInput.v1"
-        },
-        {
-          "type": "object",
           "properties": {
             "path": {
               "type": "string",
@@ -43157,45 +40869,6 @@
           "type": "object",
           "required": [
             "snapshotId",
-            "fileCount",
-            "totalBytes",
-            "summary",
-            "tokenCount",
-            "truncated"
-          ],
-          "properties": {
-            "snapshotId": {
-              "type": "string",
-              "pattern": "^snp_[a-f0-9]{64}$"
-            },
-            "fileCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "totalBytes": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "summary": {
-              "type": "string",
-              "minLength": 0,
-              "maxLength": 4000
-            },
-            "tokenCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "truncated": {
-              "type": "boolean"
-            }
-          },
-          "additionalProperties": false,
-          "$id": "context.RepositoryOrientOutput.v1"
-        },
-        {
-          "type": "object",
-          "required": [
-            "snapshotId",
             "hits",
             "truncated"
           ],
@@ -43305,29 +40978,6 @@
         {
           "type": "object",
           "required": [
-            "conclusionCount",
-            "unconfirmedCount",
-            "degraded"
-          ],
-          "properties": {
-            "conclusionCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "unconfirmedCount": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "degraded": {
-              "type": "boolean"
-            }
-          },
-          "additionalProperties": false,
-          "$id": "kernel.unit.ReportPublishOutput.v1"
-        },
-        {
-          "type": "object",
-          "required": [
             "path",
             "directoryCount",
             "fileCount",
@@ -43364,8 +41014,7 @@
             "kind": {
               "enum": [
                 "REPLY",
-                "DEGRADED_REPLY",
-                "RUN_RESULT"
+                "DEGRADED_REPLY"
               ]
             },
             "wrapUpReason": {
@@ -44024,15 +41673,12 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "FILE_READ",
                 "CONTEXT_ASSEMBLE",
                 "MODEL",
-                "REPORT_PUBLISH",
                 "FILE_WRITE",
                 "COMMAND",
-                "TEST",
                 "REPOSITORY_LIST",
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
@@ -44090,45 +41736,6 @@
             },
             "output": {
               "anyOf": [
-                {
-                  "type": "object",
-                  "required": [
-                    "snapshotId",
-                    "fileCount",
-                    "totalBytes",
-                    "summary",
-                    "tokenCount",
-                    "truncated"
-                  ],
-                  "properties": {
-                    "snapshotId": {
-                      "type": "string",
-                      "pattern": "^snp_[a-f0-9]{64}$"
-                    },
-                    "fileCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "totalBytes": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "summary": {
-                      "type": "string",
-                      "minLength": 0,
-                      "maxLength": 4000
-                    },
-                    "tokenCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "truncated": {
-                      "type": "boolean"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "$id": "context.RepositoryOrientOutput.v1"
-                },
                 {
                   "type": "object",
                   "required": [
@@ -44242,29 +41849,6 @@
                 {
                   "type": "object",
                   "required": [
-                    "conclusionCount",
-                    "unconfirmedCount",
-                    "degraded"
-                  ],
-                  "properties": {
-                    "conclusionCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "unconfirmedCount": {
-                      "type": "integer",
-                      "minimum": 0
-                    },
-                    "degraded": {
-                      "type": "boolean"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "$id": "kernel.unit.ReportPublishOutput.v1"
-                },
-                {
-                  "type": "object",
-                  "required": [
                     "path",
                     "directoryCount",
                     "fileCount",
@@ -44301,8 +41885,7 @@
                     "kind": {
                       "enum": [
                         "REPLY",
-                        "DEGRADED_REPLY",
-                        "RUN_RESULT"
+                        "DEGRADED_REPLY"
                       ]
                     },
                     "wrapUpReason": {
@@ -45082,15 +42665,12 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "FILE_READ",
                 "CONTEXT_ASSEMBLE",
                 "MODEL",
-                "REPORT_PUBLISH",
                 "FILE_WRITE",
                 "COMMAND",
-                "TEST",
                 "REPOSITORY_LIST",
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
@@ -45249,15 +42829,12 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "FILE_READ",
                 "CONTEXT_ASSEMBLE",
                 "MODEL",
-                "REPORT_PUBLISH",
                 "FILE_WRITE",
                 "COMMAND",
-                "TEST",
                 "REPOSITORY_LIST",
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
@@ -45385,15 +42962,12 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "FILE_READ",
                 "CONTEXT_ASSEMBLE",
                 "MODEL",
-                "REPORT_PUBLISH",
                 "FILE_WRITE",
                 "COMMAND",
-                "TEST",
                 "REPOSITORY_LIST",
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
@@ -45527,15 +43101,12 @@
             },
             "executionKind": {
               "enum": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "FILE_READ",
                 "CONTEXT_ASSEMBLE",
                 "MODEL",
-                "REPORT_PUBLISH",
                 "FILE_WRITE",
                 "COMMAND",
-                "TEST",
                 "REPOSITORY_LIST",
                 "MESSAGE_PUBLISH",
                 "FILE_EDIT",
@@ -46110,15 +43681,12 @@
                     },
                     "executionKind": {
                       "enum": [
-                        "REPOSITORY_ORIENT",
                         "REPOSITORY_SEARCH",
                         "FILE_READ",
                         "CONTEXT_ASSEMBLE",
                         "MODEL",
-                        "REPORT_PUBLISH",
                         "FILE_WRITE",
                         "COMMAND",
-                        "TEST",
                         "REPOSITORY_LIST",
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
@@ -46176,45 +43744,6 @@
                     },
                     "output": {
                       "anyOf": [
-                        {
-                          "type": "object",
-                          "required": [
-                            "snapshotId",
-                            "fileCount",
-                            "totalBytes",
-                            "summary",
-                            "tokenCount",
-                            "truncated"
-                          ],
-                          "properties": {
-                            "snapshotId": {
-                              "type": "string",
-                              "pattern": "^snp_[a-f0-9]{64}$"
-                            },
-                            "fileCount": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "totalBytes": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "summary": {
-                              "type": "string",
-                              "minLength": 0,
-                              "maxLength": 4000
-                            },
-                            "tokenCount": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "truncated": {
-                              "type": "boolean"
-                            }
-                          },
-                          "additionalProperties": false,
-                          "$id": "context.RepositoryOrientOutput.v1"
-                        },
                         {
                           "type": "object",
                           "required": [
@@ -46328,29 +43857,6 @@
                         {
                           "type": "object",
                           "required": [
-                            "conclusionCount",
-                            "unconfirmedCount",
-                            "degraded"
-                          ],
-                          "properties": {
-                            "conclusionCount": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "unconfirmedCount": {
-                              "type": "integer",
-                              "minimum": 0
-                            },
-                            "degraded": {
-                              "type": "boolean"
-                            }
-                          },
-                          "additionalProperties": false,
-                          "$id": "kernel.unit.ReportPublishOutput.v1"
-                        },
-                        {
-                          "type": "object",
-                          "required": [
                             "path",
                             "directoryCount",
                             "fileCount",
@@ -46387,8 +43893,7 @@
                             "kind": {
                               "enum": [
                                 "REPLY",
-                                "DEGRADED_REPLY",
-                                "RUN_RESULT"
+                                "DEGRADED_REPLY"
                               ]
                             },
                             "wrapUpReason": {
@@ -47168,15 +44673,12 @@
                     },
                     "executionKind": {
                       "enum": [
-                        "REPOSITORY_ORIENT",
                         "REPOSITORY_SEARCH",
                         "FILE_READ",
                         "CONTEXT_ASSEMBLE",
                         "MODEL",
-                        "REPORT_PUBLISH",
                         "FILE_WRITE",
                         "COMMAND",
-                        "TEST",
                         "REPOSITORY_LIST",
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
@@ -47335,15 +44837,12 @@
                     },
                     "executionKind": {
                       "enum": [
-                        "REPOSITORY_ORIENT",
                         "REPOSITORY_SEARCH",
                         "FILE_READ",
                         "CONTEXT_ASSEMBLE",
                         "MODEL",
-                        "REPORT_PUBLISH",
                         "FILE_WRITE",
                         "COMMAND",
-                        "TEST",
                         "REPOSITORY_LIST",
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
@@ -47471,15 +44970,12 @@
                     },
                     "executionKind": {
                       "enum": [
-                        "REPOSITORY_ORIENT",
                         "REPOSITORY_SEARCH",
                         "FILE_READ",
                         "CONTEXT_ASSEMBLE",
                         "MODEL",
-                        "REPORT_PUBLISH",
                         "FILE_WRITE",
                         "COMMAND",
-                        "TEST",
                         "REPOSITORY_LIST",
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
@@ -47613,15 +45109,12 @@
                     },
                     "executionKind": {
                       "enum": [
-                        "REPOSITORY_ORIENT",
                         "REPOSITORY_SEARCH",
                         "FILE_READ",
                         "CONTEXT_ASSEMBLE",
                         "MODEL",
-                        "REPORT_PUBLISH",
                         "FILE_WRITE",
                         "COMMAND",
-                        "TEST",
                         "REPOSITORY_LIST",
                         "MESSAGE_PUBLISH",
                         "FILE_EDIT",
@@ -48136,7 +45629,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -48299,7 +45791,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -48439,7 +45930,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -48589,7 +46079,6 @@
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
                             "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                            "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
                             "QUOTA_EXHAUSTED",
@@ -48732,7 +46221,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -48858,7 +46346,6 @@
                             "SESSION_NOT_FOUND",
                             "SESSION_IN_USE",
                             "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                            "TEMPLATE_UNSUPPORTED",
                             "HUMAN_REQUEST_NOT_PENDING",
                             "CONTEXT_OVERFLOW",
                             "QUOTA_EXHAUSTED",
@@ -49001,7 +46488,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -49193,7 +46679,6 @@
                               },
                               "executionKind": {
                                 "enum": [
-                                  "REPOSITORY_ORIENT",
                                   "REPOSITORY_SEARCH",
                                   "FILE_READ",
                                   "CONTEXT_ASSEMBLE",
@@ -50147,15 +47632,12 @@
     },
     "platform.common.ExecutionKind.v1": {
       "enum": [
-        "REPOSITORY_ORIENT",
         "REPOSITORY_SEARCH",
         "FILE_READ",
         "CONTEXT_ASSEMBLE",
         "MODEL",
-        "REPORT_PUBLISH",
         "FILE_WRITE",
         "COMMAND",
-        "TEST",
         "REPOSITORY_LIST",
         "MESSAGE_PUBLISH",
         "FILE_EDIT",
@@ -50326,7 +47808,6 @@
         "SESSION_NOT_FOUND",
         "SESSION_IN_USE",
         "WORKSPACE_CHANGE_NOT_CONFIRMED",
-        "TEMPLATE_UNSUPPORTED",
         "HUMAN_REQUEST_NOT_PENDING",
         "CONTEXT_OVERFLOW",
         "QUOTA_EXHAUSTED",
@@ -50409,7 +47890,6 @@
         "sessionCloseTimeoutMs",
         "repositoryExclusions",
         "maxSnapshotFiles",
-        "maxReportBytes",
         "sandbox",
         "sandboxMaskedPatterns",
         "command",
@@ -50481,10 +47961,6 @@
           }
         },
         "maxSnapshotFiles": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "maxReportBytes": {
           "type": "integer",
           "minimum": 1
         },
@@ -50784,7 +48260,6 @@
           "required": [
             "runTokenLimit",
             "inputTokenLimit",
-            "orientBudget",
             "searchBudget"
           ],
           "properties": {
@@ -50822,10 +48297,6 @@
               "exclusiveMinimum": 0,
               "maximum": 1
             },
-            "orientBudget": {
-              "type": "integer",
-              "minimum": 1
-            },
             "searchBudget": {
               "type": "integer",
               "minimum": 1
@@ -50836,7 +48307,6 @@
         "executionLimits": {
           "type": "object",
           "required": [
-            "REPOSITORY_ORIENT",
             "REPOSITORY_SEARCH",
             "REPOSITORY_LIST",
             "FILE_READ",
@@ -50852,39 +48322,6 @@
             "MODEL"
           ],
           "properties": {
-            "REPOSITORY_ORIENT": {
-              "type": "object",
-              "required": [
-                "timeoutMs",
-                "maxOutputBytes",
-                "previewMaxBytes",
-                "previewMaxLines",
-                "maxFullOutputBytes"
-              ],
-              "properties": {
-                "timeoutMs": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "maxOutputBytes": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "previewMaxBytes": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "previewMaxLines": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "maxFullOutputBytes": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "additionalProperties": false
-            },
             "REPOSITORY_SEARCH": {
               "type": "object",
               "required": [
@@ -51328,7 +48765,6 @@
             "sessionCloseTimeoutMs",
             "repositoryExclusions",
             "maxSnapshotFiles",
-            "maxReportBytes",
             "sandbox",
             "sandboxMaskedPatterns",
             "command",
@@ -51400,10 +48836,6 @@
               }
             },
             "maxSnapshotFiles": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "maxReportBytes": {
               "type": "integer",
               "minimum": 1
             },
@@ -51703,7 +49135,6 @@
               "required": [
                 "runTokenLimit",
                 "inputTokenLimit",
-                "orientBudget",
                 "searchBudget"
               ],
               "properties": {
@@ -51741,10 +49172,6 @@
                   "exclusiveMinimum": 0,
                   "maximum": 1
                 },
-                "orientBudget": {
-                  "type": "integer",
-                  "minimum": 1
-                },
                 "searchBudget": {
                   "type": "integer",
                   "minimum": 1
@@ -51755,7 +49182,6 @@
             "executionLimits": {
               "type": "object",
               "required": [
-                "REPOSITORY_ORIENT",
                 "REPOSITORY_SEARCH",
                 "REPOSITORY_LIST",
                 "FILE_READ",
@@ -51771,39 +49197,6 @@
                 "MODEL"
               ],
               "properties": {
-                "REPOSITORY_ORIENT": {
-                  "type": "object",
-                  "required": [
-                    "timeoutMs",
-                    "maxOutputBytes",
-                    "previewMaxBytes",
-                    "previewMaxLines",
-                    "maxFullOutputBytes"
-                  ],
-                  "properties": {
-                    "timeoutMs": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "maxOutputBytes": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "previewMaxBytes": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "previewMaxLines": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "maxFullOutputBytes": {
-                      "type": "integer",
-                      "minimum": 1
-                    }
-                  },
-                  "additionalProperties": false
-                },
                 "REPOSITORY_SEARCH": {
                   "type": "object",
                   "required": [
@@ -53186,8 +50579,7 @@
                   "path",
                   "name",
                   "kind",
-                  "trigger",
-                  "iteration"
+                  "trigger"
                 ],
                 "properties": {
                   "nodeId": {
@@ -53215,15 +50607,6 @@
                       "all_success",
                       "all_done"
                     ]
-                  },
-                  "iteration": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "loopId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64
                   },
                   "agentRef": {
                     "type": "object",
@@ -53253,10 +50636,6 @@
                   "guide": {
                     "type": "string",
                     "maxLength": 30000
-                  },
-                  "inputFrom": {
-                    "type": "string",
-                    "const": "HANDOFF"
                   },
                   "output": {
                     "type": "boolean"
@@ -53401,12 +50780,11 @@
                         },
                         "additionalProperties": false
                       },
-                      "submission": {
+                      "specialist": {
                         "type": "object",
                         "required": [
                           "template",
-                          "playbook",
-                          "params"
+                          "playbook"
                         ],
                         "properties": {
                           "template": {
@@ -53541,16 +50919,6 @@
                               }
                             },
                             "additionalProperties": false
-                          },
-                          "params": {
-                            "type": "object",
-                            "patternProperties": {
-                              "^.*$": {
-                                "type": "string",
-                                "minLength": 1,
-                                "maxLength": 2000
-                              }
-                            }
                           }
                         },
                         "additionalProperties": false
@@ -53682,7 +51050,6 @@
                   "kind": {
                     "enum": [
                       "DEPENDS",
-                      "CONDITIONAL",
                       "DELEGATE",
                       "RESUME",
                       "CONTINUES"
@@ -53702,43 +51069,6 @@
                       "delegationId": {
                         "type": "string",
                         "pattern": "^dlg_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                      }
-                    },
-                    "additionalProperties": false
-                  },
-                  "when": {
-                    "type": "object",
-                    "required": [
-                      "field"
-                    ],
-                    "properties": {
-                      "field": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 128
-                      },
-                      "equals": {
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "boolean"
-                          }
-                        ]
-                      },
-                      "in": {
-                        "type": "array",
-                        "items": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "boolean"
-                            }
-                          ]
-                        }
                       }
                     },
                     "additionalProperties": false
@@ -53895,8 +51225,7 @@
             },
             "skipReason": {
               "enum": [
-                "DEPENDENCY_FAILED",
-                "NOT_TAKEN"
+                "DEPENDENCY_FAILED"
               ]
             },
             "resultRef": {
@@ -55664,7 +52993,6 @@
                 "SESSION_NOT_FOUND",
                 "SESSION_IN_USE",
                 "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "CONTEXT_OVERFLOW",
                 "QUOTA_EXHAUSTED",
@@ -56104,7 +53432,6 @@
                 "SESSION_NOT_FOUND",
                 "SESSION_IN_USE",
                 "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                "TEMPLATE_UNSUPPORTED",
                 "HUMAN_REQUEST_NOT_PENDING",
                 "CONTEXT_OVERFLOW",
                 "QUOTA_EXHAUSTED",
@@ -58010,620 +55337,6 @@
       "additionalProperties": false,
       "$id": "review.HumanReviewRequestRef.v1"
     },
-    "workflow.AnalysisReport.v1": {
-      "anyOf": [
-        {
-          "type": "object",
-          "required": [
-            "workflowRunId",
-            "goal",
-            "summary",
-            "readSources",
-            "agentRounds",
-            "createdAt",
-            "degraded",
-            "conclusions",
-            "unconfirmed"
-          ],
-          "properties": {
-            "workflowRunId": {
-              "type": "string",
-              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "goal": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4000
-            },
-            "summary": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4000
-            },
-            "readSources": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "path",
-                  "startLine",
-                  "endLine",
-                  "readRequestId",
-                  "readContentSha256"
-                ],
-                "properties": {
-                  "path": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 1024
-                  },
-                  "startLine": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "endLine": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "readRequestId": {
-                    "type": "string",
-                    "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
-                  "readContentSha256": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "agentRounds": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "agentId",
-                  "agentRunId",
-                  "roundsUsed",
-                  "maxRounds"
-                ],
-                "properties": {
-                  "agentId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64
-                  },
-                  "agentRunId": {
-                    "type": "string",
-                    "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
-                  "roundsUsed": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "maxRounds": {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "snapshotId": {
-              "type": "string",
-              "pattern": "^snp_[a-f0-9]{64}$"
-            },
-            "emptyReads": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1024
-              },
-              "uniqueItems": true
-            },
-            "createdAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "degraded": {
-              "type": "boolean",
-              "const": false
-            },
-            "conclusions": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "statement",
-                  "sources"
-                ],
-                "properties": {
-                  "statement": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2000
-                  },
-                  "sources": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "required": [
-                        "path",
-                        "startLine",
-                        "endLine",
-                        "readRequestId",
-                        "readContentSha256"
-                      ],
-                      "properties": {
-                        "path": {
-                          "type": "string",
-                          "minLength": 1,
-                          "maxLength": 1024
-                        },
-                        "startLine": {
-                          "type": "integer",
-                          "minimum": 1
-                        },
-                        "endLine": {
-                          "type": "integer",
-                          "minimum": 1
-                        },
-                        "readRequestId": {
-                          "type": "string",
-                          "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                        },
-                        "readContentSha256": {
-                          "type": "string",
-                          "pattern": "^[a-f0-9]{64}$"
-                        }
-                      },
-                      "additionalProperties": false
-                    },
-                    "minItems": 1
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "unconfirmed": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "statement",
-                  "reason"
-                ],
-                "properties": {
-                  "statement": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2000
-                  },
-                  "reason": {
-                    "enum": [
-                      "NO_SOURCE",
-                      "SOURCE_NOT_READ",
-                      "MODEL_UNCONFIRMED"
-                    ]
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "wrapUp": {
-              "type": "object",
-              "required": [
-                "reason"
-              ],
-              "properties": {
-                "reason": {
-                  "enum": [
-                    "BUDGET_WRAP_UP",
-                    "TOOL_UNIT_LIMIT",
-                    "WALL_CLOCK_LIMIT",
-                    "REPEATED_INTENT",
-                    "CONSECUTIVE_ERRORS",
-                    "CONTEXT_LIMIT",
-                    "NO_PROGRESS",
-                    "ROUND_LIMIT",
-                    "REGENERATION_LIMIT",
-                    "MEMORY_LIMIT",
-                    "BUDGET_EXHAUSTED",
-                    "FINAL_CALL_INVALID"
-                  ]
-                }
-              },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": [
-            "workflowRunId",
-            "goal",
-            "summary",
-            "readSources",
-            "agentRounds",
-            "createdAt",
-            "degraded",
-            "conclusions",
-            "unconfirmed",
-            "wrapUp"
-          ],
-          "properties": {
-            "workflowRunId": {
-              "type": "string",
-              "pattern": "^wfr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-            },
-            "goal": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4000
-            },
-            "summary": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 4000
-            },
-            "readSources": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "path",
-                  "startLine",
-                  "endLine",
-                  "readRequestId",
-                  "readContentSha256"
-                ],
-                "properties": {
-                  "path": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 1024
-                  },
-                  "startLine": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "endLine": {
-                    "type": "integer",
-                    "minimum": 1
-                  },
-                  "readRequestId": {
-                    "type": "string",
-                    "pattern": "^req_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
-                  "readContentSha256": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "agentRounds": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "required": [
-                  "agentId",
-                  "agentRunId",
-                  "roundsUsed",
-                  "maxRounds"
-                ],
-                "properties": {
-                  "agentId": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 64
-                  },
-                  "agentRunId": {
-                    "type": "string",
-                    "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
-                  },
-                  "roundsUsed": {
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "maxRounds": {
-                    "type": "integer",
-                    "minimum": 1
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "snapshotId": {
-              "type": "string",
-              "pattern": "^snp_[a-f0-9]{64}$"
-            },
-            "emptyReads": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 1024
-              },
-              "uniqueItems": true
-            },
-            "createdAt": {
-              "type": "string",
-              "format": "date-time"
-            },
-            "degraded": {
-              "type": "boolean",
-              "const": true
-            },
-            "conclusions": {
-              "type": "array",
-              "items": {
-                "not": {}
-              },
-              "maxItems": 0
-            },
-            "unconfirmed": {
-              "type": "array",
-              "items": {
-                "not": {}
-              },
-              "maxItems": 0
-            },
-            "wrapUp": {
-              "type": "object",
-              "required": [
-                "reason"
-              ],
-              "properties": {
-                "reason": {
-                  "enum": [
-                    "BUDGET_WRAP_UP",
-                    "TOOL_UNIT_LIMIT",
-                    "WALL_CLOCK_LIMIT",
-                    "REPEATED_INTENT",
-                    "CONSECUTIVE_ERRORS",
-                    "CONTEXT_LIMIT",
-                    "NO_PROGRESS",
-                    "ROUND_LIMIT",
-                    "REGENERATION_LIMIT",
-                    "MEMORY_LIMIT",
-                    "BUDGET_EXHAUSTED",
-                    "FINAL_CALL_INVALID"
-                  ]
-                },
-                "lastIssue": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "required": [
-                        "kind",
-                        "code"
-                      ],
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "FAILURE"
-                        },
-                        "code": {
-                          "enum": [
-                            "INVALID_REQUEST",
-                            "CALLER_FORBIDDEN",
-                            "RUN_NOT_FOUND",
-                            "RUN_BLOCKED",
-                            "REQUEST_CONFLICT",
-                            "RUN_LIMIT",
-                            "REPOSITORY_INVALID",
-                            "DEFINITION_MISMATCH",
-                            "DEFINITION_UNAVAILABLE",
-                            "AGENT_RUN_ACTIVE",
-                            "AGENT_RUN_EXISTS",
-                            "AGENT_RUN_NOT_FOUND",
-                            "AGENT_RUN_ENDED",
-                            "FORBIDDEN",
-                            "UNSUPPORTED_CAPABILITY",
-                            "INVALID_INPUT",
-                            "QUESTION_NOT_PENDING",
-                            "INVALID_ARTIFACT_REF",
-                            "USER_DECLINED",
-                            "BUDGET_WRAP_UP",
-                            "BUDGET_EXHAUSTED",
-                            "FINAL_CALL_USED",
-                            "OUT_OF_SCOPE",
-                            "NOT_FOUND",
-                            "UNSUPPORTED_FILE",
-                            "INVALID_RANGE",
-                            "INVALID_QUERY",
-                            "LIMIT_EXCEEDED",
-                            "PROVIDER_UNREACHABLE",
-                            "PROVIDER_RATE_LIMITED",
-                            "PROVIDER_AUTH",
-                            "PROVIDER_ERROR",
-                            "PROVIDER_TOOL_CHOICE_IGNORED",
-                            "UNIT_TIMEOUT",
-                            "INTERNAL",
-                            "EXECUTION_CANCELLED",
-                            "SCOPE_MISSING",
-                            "PATH_ESCAPE",
-                            "GUARD_FAILURE",
-                            "EXECUTION_STOP_UNCONFIRMED",
-                            "PIN_FAILED",
-                            "WORKFLOW_INTERNAL",
-                            "KERNEL_INTERNAL",
-                            "NO_OPEN_INPUT",
-                            "SESSION_COMMAND_UNKNOWN",
-                            "SESSION_QUERY_UNKNOWN",
-                            "PROJECT_FILE_FORBIDDEN",
-                            "ARTIFACT_EXPIRED",
-                            "SESSION_NOT_FOUND",
-                            "SESSION_IN_USE",
-                            "WORKSPACE_CHANGE_NOT_CONFIRMED",
-                            "TEMPLATE_UNSUPPORTED",
-                            "HUMAN_REQUEST_NOT_PENDING",
-                            "CONTEXT_OVERFLOW",
-                            "QUOTA_EXHAUSTED",
-                            "CAPABILITY_NOT_SUBSET",
-                            "CAPABILITY_NOT_GRANTED",
-                            "WRITE_OUT_OF_SCOPE",
-                            "PROTECTED_PATH",
-                            "ADMISSION_CHECK_FAILED",
-                            "FILE_CHANGED",
-                            "EDIT_NO_MATCH",
-                            "EDIT_NOT_UNIQUE",
-                            "UNDO_NOT_AVAILABLE",
-                            "NOTHING_TO_UNDO",
-                            "UNDO_UNKNOWN",
-                            "COMMAND_DENIED",
-                            "SANDBOX_UNAVAILABLE",
-                            "APPROVAL_MISMATCH",
-                            "ENV_ASSERTION_FAILED",
-                            "PROTECTED_PATH_CREATED",
-                            "NOT_A_GIT_REPOSITORY",
-                            "MEMORY_PRESSURE",
-                            "WRITE_SCOPE_CONFLICT",
-                            "MISSION_BUSY",
-                            "MISSION_CLOSED",
-                            "MISSION_NOT_FOUND",
-                            "WRITE_SCOPE_DELEGATED",
-                            "BUDGET_INSUFFICIENT",
-                            "DELEGATION_NOT_FOUND",
-                            "ADDRESS_FORBIDDEN",
-                            "DOMAIN_DENIED",
-                            "EXTERNAL_PATH_UNAVAILABLE",
-                            "SECRET_IN_REQUEST",
-                            "UNSUPPORTED_CONTENT",
-                            "PAGE_UNAVAILABLE",
-                            "CONTEXT_COMPACTED",
-                            "COMPACTION_SUMMARY_INVALID",
-                            "COMPACTION_UNKNOWN"
-                          ],
-                          "$id": "platform.common.ReasonCode.v1"
-                        }
-                      },
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "required": [
-                        "kind",
-                        "reason"
-                      ],
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "INVALID_OUTPUT"
-                        },
-                        "reason": {
-                          "enum": [
-                            "NO_ACTION",
-                            "OUTPUT_TRUNCATED",
-                            "CONTROL_MIXED",
-                            "CONTROL_NOT_ALLOWED",
-                            "CONTROL_ARGUMENTS_INVALID"
-                          ]
-                        }
-                      },
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "object",
-                      "required": [
-                        "kind"
-                      ],
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "const": "NO_FINISH"
-                        }
-                      },
-                      "additionalProperties": false
-                    }
-                  ]
-                }
-              },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        }
-      ],
-      "$id": "workflow.AnalysisReport.v1"
-    },
-    "workflow.AnalysisReportDraft.v1": {
-      "type": "object",
-      "required": [
-        "summary",
-        "conclusions",
-        "unconfirmed"
-      ],
-      "properties": {
-        "summary": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4000
-        },
-        "conclusions": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": [
-              "statement",
-              "sources"
-            ],
-            "properties": {
-              "statement": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 2000
-              },
-              "sources": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "path",
-                    "startLine",
-                    "endLine"
-                  ],
-                  "properties": {
-                    "path": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 1024
-                    },
-                    "startLine": {
-                      "type": "integer",
-                      "minimum": 1
-                    },
-                    "endLine": {
-                      "type": "integer",
-                      "minimum": 1
-                    }
-                  },
-                  "additionalProperties": false
-                },
-                "maxItems": 20
-              }
-            },
-            "additionalProperties": false
-          },
-          "maxItems": 50
-        },
-        "unconfirmed": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 1000
-          },
-          "maxItems": 50
-        }
-      },
-      "additionalProperties": false,
-      "$id": "workflow.AnalysisReportDraft.v1"
-    },
     "workflow.AskUserArgs.v1": {
       "type": "object",
       "required": [
@@ -58781,41 +55494,6 @@
       },
       "additionalProperties": false,
       "$id": "workflow.ExplorerResult.v1"
-    },
-    "workflow.HandoffBrief.v1": {
-      "type": "object",
-      "required": [
-        "task",
-        "focusAreas",
-        "openQuestions"
-      ],
-      "properties": {
-        "task": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 2000
-        },
-        "focusAreas": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "maxItems": 5
-        },
-        "openQuestions": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300
-          },
-          "maxItems": 5
-        }
-      },
-      "additionalProperties": false,
-      "$id": "workflow.HandoffBrief.v1"
     },
     "workflow.JobKillArgs.v1": {
       "type": "object",

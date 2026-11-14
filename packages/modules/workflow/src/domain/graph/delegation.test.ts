@@ -1,13 +1,6 @@
 import type { SessionLogRecord } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import {
-  edgeState,
-  readyNodes,
-  settleSkips,
-  validateExtension,
-  wakeableNodes,
-  withWaiting,
-} from './graph.js';
+import { edgeState, readyNodes, settleSkips, wakeableNodes, withWaiting } from './graph.js';
 import type { Graph, GraphEdge, GraphNode, NodeRecord, NodeView } from './graph.js';
 import { advanceGraph, chatGrowthPoint, projectGraph, spawnRevision } from './session-graph.js';
 
@@ -17,7 +10,6 @@ const node = (name: string, extra: Partial<GraphNode> = {}): GraphNode => ({
   name,
   kind: 'AGENT',
   trigger: 'all_success',
-  iteration: 1,
   ...extra,
 });
 const edge = (from: string, to: string, kind: GraphEdge['kind'], withCall = false): GraphEdge => ({
@@ -57,32 +49,9 @@ describe('a call in the task graph (M2Design 3.1, 3.3)', () => {
     ]);
   });
 
-  it('does not let a RESUME edge hold back the caller, or make a cycle', () => {
+  it('does not let a RESUME edge hold back the caller', () => {
     // main depends on nothing that comes back, and the returning edges are no part of readiness.
     expect(names(readyNodes(graph, view({})))).toEqual(['main']);
-    const rules = { builtInAgents: new Set(['explorer']), allowConditions: false };
-    const proposed = { node: node('a'), agentId: 'explorer' };
-    expect(
-      validateExtension(
-        { nodes: [node('main')], edges: [] },
-        {
-          nodes: [proposed],
-          edges: [edge('main', 'a', 'DELEGATE', true), edge('a', 'main', 'RESUME', true)],
-        },
-        rules,
-      ),
-    ).toEqual([]);
-    // A forward edge back to the caller is a cycle; only RESUME may point back.
-    expect(
-      validateExtension(
-        { nodes: [node('main')], edges: [] },
-        {
-          nodes: [proposed],
-          edges: [edge('main', 'a', 'DELEGATE', true), edge('a', 'main', 'DEPENDS')],
-        },
-        rules,
-      ),
-    ).toEqual([{ code: 'CYCLE' }]);
   });
 
   it('marks a running node WAITING while a call has not come back, and RUNNING again after', () => {
@@ -186,11 +155,10 @@ describe('a call in the log', () => {
     );
     const mainNode = {
       nodeId: 'nod_main',
-      path: 'wfr_a/1/main#1',
+      path: 'wfr_a/1/main',
       name: 'main',
       kind: 'AGENT' as const,
       trigger: 'all_success' as const,
-      iteration: 1,
     };
     const log = [
       record({
@@ -200,7 +168,7 @@ describe('a call in the log', () => {
         nodes: [mainNode],
         edges: [],
       }),
-      record({ type: 'NODE_STARTED', nodeId: 'nod_main', path: 'wfr_a/1/main#1' }),
+      record({ type: 'NODE_STARTED', nodeId: 'nod_main', path: 'wfr_a/1/main' }),
       record({
         type: 'GRAPH_EXTENDED',
         revision: 2,
@@ -228,11 +196,10 @@ describe('a call in the log', () => {
     );
     const mainNode = {
       nodeId: 'nod_main',
-      path: 'wfr_a/1/main#1',
+      path: 'wfr_a/1/main',
       name: 'main',
       kind: 'AGENT' as const,
       trigger: 'all_success' as const,
-      iteration: 1,
     };
     const log = [
       record({

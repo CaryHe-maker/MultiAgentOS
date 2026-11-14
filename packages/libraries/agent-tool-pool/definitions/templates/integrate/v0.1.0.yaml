@@ -5,7 +5,6 @@ version: v0.1.0
 description:
   'Pre-orchestrated: start the whole system, run its checks, trace each failure to its part,
   fix it there, and check the whole again.'
-origin: BUILTIN
 agent: integrator
 nodes:
   - name: root

@@ -580,14 +580,11 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
     listCheckpoints: (request) =>
       Promise.resolve({ requestId: request.requestId, outcome: 'ACCEPTED' as const, items: [] }),
     startSession: (request) => startNew(request.requestId, request.prompt, { mode: 'CHAT' }),
-    startRun: (request) => {
-      if (request.template.id !== 'analyze')
-        return Promise.resolve(rejected(request.requestId, 'TEMPLATE_UNSUPPORTED'));
-      return startNew(request.requestId, request.goal, {
+    startRun: (request) =>
+      startNew(request.requestId, request.goal, {
         mode: 'ORCHESTRATION',
         templateRef: request.template,
-      });
-    },
+      }),
     openSession: (request) => {
       if (!known.has(request.sessionId))
         return Promise.resolve(rejected(request.requestId, 'SESSION_NOT_FOUND'));

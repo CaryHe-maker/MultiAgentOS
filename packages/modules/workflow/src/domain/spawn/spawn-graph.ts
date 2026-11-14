@@ -184,7 +184,7 @@ export function taskScopeOf(
     writeScope: spawn.writeScope,
     inputs: spawn.inputs,
     dependencies,
-    ...(spawn.submission === undefined ? {} : { playbook: renderPlaybook(spawn.submission) }),
+    ...(spawn.specialist === undefined ? {} : { playbook: renderPlaybook(spawn.specialist) }),
     ...(continued === undefined ? {} : { continued }),
     ...(inherited === undefined ? {} : { inherited }),
   };
@@ -280,21 +280,6 @@ function continuedOf(
   if (first?.spawn === undefined) return undefined;
   // The earliest task continues nothing, so its scope has no `continued` of its own.
   return { missions, first: taskScopeOf(records, workflowRunId, graph, first, first.spawn) };
-}
-
-/**
- * What the work since the user's latest input has dispatched so far (from the record at
- * `sinceSeq` on): the limits of `run_subagents` count it (M2Design 3.6).
- */
-export function spawnedIn(
-  records: readonly SessionLogRecord[],
-  sinceSeq: number,
-): { readonly tasks: number; readonly calls: number } {
-  const spawns = records.filter(
-    (record): record is RecordOf<'GRAPH_EXTENDED'> =>
-      record.type === 'GRAPH_EXTENDED' && record.source === 'SPAWN' && record.seq >= sinceSeq,
-  );
-  return { tasks: spawns.reduce((sum, each) => sum + each.nodes.length, 0), calls: spawns.length };
 }
 
 /**

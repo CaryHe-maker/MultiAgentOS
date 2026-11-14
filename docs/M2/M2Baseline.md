@@ -1,5 +1,7 @@
 # MultiAgentOS M2 现状基线
 
+> 2026-11-14 注：M1 的 `analyze`、使用者模板、条件边与有界循环已删除（M2Design v1.38）；下文提到它们的地方是当时的基线记录，保持原样。
+
 > 2026-11-07，`feat/M2` 合入压缩与阶段整理之后。本文是 [M2ReleasePlan](M2ReleasePlan.md) 的起点：已经做到什么、证据在哪里、还差什么。
 > 它只描述现状，不描述计划；机制以 [M2Design](M2Design.md) 为准。旧的阶段计划与进度已冻结在 [History/M2](../History/M2/README.md)，本文不再使用旧的阶段编号。
 

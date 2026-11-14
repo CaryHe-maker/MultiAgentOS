@@ -50,7 +50,6 @@ const unit = (id: string, failurePolicy: AgentUnit['failurePolicy'] = {}): Agent
 const definitions: AgentDefinitions = {
   label: 'main',
   limits: { maxRounds: 4, maxToolCallsPerRound: 2 },
-  orient: unit('repository-orient'),
   contextAssemble: unit('context-assemble'),
   modelCall: unit('model-call', { PROVIDER_ERROR: 'RETURN_TO_MODEL', PROVIDER_AUTH: 'FATAL' }),
   publish: unit('message-publish'),
@@ -69,7 +68,12 @@ const definitions: AgentDefinitions = {
       allowedInFinal: true,
       action: 'PUBLISH_REPLY',
     },
-    { toolName: 'handoff', parameters: ReplyArgsSchema, allowedInFinal: false, action: 'HANDOFF' },
+    {
+      toolName: 'submit',
+      parameters: ReplyArgsSchema,
+      allowedInFinal: false,
+      action: 'FINISH_SUBAGENT',
+    },
   ],
   onDegraded: 'PUBLISH_NOTICE',
 };
@@ -85,7 +89,6 @@ const config: AgentConfig = {
   regenerationLimit: 3,
 };
 const context: AgentContext = {
-  objectiveRef: ref('9'),
   assembleInput: (status, final) => ({ final, history: [], status }),
 };
 const start = (overrides: Partial<AgentDefinitions> = {}) =>
@@ -164,11 +167,10 @@ const modelOutput = (
   ref: modelRef,
 });
 
-/** Runs orient and context, leaving the cycle waiting for the model. */
+/** Runs the context assembly, leaving the cycle waiting for the model. */
 function atModel(overrides: Partial<AgentDefinitions> = {}): AgentTransition {
   const started = start(overrides);
-  const assembled = receive(started, report(started.state, only(started), assembledOutput));
-  return receive(assembled, report(assembled.state, only(assembled), assembledOutput));
+  return receive(started, report(started.state, only(started), assembledOutput));
 }
 const replied = (
   from: AgentTransition,
@@ -183,19 +185,8 @@ function expectDegraded(from: AgentTransition, reason: string): void {
 }
 
 describe('startup', () => {
-  it('orients first, once per run', () => {
-    expect(unitId(start())).toEqual(['repository-orient']);
-    const again = startAgent(
-      {
-        workflowRunId: newId('wfr'),
-        sessionId: newId('ses'),
-        agentRunId: newId('agr'),
-        definitions,
-        orientPackRef: packRef,
-      },
-      context,
-    );
-    expect(unitId(again)).toEqual(['context-assemble']);
+  it('assembles the context first', () => {
+    expect(unitId(start())).toEqual(['context-assemble']);
   });
 
   it('writes the log before it submits, with IDs derived from the path', () => {
@@ -203,19 +194,13 @@ describe('startup', () => {
     expect(types(started)).toEqual(['UNIT_SUBMITTED']);
     const request = started.submissions[0];
     expect(validate(SubmitUnitRequestSchema, request).ok).toBe(true);
-    expect(request?.path).toBe('agr_01ABCDEFGH/round-0/1#1');
-  });
-
-  it('goes on without the overview when orient fails', () => {
-    const started = start();
-    const next = receive(started, report(started.state, only(started), { fail: 'PROVIDER_ERROR' }));
-    expect(unitId(next)).toEqual(['context-assemble']);
+    expect(request?.path).toBe('agr_01ABCDEFGH/round-1/1#1');
   });
 });
 
 describe('ending', () => {
   it('says only which declared tool ended it, whatever the tool is', () => {
-    for (const toolName of ['reply', 'handoff']) {
+    for (const toolName of ['reply', 'submit']) {
       const done = replied(atModel(), [call(toolName, { text: 'hi' })]);
       expect(done.ending).toMatchObject({
         kind: 'ENDED',
@@ -311,7 +296,7 @@ describe('ending', () => {
   it('closes with the last Unit and logs it by its source', () => {
     const done = replied(atModel(), [call('reply', { text: 'hi' })]);
     if (done.ending?.kind !== 'ENDED') throw new Error('not ended');
-    const input = { goalRef: ref('9'), report: { summary: 'secret summary' } };
+    const input = { kind: 'DEGRADED_REPLY', agentLabel: 'main', reason: 'secret summary' } as const;
     const closing = closeAgent(done.state, input, done.ending.source);
     expect(unitId(closing)).toEqual(['message-publish']);
     expect(closing.submissions[0]?.input).toEqual(input);
@@ -326,7 +311,8 @@ describe('ending', () => {
 
   it('fails when the closing Unit fails', () => {
     const done = replied(atModel(), [call('reply', { text: 'hi' })]);
-    const closing = closeAgent(done.state, { goalRef: ref('9'), report: {} }, undefined);
+    const input = { kind: 'DEGRADED_REPLY', agentLabel: 'main', reason: 'r' } as const;
+    const closing = closeAgent(done.state, input, undefined);
     const closed = receive(closing, report(closing.state, only(closing), { fail: 'INTERNAL' }));
     expect(closed.ending).toEqual({ kind: 'FAILED', code: 'INTERNAL' });
   });
@@ -565,8 +551,7 @@ describe('wrap-up', () => {
   });
 
   it('takes a size the provider refused the same way as one it never saw', () => {
-    const started = start();
-    const assembling = receive(started, report(started.state, only(started), assembledOutput));
+    const assembling = start();
     const final = receive(
       assembling,
       report(assembling.state, only(assembling), { reject: 'LIMIT_EXCEEDED' }),
@@ -580,8 +565,7 @@ describe('wrap-up', () => {
   });
 
   it('wraps up a context over the limit, and degrades when the final call is too', () => {
-    const started = start();
-    const assembling = receive(started, report(started.state, only(started), assembledOutput));
+    const assembling = start();
     const final = receive(
       assembling,
       report(assembling.state, only(assembling), { reject: 'LIMIT_EXCEEDED' }),
@@ -735,7 +719,7 @@ describe('the final call', () => {
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
     );
-    expectDegraded(replied(final, [call('handoff', { text: 'brief' })]), 'FINAL_CALL_INVALID');
+    expectDegraded(replied(final, [call('submit', { text: 'brief' })]), 'FINAL_CALL_INVALID');
   });
 
   it('keeps the finishing call it refused, so that what it said is not lost', () => {
@@ -745,7 +729,7 @@ describe('the final call', () => {
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
     );
-    const refused = replied(final, [call('handoff', { text: 'brief' })]);
+    const refused = replied(final, [call('submit', { text: 'brief' })]);
     expect(refused.ending).toMatchObject({
       kind: 'DEGRADED',
       reason: 'FINAL_CALL_INVALID',
@@ -781,7 +765,7 @@ describe('every tool call gets an answer', () => {
   });
 
   it('when the final call misuses an end tool', () => {
-    const done = replied(atFinal(), [call('handoff', { text: 'x' }, 'late')]);
+    const done = replied(atFinal(), [call('submit', { text: 'x' }, 'late')]);
     expect(answered(done)).toEqual(['late']);
   });
 
@@ -805,8 +789,7 @@ describe('every tool call gets an answer', () => {
 
 describe('what the log keeps of an assembly', () => {
   it('records the digests, and not the history it can rebuild', () => {
-    const started = start();
-    const assembling = receive(started, report(started.state, only(started), assembledOutput));
+    const assembling = start();
     const secret = 'history that must not repeat';
     const withHistory: AgentContext = {
       ...context,

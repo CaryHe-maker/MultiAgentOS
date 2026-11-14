@@ -12,7 +12,7 @@ import { probeSandbox } from '@multiagentos/kernel';
 import { afterEach, describe, expect, it } from 'vitest';
 import { composeSystem } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
-import { answeringTerminal } from '../system/analyze-template/harness.js';
+import { answeringTerminal } from '../support/answering-terminal.js';
 import { scriptedAgents, textOf, tool, type ScriptedChat } from './chat-driver.js';
 
 const TIMEOUT = 120_000;
@@ -79,7 +79,7 @@ async function masRun(
       log: (line) => void terminal.written.push(line),
     });
     await system.start();
-    const template = system.templateRef(command.template);
+    const template = system.templateRef('mission');
     const exitCode = await system.run((console) =>
       runCommand(command, console, terminal, template),
     );
@@ -289,7 +289,7 @@ real('a project as a long task: parts in parallel, a lead with its own worker', 
           ],
         },
       );
-      const ran = await masRun(['mission', 'build a small KV project'], provider);
+      const ran = await masRun(['build a small KV project'], provider);
       expect(ran.exitCode).toBe(0);
       expect(await readFile(join(ran.repository, 'server/store/kv.txt'), 'utf8')).toBe('kv\n');
       expect(await readFile(join(ran.repository, 'docs/USAGE.md'), 'utf8')).toContain('GET /keys');
