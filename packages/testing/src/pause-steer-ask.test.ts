@@ -157,6 +157,7 @@ function setup(
       maxDependencyDepth: 2,
       consecutiveErrorLimit: 5,
       noProgressRounds: 2,
+      toolFailureRounds: 2,
       regenerationLimit: 3,
     },
     runtime: () => ({ sandbox: 'none', currentDate: '2026-11-06' }),

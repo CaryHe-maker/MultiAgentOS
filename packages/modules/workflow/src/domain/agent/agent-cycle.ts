@@ -97,7 +97,10 @@ export interface AgentConfig {
     readonly window: number;
   };
   readonly consecutiveErrorLimit: number;
+  /** Rounds in a row in which no call succeeded at all. */
   readonly noProgressRounds: number;
+  /** Rounds in a row in which the same tool failed: each tool is counted apart. */
+  readonly toolFailureRounds: number;
   readonly maxNestedInstructions: number;
   readonly maxSubagentsPerCall: number;
   readonly maxDependencyDepth: number;
@@ -146,6 +149,8 @@ export interface AgentState {
   readonly round: number;
   readonly final: boolean;
   readonly finalUsed: boolean;
+  /** The final call was asked again once, after an answer that was not one finishing call. */
+  readonly finalRetried?: boolean;
   readonly wrapUpReason?: WrapUpReason;
   readonly budget: BudgetView;
   readonly pending: ReadonlyMap<string, Pending>;
@@ -154,6 +159,11 @@ export interface AgentState {
   readonly intents: readonly string[];
   readonly consecutiveErrors: number;
   readonly noProgress: number;
+  /** Per tool, the rounds in a row in which it failed (and did not also succeed). */
+  readonly toolFailures: Readonly<Record<string, number>>;
+  /** The tools that failed in this round, and those that succeeded. */
+  readonly roundFailedTools: readonly string[];
+  readonly roundOkTools: readonly string[];
   readonly regenerations: number;
   /**
    * Replies refused because a request read before was not answered (Orchestration 5.3). Counted
@@ -533,6 +543,8 @@ function nextRound(
     roundHadOk: false,
     roundErrored: false,
     roundMixed: false,
+    roundFailedTools: [],
+    roundOkTools: [],
     ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
   };
   const status: ContextAssembleInput['status'] = {
@@ -585,6 +597,9 @@ export function startAgent(
     intents: [],
     consecutiveErrors: 0,
     noProgress: 0,
+    toolFailures: {},
+    roundFailedTools: [],
+    roundOkTools: [],
     regenerations: 0,
     replyRefusals: 0,
     overflows: 0,
@@ -628,6 +643,7 @@ function reassemble(
     budget: state.budget,
     final: state.final,
     ...(state.wrapUpReason === undefined ? {} : { wrapUpReason: state.wrapUpReason }),
+    ...(state.final && state.finalRetried === true ? { finalRetry: true as const } : {}),
   };
   return one(
     state,
@@ -666,6 +682,12 @@ function failed(
     return state.final
       ? degrade(state, 'CONTEXT_LIMIT', records)
       : nextRound(wrapUp(state, 'CONTEXT_LIMIT'), context, records);
+  // A final answer that was not one finishing call is asked for once more, more plainly, before
+  // the AgentRun ends degraded: one slip of the model should not fail the task.
+  if (code === 'PROVIDER_TOOL_CHOICE_IGNORED' && pending.role === 'MODEL' && state.final)
+    return state.finalRetried === true
+      ? degrade(state, state.wrapUpReason ?? 'BUDGET_WRAP_UP', records)
+      : reassemble({ ...state, finalRetried: true }, context, records);
   switch (handlingOf(pending.unit, code)) {
     case 'RETURN_TO_MODEL':
       return nextRound(state, context, records);
@@ -713,12 +735,20 @@ function afterTools(
   judged = true,
 ): AgentTransition {
   const noProgress = !judged ? state.noProgress : state.roundHadOk ? 0 : state.noProgress + 1;
-  const next = { ...state, noProgress };
-  return nextRound(
-    noProgress >= config.noProgressRounds ? wrapUp(next, 'NO_PROGRESS') : next,
-    context,
-    records,
-  );
+  // A tool counts its own failures: different tools failing one after the other is the model
+  // correcting itself, the same tool failing round after round is not.
+  const toolFailures = !judged
+    ? state.toolFailures
+    : Object.fromEntries(
+        [...new Set(state.roundFailedTools)]
+          .filter((tool) => !state.roundOkTools.includes(tool))
+          .map((tool) => [tool, (state.toolFailures[tool] ?? 0) + 1]),
+      );
+  const next = { ...state, noProgress, toolFailures };
+  const stuck =
+    noProgress >= config.noProgressRounds ||
+    Object.values(toolFailures).some((rounds) => rounds >= config.toolFailureRounds);
+  return nextRound(stuck ? wrapUp(next, 'NO_PROGRESS') : next, context, records);
 }
 
 function invalidReply(
@@ -736,6 +766,8 @@ function invalidReply(
     calls.length === 0
       ? [feedback(state, code)]
       : calls.map((call) => feedback(state, code, call.toolCallId, detail));
+  if (state.final && state.finalRetried !== true)
+    return reassemble({ ...state, finalRetried: true }, context, [...records, ...notes]);
   if (state.final)
     return degrade(
       state,
@@ -1110,11 +1142,15 @@ function actOn(
         }
       : transition;
   }
-  if (state.final)
-    return degrade(state, 'FINAL_CALL_INVALID', [
+  if (state.final) {
+    const unanswered = [
       ...records,
       ...calls.map((call) => feedback(state, 'NOT_EXECUTED', call.toolCallId)),
-    ]);
+    ];
+    return state.finalRetried === true
+      ? degrade(state, 'FINAL_CALL_INVALID', unanswered)
+      : reassemble({ ...state, finalRetried: true }, context, unanswered);
+  }
 
   let next = state;
   const pending = new Map<string, Pending>();
@@ -1335,11 +1371,17 @@ function handleTool(
     : counted
       ? state.consecutiveErrors + 1
       : state.consecutiveErrors;
+  const { toolName } = pending.call;
   let next: AgentState = {
     ...state,
     consecutiveErrors,
     roundErrored: state.roundErrored || counted,
     roundHadOk: state.roundHadOk || ok || external,
+    roundFailedTools:
+      !ok && !declined && !external
+        ? [...state.roundFailedTools, toolName]
+        : state.roundFailedTools,
+    roundOkTools: ok ? [...state.roundOkTools, toolName] : state.roundOkTools,
     // After a write nothing read before it may be answered with "the result is above".
     succeeded: !ok
       ? state.succeeded
@@ -1360,7 +1402,6 @@ function handleTool(
           : 'WALL_CLOCK_LIMIT',
     );
   } else if (declined) {
-    const { toolName } = pending.call;
     if (!next.declinedTools.includes(toolName))
       next = { ...next, declinedTools: [...next.declinedTools, toolName] };
   } else if (!ok && !CORE_REFUSALS.has(report.reasonCode)) {
@@ -1640,6 +1681,9 @@ export function answerRecord(
   };
 }
 
+/** What `toolFailures` counts a finishing call that was sent back under, whichever it was. */
+const FINISHING_CALL = 'finishing call';
+
 /** The AgentRun goes on after a finishing call was sent back: that is no progress (M2Design 3.7). */
 export function resumeAfterRefusal(
   state: AgentState,
@@ -1647,7 +1691,18 @@ export function resumeAfterRefusal(
   context: AgentContext,
   config: AgentConfig,
 ): AgentTransition {
-  return afterTools({ ...state, roundHadOk: false, roundErrored: false }, context, config, records);
+  return afterTools(
+    {
+      ...state,
+      roundHadOk: false,
+      roundErrored: false,
+      // The finishing call sent back is a failure of that call, counted as any tool's.
+      roundFailedTools: [...state.roundFailedTools, FINISHING_CALL],
+    },
+    context,
+    config,
+    records,
+  );
 }
 
 /**
@@ -1682,6 +1737,14 @@ export function answerDelegatedCall(
     invalidSpawns,
     spawnWithdrawn: state.spawnWithdrawn || invalidSpawns >= 2 || outcome.withdraw === true,
     roundHadOk: state.roundHadOk || !outcome.refused,
+    ...(outcome.refused
+      ? {
+          roundFailedTools: [
+            ...state.roundFailedTools,
+            outcome.spawn ? 'run_subagents' : 'control call',
+          ],
+        }
+      : {}),
   };
   // Other calls of the round (its Units, other control calls) are not all back yet.
   if (next.pending.size > 0 || next.held.length > 0)

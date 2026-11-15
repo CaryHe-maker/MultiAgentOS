@@ -6,8 +6,9 @@ description: Control tool that stops a background command of the task.
 purpose: CONTROL
 modelName: job_kill
 modelDescription: >-
-  Stop one of your background commands by its id (SIGTERM, then SIGKILL). You are told when it
-  has ended, with what it printed last.
+  Stop one of your background commands by its id (SIGTERM, then SIGKILL), also one a subtask
+  that delivered left running (fix-api/job_1). You are told when it has ended, with what it
+  printed last.
 parametersContract:
   kind: contract
   id: workflow.JobKillArgs

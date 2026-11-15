@@ -189,6 +189,23 @@ export const StatusFactsSchema = closed({
   budget: BudgetViewSchema,
   final: Type.Boolean(),
   wrapUpReason: Type.Optional(WrapUpReasonSchema),
+  /** The final call is asked again: the first answer did not call exactly one finishing tool. */
+  finalRetry: Type.Optional(Type.Literal(true)),
+  /**
+   * The background commands the task holds that still run (Orchestration 6.2, D65): named as
+   * `job_kill` takes them, with the subtask that started one it holds for a subtask that ended.
+   */
+  jobs: Type.Optional(
+    Type.Array(
+      closed({
+        name: text(200),
+        command: text(120),
+        seconds: count(),
+        from: Type.Optional(text(200)),
+      }),
+      { maxItems: 16 },
+    ),
+  ),
 });
 export type StatusFacts = Static<typeof StatusFactsSchema>;
 

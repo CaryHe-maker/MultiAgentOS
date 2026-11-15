@@ -65,8 +65,8 @@ import { toolInputOf } from '../domain/context/tool-inputs.js';
 import {
   exitText,
   jobListText,
+  jobsHeldBy,
   jobsOf,
-  jobsOfMission,
   nextJobId,
   runningJobs,
 } from '../domain/graph/mission-jobs.js';
@@ -1599,11 +1599,25 @@ export class SessionRunner {
           ...withdrawnTools,
           ...(this.#deps.runtime().git === false ? this.#gitTools() : []),
         ];
+        // What still runs in the background is said at every call (D65): the task may stop it.
+        const now = (this.#deps.now ?? (() => new Date()))().getTime();
+        const jobs =
+          scope.missionId === undefined
+            ? []
+            : jobsHeldBy(this.#records, scope.missionId, projectMissions(this.#records))
+                .filter((job) => job.running)
+                .map((job) => ({
+                  name: job.name,
+                  command: job.command.replace(/\s+/gu, ' ').slice(0, 120),
+                  seconds: Math.max(0, Math.round((now - Date.parse(job.startedAt)) / 1000)),
+                  ...(job.from === undefined ? {} : { from: job.from }),
+                }))
+                .slice(0, 16);
         return {
           final,
           ...(withdrawn.length === 0 ? {} : { withdrawnTools: [...new Set(withdrawn)] }),
           history: [...projectHistory(this.#records, scope, { final })],
-          status,
+          status: jobs.length === 0 ? status : { ...status, jobs },
         };
       },
     };
@@ -3189,14 +3203,17 @@ export class SessionRunner {
     ]);
   }
 
-  /** `job_output`, `job_list`, `job_kill` (Orchestration 6.2): only the task's own jobs. */
+  /**
+   * `job_output`, `job_list`, `job_kill` (Orchestration 6.2): the jobs the task holds, its own and
+   * those subtasks that delivered left running and handed up to it (6.4).
+   */
   async #onJobTool(
     workflowRunId: string,
     active: ActiveAgent,
     ending: Extract<AgentEnding, { kind: 'JOB' }>,
   ): Promise<void> {
     const { toolCallId } = ending.source;
-    const jobs = jobsOfMission(this.#records, active.missionId);
+    const jobs = jobsHeldBy(this.#records, active.missionId, projectMissions(this.#records));
     if (ending.action === 'LIST')
       return this.#answerControl(
         workflowRunId,
@@ -3207,7 +3224,7 @@ export class SessionRunner {
         jobListText(jobs),
       );
     const args = ending.arguments as JobOutputArgs | JobKillArgs;
-    const job = jobs.find((each) => each.jobId === args.jobId);
+    const job = jobs.find((each) => each.name === args.jobId);
     if (job === undefined)
       return this.#answerControl(
         workflowRunId,
@@ -3241,7 +3258,7 @@ export class SessionRunner {
         toolCallId,
         ending.action !== 'KILL',
         'JOB_GONE',
-        `${job.jobId} is no longer kept: ${state}.`,
+        `${job.name} is no longer kept: ${state}.`,
       );
     }
     if (ending.action === 'KILL') {
@@ -3255,14 +3272,14 @@ export class SessionRunner {
         toolCallId,
         false,
         'JOB_KILLED',
-        `${job.jobId}: ${how}`,
+        `${job.name}: ${how}`,
       );
     }
     await this.#append([
       {
         type: 'JOB_READ',
         workflowRunId,
-        missionId: active.missionId,
+        missionId: job.missionId,
         jobId: job.jobId,
         nextOffset: result.nextOffset,
       },
@@ -3286,7 +3303,7 @@ export class SessionRunner {
       toolCallId,
       false,
       'JOB_OUTPUT',
-      `${skipped}${body}${more}\n[${job.jobId} status: ${state}]`,
+      `${skipped}${body}${more}\n[${job.name} status: ${state}]`,
     );
   }
 
@@ -3402,7 +3419,9 @@ export class SessionRunner {
     const args = ending.arguments as SleepArgs;
     const { toolCallId } = ending.source;
     const running = this.#runningChildren(active.missionId);
-    const jobs = jobsOfMission(this.#records, active.missionId).filter((job) => job.running);
+    const jobs = jobsHeldBy(this.#records, active.missionId, projectMissions(this.#records)).filter(
+      (job) => job.running,
+    );
     const siblings = this.#runningSiblings(active.missionId);
     const problems: string[] = [];
     for (const condition of args.until) {
@@ -3425,7 +3444,7 @@ export class SessionRunner {
           problems.push(`no running subtask of yours is named ${unknown.join(', ')}`);
       } else if (condition.kind === 'jobs') {
         const unknown = (condition.jobIds ?? []).filter(
-          (jobId) => !jobs.some((job) => job.jobId === jobId),
+          (jobId) => !jobs.some((job) => job.name === jobId),
         );
         if (jobs.length === 0)
           problems.push('you have no background commands that are still running');
@@ -4160,13 +4179,13 @@ export class SessionRunner {
     // A background command it is told of wakes a sleeping task (Orchestration 6.4): its own, or
     // one of a task below that ended before it. Only `jobs (all)` over named jobs waits for all of
     // them; the limit of wakes without the user holds.
-    const jobs = jobsOfMission(this.#records, mission.missionId);
+    const jobs = jobsHeldBy(this.#records, mission.missionId, projectMissions(this.#records));
     const allOf = yielded.until.find(
       (condition) => condition.kind === 'jobs' && condition.mode === 'all',
     );
     const waitsForAll =
       allOf?.kind === 'jobs'
-        ? jobs.filter((job) => allOf.jobIds === undefined || allOf.jobIds.includes(job.jobId))
+        ? jobs.filter((job) => allOf.jobIds === undefined || allOf.jobIds.includes(job.name))
         : [];
     const allDone = waitsForAll.every((job) => job.ended !== undefined);
     const told = this.#records.filter(

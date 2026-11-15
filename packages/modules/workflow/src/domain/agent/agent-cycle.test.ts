@@ -84,6 +84,7 @@ const config: AgentConfig = {
   maxDependencyDepth: 2,
   consecutiveErrorLimit: 5,
   noProgressRounds: 2,
+  toolFailureRounds: 2,
   regenerationLimit: 3,
 };
 const context: AgentContext = {
@@ -515,7 +516,17 @@ describe('wrap-up', () => {
     );
     const model = reassemble(context_, low);
     expect(model.submissions[0]?.input).toMatchObject({ final: true, finalMode: 'AUTO' });
-    expectDegraded(replied(model, [call('list_files', { path: 'z' })]), 'FINAL_CALL_INVALID');
+    // Asked once more, saying what was wrong; the second miss ends it.
+    const once = replied(model, [call('list_files', { path: 'z' })]);
+    expect(once.ending).toBeUndefined();
+    expect(once.submissions[0]?.input).toMatchObject({
+      final: true,
+      status: { final: true, finalRetry: true },
+    });
+    expectDegraded(
+      replied(reassemble(once, low), [call('list_files', { path: 'y' })]),
+      'FINAL_CALL_INVALID',
+    );
   });
 
   it('still lets the final call reply', () => {
@@ -586,6 +597,68 @@ describe('wrap-up', () => {
     expect(current.state).toMatchObject({ final: true, wrapUpReason: 'NO_PROGRESS' });
   });
 
+  describe('failures counted per tool (NO_PROGRESS)', () => {
+    const roomy = { limits: { maxRounds: 30, maxToolCallsPerRound: 2 } };
+    const twoTools = {
+      ...roomy,
+      tools: [
+        ...definitions.tools,
+        {
+          modelName: 'search_files',
+          executionKind: 'REPOSITORY_LIST' as const,
+          unit: unit('repository-search', { NOT_FOUND: 'RETURN_TO_MODEL' }),
+          parameters: RepositoryListInputSchema,
+        },
+      ],
+    };
+    const loose = {
+      ...config,
+      consecutiveErrorLimit: 99,
+      noProgressRounds: 8,
+      toolFailureRounds: 4,
+    };
+    const failing = (current: ReturnType<typeof atModel>, tool: string, path: string) => {
+      const asked = replied(current, [call(tool, { path })]);
+      return receive(asked, report(asked.state, only(asked), { reject: 'NOT_FOUND' }), loose);
+    };
+
+    it('lets different tools fail one after the other: each counts its own rounds', () => {
+      let current = atModel(twoTools);
+      for (const [round, tool] of ['list_files', 'search_files', 'list_files'].entries()) {
+        current = failing(current, tool, `p${String(round)}`);
+        expect(current.state.wrapUpReason).toBeUndefined();
+        current = reassemble(current);
+      }
+      expect(current.state.toolFailures).toEqual({ list_files: 1 });
+    });
+
+    it('wraps up when the same tool fails four rounds in a row', () => {
+      let current = atModel(twoTools);
+      for (const round of [1, 2, 3]) {
+        current = failing(current, 'list_files', `p${String(round)}`);
+        expect(current.state.wrapUpReason).toBeUndefined();
+        current = reassemble(current);
+      }
+      current = failing(current, 'list_files', 'p4');
+      expect(current.state).toMatchObject({ final: true, wrapUpReason: 'NO_PROGRESS' });
+    });
+
+    it('wraps up after eight rounds in a row in which nothing succeeded, whichever tools failed', () => {
+      let current = atModel(twoTools);
+      for (let round = 1; round <= 7; round += 1) {
+        current = failing(
+          current,
+          round % 2 === 0 ? 'search_files' : 'list_files',
+          `p${String(round)}`,
+        );
+        expect(current.state.wrapUpReason).toBeUndefined();
+        current = reassemble(current);
+      }
+      current = failing(current, 'search_files', 'p8');
+      expect(current.state).toMatchObject({ final: true, wrapUpReason: 'NO_PROGRESS' });
+    });
+  });
+
   it('does not count a failed read outside the workspace against the model, since the user judges it', () => {
     const roomy = { limits: { maxRounds: 20, maxToolCallsPerRound: 2 } };
     const strict = { ...config, consecutiveErrorLimit: 2, noProgressRounds: 2 };
@@ -622,7 +695,12 @@ describe('wrap-up', () => {
 
   it('wraps up after consecutive errors', () => {
     const roomy = { limits: { maxRounds: 20, maxToolCallsPerRound: 2 } };
-    const strict = { ...config, consecutiveErrorLimit: 2, noProgressRounds: 99 };
+    const strict = {
+      ...config,
+      consecutiveErrorLimit: 2,
+      noProgressRounds: 99,
+      toolFailureRounds: 99,
+    };
     let current = atModel(roomy);
     for (const path of ['a', 'b']) {
       current = replied(current, [call('list_files', { path })]);
@@ -639,7 +717,12 @@ describe('wrap-up', () => {
 
   it('counts the failures of one batch of calls once', () => {
     const roomy = { limits: { maxRounds: 20, maxToolCallsPerRound: 3 } };
-    const strict = { ...config, consecutiveErrorLimit: 2, noProgressRounds: 99 };
+    const strict = {
+      ...config,
+      consecutiveErrorLimit: 2,
+      noProgressRounds: 99,
+      toolFailureRounds: 99,
+    };
     const calls = ['a', 'b', 'c'].map((path) => call('list_files', { path }, `call_${path}`));
     let current = replied(atModel(roomy), calls);
     for (const submission of current.submissions) {
@@ -659,6 +742,7 @@ describe('wrap-up', () => {
       ...config,
       repeatedIntent: { warnAt: 1, stopAt: 2, window: 20 },
       noProgressRounds: 99,
+      toolFailureRounds: 99,
     };
     let current = atModel(roomy);
     current = receive(
@@ -717,7 +801,27 @@ describe('the final call', () => {
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
     );
-    expectDegraded(replied(final, [call('submit', { text: 'brief' })]), 'FINAL_CALL_INVALID');
+    const once = replied(final, [call('submit', { text: 'brief' })]);
+    expect(once.ending).toBeUndefined();
+    expectDegraded(
+      replied(reassemble(once, low), [call('submit', { text: 'brief' })]),
+      'FINAL_CALL_INVALID',
+    );
+  });
+
+  it('asks the final call once more when the model ignored the choice of tool', () => {
+    const tools = replied(atModel(), [call('list_files', {})]);
+    const low = { ...NORMAL, agentRun: 'WRAP_UP' } as const;
+    const final = reassemble(
+      receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
+      low,
+    );
+    const ignored = (from: AgentTransition) =>
+      receive(from, report(from.state, only(from), { fail: 'PROVIDER_TOOL_CHOICE_IGNORED' }, low));
+    const once = ignored(final);
+    expect(once.ending).toBeUndefined();
+    expect(unitId(once)).toEqual(['context-assemble']);
+    expect(ignored(reassemble(once, low)).ending).toMatchObject({ kind: 'DEGRADED' });
   });
 
   it('keeps the finishing call it refused, so that what it said is not lost', () => {
@@ -727,7 +831,8 @@ describe('the final call', () => {
       receive(tools, report(tools.state, only(tools), { ok: {}, ref: ref('4') }, low)),
       low,
     );
-    const refused = replied(final, [call('submit', { text: 'brief' })]);
+    const asked = reassemble(replied(final, [call('submit', { text: 'brief' })]), low);
+    const refused = replied(asked, [call('submit', { text: 'brief' })]);
     expect(refused.ending).toMatchObject({
       kind: 'DEGRADED',
       reason: 'FINAL_CALL_INVALID',
@@ -737,7 +842,7 @@ describe('the final call', () => {
       },
     });
     // A last round that called no finishing tool has nothing of the kind to keep.
-    const other = replied(final, [call('list_files', { path: 'z' })]);
+    const other = replied(asked, [call('list_files', { path: 'z' })]);
     expect(other.ending).toEqual({ kind: 'DEGRADED', reason: 'FINAL_CALL_INVALID' });
   });
 });
@@ -758,7 +863,8 @@ describe('every tool call gets an answer', () => {
 
   it('when the final call asks for a tool', () => {
     const done = replied(atFinal(), [call('list_files', { path: 'x' }, 'late')]);
-    expect(done.ending).toMatchObject({ kind: 'DEGRADED' });
+    // The final call is asked once more (D67); the call it made is answered all the same.
+    expect(done.ending).toBeUndefined();
     expect(answered(done)).toEqual(['late']);
   });
 

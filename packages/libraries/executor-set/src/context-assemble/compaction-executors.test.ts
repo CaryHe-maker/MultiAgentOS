@@ -245,6 +245,29 @@ describe('the status that ends a request (D61)', () => {
     expect(await statusOf(40, { final: true })).toContain('This is your final call');
   });
 
+  it('tells at every call which background commands still run, and whose they were (D65)', async () => {
+    const status = await statusOf(7, {
+      jobs: [
+        { name: 'job_1', command: 'npm run dev', seconds: 42 },
+        { name: 'coretext/job_1', command: 'wc -l /dev/zero', seconds: 251, from: 'coretext' },
+      ],
+    });
+    expect(status).toContain(
+      'Background command job_1 (npm run dev) is still running, 42 s in the background. You can stop it with job_kill if you no longer need it.',
+    );
+    expect(status).toContain(
+      'Background command coretext/job_1 (wc -l /dev/zero) is still running, 251 s in the background; your subtask coretext started it and has ended, so it is yours now. You can stop it with job_kill',
+    );
+    expect(await statusOf(7, { jobs: [] })).toBeUndefined();
+  });
+
+  it('says plainly what a final call asked again must do', async () => {
+    const asked = await statusOf(40, { final: true, finalRetry: true });
+    expect(asked).toContain('This is your final call');
+    expect(asked).toContain('did not call exactly one of');
+    expect(await statusOf(40, { final: true })).not.toContain('did not call exactly one of');
+  });
+
   it('tells the budget only when it is no longer normal', async () => {
     expect(await statusOf(7)).toBeUndefined();
     expect(

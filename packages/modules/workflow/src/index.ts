@@ -38,9 +38,10 @@ export {
 /** Module/Workflow 11. */
 export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
   regenerationLimit: 3,
-  noProgressRounds: 2,
+  noProgressRounds: 8,
+  toolFailureRounds: 4,
   repeatedIntent: Object.freeze({ window: 20, warnAt: 3, stopAt: 5 }),
-  consecutiveErrorLimit: 5,
+  consecutiveErrorLimit: 8,
   maxNestedInstructions: 8,
   maxSubagentsPerCall: 8,
   maxDependencyDepth: 2,

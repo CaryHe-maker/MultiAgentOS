@@ -646,22 +646,32 @@ function projectOwn(
         });
         break;
       case 'JOB_STARTED':
-        if (record.missionId === ownMission) jobCommands.set(record.jobId, record.command);
+        // Every task's: a job a subtask left running may end here (Orchestration 6.4).
+        jobCommands.set(`${record.missionId}/${record.jobId}`, record.command);
         break;
       case 'JOB_ENDED': {
         // A job's end reaches the task told of it at the next assembly (Orchestration 6.4): the
         // one that started it, or the nearest above it when that one had ended.
         if ((record.toMissionId ?? record.missionId) !== ownMission) break;
-        const handed =
-          record.toMissionId === undefined || record.toMissionId === record.missionId
-            ? ''
-            : `It was started by the subtask ${missionInfo.get(record.missionId)?.name ?? 'that ended'}, which has ended. `;
+        const own = record.toMissionId === undefined || record.toMissionId === record.missionId;
+        // Named as job_list and job_kill name it here: by the path of the subtasks that ended.
+        const path: string[] = [];
+        for (
+          let at: string | undefined = record.missionId;
+          !own && at !== undefined && at !== ownMission;
+          at = missionInfo.get(at)?.parentId
+        )
+          path.unshift(missionInfo.get(at)?.name ?? 'subtask');
+        const name = own ? record.jobId : `${path.join('/')}/${record.jobId}`;
+        const handed = own
+          ? ''
+          : `It was started by the subtask ${missionInfo.get(record.missionId)?.name ?? 'that ended'}, which has ended. `;
         notes.push({
           seq: record.seq,
           category: 'NORMAL',
           kind: 'NOTE',
           text: clip(
-            `${handed}${jobEndedNotice(record, jobCommands.get(record.jobId) ?? 'a command')}`,
+            `${handed}${jobEndedNotice(record, jobCommands.get(`${record.missionId}/${record.jobId}`) ?? 'a command', name)}`,
             NOTE_MAX,
           ),
         });

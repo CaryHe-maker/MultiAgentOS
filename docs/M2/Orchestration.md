@@ -83,6 +83,10 @@ phase 2 要让一个任务可以由很多 Agent 有结构地协作完成，例�
 | D61 | 状态行只在必要时出现（2026-11-16，Cary 决定；experiments K5）：原来每次请求末尾都有“round N of M”与预算状态，K5 里根的 78 轮有 39 轮在思考中数剩余轮数。改为：第一轮告知一次总轮数；用到一半、用到四分之三各提醒一次；最后 5 个工作轮每轮提醒；最后一轮照旧要求交结果；预算只在不是 NORMAL 时显示；上下文快满的警告照旧。其余轮次没有状态行，请求以历史结尾。改 executor-set 的 assemble-executor，测试 |
 | D62 | 子任务数按整次运行计，到上限先问用户（2026-11-16，Cary 决定；experiments K5）：去掉“每个调用方最多 12 个任务、最多调用 4 次”（K5 里根第三次派 5 个修复任务因此被拒并失去 `run_subagents`，5 处修复由根串行完成），保留一次最多 8 个。Kernel 按整次运行计数，缺省 60 个；到了上限不直接拒绝，像追加预算一样问用户（授权问题 `tasks.extend`）：同意就再允许 60 个，拒绝则这次调用以 `TASK_QUOTA_REACHED` 被拒、以后也不再问，工具不收回、不计为错误调用。问的期间只有发起调用的那个任务在等：Kernel 回答 `TASK_QUOTA_ASKED`，Workflow 挂起这次调用，收到 `TaskQuotaDecided` 后重做这次调用。配置 `kernel.tasks`：`perRun`，`extension` 为 `ask`/`extend`/`stop` 与次数上限（缺省 ask、4 次）。改契约（原因码、`tasks.extend` 提问、`TaskQuotaDecided` 事件、Kernel 配置；删 Workflow 配置的 `maxTasks`、`maxSpawnCalls`）、Kernel 的 run-work 与 run-authorization、Workflow 的 validate-spawn 与 session-runner、控制台文字，验收测试 |
 | D63 | 检查点最多等 10 秒（2026-11-16，Cary 决定；experiments K6）：拍检查点要先等正在改文件的操作结束，并挂起之后的改文件操作；`checkpointBarrierMs` 缺省由 600000（10 分钟）改为 10000（10 秒），超过就跳过这次检查点（`SKIPPED`），不报错，运行照常。K6 里一条死循环的命令让根补派任务前的检查点等了 6 分钟以上，期间根与各任务的所有写操作都被挂住。改 Kernel 的 run-work、Orchestration 第 7.3 节，测试 |
+| D64 | 父任务能管子任务留下的后台命令（2026-11-16，Cary 决定）：子任务交回结果后它的后台命令继续运行、结束通知交给最近一个还没结束的祖先，但原来只有启动它的任务能 `job_kill`，祖先只能等它自己结束或到 1 小时上限。现在祖先持有这些命令，按子任务路径命名（`fix-api/job_1`），可以列出、读输出、停止、在 `sleep` 里等；控制台也把它们算在祖先那一行（第 6.2 节）。改 Workflow 的 mission-jobs、session-runner、history-projection，三个 job 工具的说明，测试 |
+| D65 | 持有的后台命令每次调用都告诉 Agent（2026-11-16，Cary 决定；experiments K6b）：K6b 里 coretext 的 `wc -l /dev/zero` 转到后台后一直在跑，交回结果后归根任务，但根任务看不到它。现在 Workflow 每次组装上下文时把任务持有的、还在运行的后台命令放进状态区：名字、命令、在后台已运行的秒数，并写明可用 `job_kill` 停止；是交回结果的子任务留下的，写明是哪个子任务启动的。状态区在上下文末尾，不影响前面的缓存。改 contracts 的 `StatusFacts.jobs`、Workflow 的 session-runner、executor-set 的 assemble，测试 |
+| D66 | 没有进展按工具分开计（2026-11-16，Cary 决定；experiments K6b）：K6b 的根任务连续两轮工具出错（`edit_file` 文件版本旧了、`read_file` 行号读超了），按 `noProgressRounds` 2 被收尾，整次运行失败。现在同一个工具连续 4 轮失败（`toolFailureRounds`，每个工具单独计，它成功或某一轮没有失败就清零）才收尾；不分工具的连续没有任何成功的轮数上限是 8（`noProgressRounds` 2→8），`consecutiveErrorLimit` 5→8，不早于它。改 Workflow 的 agent-cycle 与缺省配置、contracts 的 `WorkflowConfig`，测试 |
+| D67 | 收尾那一次调用再给一次机会（2026-11-16，Cary 决定；experiments K6b）：K6b 的根任务收尾时模型没有只调用一个结束工具（`PROVIDER_TOOL_CHOICE_IGNORED`），当即以降级结束。现在收尾调用没通过（没选结束工具，或结束工具的参数不对）时再组装一次，状态区多一句"上一次没有只调用一个结束工具，只调用其中一个"；第二次仍不通过才降级结束。改 Workflow 的 agent-cycle、contracts 的 `StatusFacts.finalRetry`、executor-set 的 assemble，测试 |
 | D46 | 删除 M1 的 `analyze` 路径与只为它存在的机制（2026-11-14，Cary 决定"全删，冻结测试换载体"；落实 D38；M2Design v1.38）：内置模板 `analyze`，Agent planner、code-viewer 与它们的 `finish`、`handoff` 工具，仓库概览 `repository-orient`，报告发布 `report-publish` 与 `AnalysisReport`，交接条目，条件边与 `SKIPPED(NOT_TAKEN)`，从未被模板使用的有界循环与节点迭代号，仓库模板与 `mas run <模板>`（`mas run` 只收目标），执行类别 `TEST`，以及只在测试里调用的统一校验函数 `validateExtension` 与 `spawnedIn`。日志里专家的纲领由 `spawn.submission` 改名为 `spawn.specialist`，去掉总是空的 `params`。两份冻结测试中经 `analyze` 运行的用例改用 `mission` 作为载体，断言不放宽（M2FrozenTests 第 7 节）。旧 Session 的日志不再能读（开发期的数据） |
 | D45 | 额度按实际会花的计算（2026-11-14，Cary 决定；M2Design 7.3 规则 10）：收尾保留、调用余量、最小份额（初始份额与每次补的大小）与每次预留，输入都按 `kernel.budget.reserveShare`（缺省 0.3）计算；上限仍按声明的值，所以初始份额小、补的次数多、能花的总量不变。原来按最坏情况，worker 开账就占 86 万，tester 想并行派 3 个写测试的子任务因额度被拒 |
 | D22 | 编排不写死（2026-11-12）：缺省是负责人自主分解；系统只写死底线（权限、写入范围与借出、额度、深度与唤醒上限、子任务没结束不能交付、checkpoint）；固定工作流降为范式，按固定图执行保留为预编排模式（见 D29；[Phase2Plan](Phase2Plan.md) 第 1、2 节） |
@@ -539,10 +543,10 @@ run_command({ command, workdir?, timeoutMs?, network?, runInBackground?: boolean
 | 工具 | 种类 | 效果 |
 |---|---|---|
 | `job_output({ jobId, wait?, timeoutMs? })` | READ Unit `job-output` | 返回自上次读取以来的新输出，末尾带 `[status: running \| exited(0) \| killed …]`。`wait: true` 时等到结束或 `timeoutMs`（上限 600000），收到人类插话时提前返回。读取位置记在日志里，重放结果相同 |
-| `job_list()` | 控制工具，由日志推出 | 本任务的后台命令：编号、命令摘要、状态 |
+| `job_list()` | 控制工具，由日志推出 | 本任务持有的后台命令：编号、命令摘要、状态 |
 | `job_kill({ jobId, reason? })` | Unit `job-kill` | 停止并确认，走现有的停止升级顺序（M2Design 第 4.7 节）；无法确认仍是停机级故障 |
 
-一个任务只能看到与操作自己的后台命令；父任务读子任务的输出要通过子任务交回的引用（`ref_N/…`），与现在的交接规则相同。
+一个任务能看到与操作的是它**持有**的后台命令：自己启动的，以及下面已经交回结果、命令还在跑的任务留给它的——也就是结束通知会交给它的那些（第 6.4 节：最近一个还没结束的祖先）。后者按交回结果的任务的路径命名，如 `fix-api/job_1`、`api/store/job_2`，不会与自己的 `job_1` 混淆；`job_list`、`job_output`、`job_kill`、`sleep` 的 `jobs` 与结束通知都用这个名字（D64）。持有的后台命令还在跑时，每次调用的状态区都列出它们（名字、命令、在后台已运行的秒数），写明可用 `job_kill` 停止，子任务留下的写明是哪个子任务启动的（D65）。子任务还在运行时，它的后台命令只归它自己；父任务读子任务的输出要通过子任务交回的引用（`ref_N/…`），与现在的交接规则相同。
 
 ### 6.3 生命周期
 

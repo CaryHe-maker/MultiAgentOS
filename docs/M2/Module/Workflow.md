@@ -333,9 +333,11 @@ Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInter
 
 | 配置 | 缺省 | 说明 |
 |---|---|---|
-| `regenerationLimit`、`noProgressRounds` | 3、2 | 与 M1 相同 |
+| `regenerationLimit` | 3 | 与 M1 相同 |
+| `noProgressRounds` | 8 | 连续这么多轮没有任何调用成功就收尾（`NO_PROGRESS`，Orchestration D66；原为 2） |
+| `toolFailureRounds` | 4 | 同一个工具连续这么多轮失败就收尾（`NO_PROGRESS`）；每个工具单独计，它成功或某一轮没有失败就清零（D66） |
 | `repeatedIntent` | `{ window: 20, warnAt: 3, stopAt: 5 }` | 第 7 节第 5 条 |
-| `consecutiveErrorLimit` | 5 | 同上 |
+| `consecutiveErrorLimit` | 8 | 同上（原为 5，D66） |
 | `entryAgentRef` | — | 删除；入口由模板决定 |
 | `maxNestedInstructions` | 8 | 每个投影至多加载的子目录 `AGENTS.md` 份数（第 8.2 节） |
 | `maxSubagentsPerCall`、`maxDependencyDepth` | 8、2 | 一次 `run_subagents` 的任务数与依赖深度上限（第 7a 节） |

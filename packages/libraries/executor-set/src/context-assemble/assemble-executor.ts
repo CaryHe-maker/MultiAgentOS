@@ -91,10 +91,15 @@ function roundNotice(round: number, maxRounds: number): string | undefined {
  * always.
  */
 function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]): string {
-  const { round, maxRounds, budget, final, wrapUpReason } = status;
+  const { round, maxRounds, budget, final, wrapUpReason, finalRetry, jobs = [] } = status;
   const lines: string[] = [];
   if (budget.input !== 'NORMAL' || budget.run !== 'NORMAL')
     lines.push(`Budget: this request ${budget.input}, run ${budget.run}.`);
+  // What the task holds still runs: it is said at every call, so it can be stopped (D65).
+  for (const job of jobs)
+    lines.push(
+      `Background command ${job.name} (${job.command}) is still running, ${String(job.seconds)} s in the background${job.from === undefined ? '' : `; your subtask ${job.from} started it and has ended, so it is yours now`}. You can stop it with job_kill if you no longer need it.`,
+    );
   if (final) {
     const finish = toolSpecs.filter((spec) => spec.purpose === 'CONTROL').map((spec) => spec.name);
     const reason = wrapUpReason === undefined ? '' : ` because ${WRAP_UP_TEXT[wrapUpReason]}`;
@@ -102,6 +107,10 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     lines.push(
       `Round ${String(round)} of ${String(maxRounds)}. This is your final call${reason}. Call ${finish.join(' or ') || 'the finish tool'} now with your best answer: say what is done and what is not; cite only content you have read and list what you could not confirm.${handover}`,
     );
+    if (finalRetry === true)
+      lines.push(
+        `Your previous answer to this final call did not call exactly one of ${finish.join(', ') || 'the finish tools'}. Answer with one call of one of them and nothing else: no other tool, no second call.`,
+      );
   } else {
     const notice = roundNotice(round, maxRounds);
     if (notice !== undefined) lines.push(notice);

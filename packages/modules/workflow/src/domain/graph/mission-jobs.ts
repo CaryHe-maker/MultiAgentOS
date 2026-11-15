@@ -17,6 +17,8 @@ export interface MissionJob {
   readonly jobKey: string;
   readonly command: string;
   readonly promoted: boolean;
+  /** When it became a job: when it started, or when it was moved to the background. */
+  readonly startedAt: string;
   /** Where the next `job_output` starts. */
   readonly readOffset: number;
   readonly ended?: RecordOf<'JOB_ENDED'>;
@@ -45,6 +47,7 @@ export function jobsOf(records: readonly SessionLogRecord[], workflowRunId?: str
         jobKey: record.jobKey,
         command: record.command,
         promoted: record.promoted,
+        startedAt: record.at,
         readOffset: 0,
       });
     else if (record.type === 'JOB_READ' || record.type === 'JOB_ENDED') {
@@ -70,6 +73,48 @@ export const jobsOfMission = (
   records: readonly SessionLogRecord[],
   missionId: string,
 ): MissionJob[] => jobsOf(records).filter((job) => job.missionId === missionId);
+
+/** A job a task can list, read and stop, by the name it knows it by. */
+export interface HeldJob extends MissionJob {
+  /** `job_2` for its own; `<subtask>/job_1` for one a subtask that ended handed up to it. */
+  readonly name: string;
+  /** For one handed up: the path of the subtask that started it. */
+  readonly from?: string;
+}
+
+/** The tasks of the run as `jobsHeldBy` needs them. */
+export type MissionsForJobs = ReadonlyMap<
+  string,
+  { readonly parentId?: string; readonly name: string; readonly ended?: string }
+>;
+
+/**
+ * The jobs a task holds (Orchestration 6.2, 6.4): its own, and those of tasks below it that have
+ * ended while their jobs ran on, when it is the nearest task above them that has not ended (the
+ * one told of their end). Those are named by the path of the ended tasks: `fix-api/job_1`.
+ */
+export function jobsHeldBy(
+  records: readonly SessionLogRecord[],
+  missionId: string,
+  missions: MissionsForJobs,
+): HeldJob[] {
+  return jobsOf(records).flatMap((job) => {
+    if (job.missionId === missionId) return [{ ...job, name: job.jobId }];
+    const path: string[] = [];
+    let at = job.missionId;
+    for (
+      let mission = missions.get(at);
+      mission?.ended !== undefined && mission.parentId !== undefined;
+      mission = missions.get(at)
+    ) {
+      path.unshift(mission.name);
+      at = mission.parentId;
+    }
+    return at === missionId && path.length > 0
+      ? [{ ...job, name: `${path.join('/')}/${job.jobId}`, from: path.join('/') }]
+      : [];
+  });
+}
 
 export const runningJobs = (
   records: readonly SessionLogRecord[],
@@ -99,20 +144,27 @@ export function exitText(ended: RecordOf<'JOB_ENDED'>): string {
   return `ended${exit.signal === null ? '' : ` (${exit.signal})`}`;
 }
 
-/** The notice of an ended job (Orchestration 6.4): how it ended, and the end of what is unread. */
-export function jobEndedNotice(ended: RecordOf<'JOB_ENDED'>, command: string): string {
+/**
+ * The notice of an ended job (Orchestration 6.4): how it ended, and the end of what is unread.
+ * `name` is what the task told calls it: its own id, or the path of a subtask's job.
+ */
+export function jobEndedNotice(
+  ended: RecordOf<'JOB_ENDED'>,
+  command: string,
+  name: string = ended.jobId,
+): string {
   const seconds = Math.round(ended.durationMs / 1000);
-  const head = `Background command ${ended.jobId} (${command}) has ended [${exitText(ended)}, ${String(seconds)} s].`;
+  const head = `Background command ${name} (${command}) has ended [${exitText(ended)}, ${String(seconds)} s].`;
   const unread = Math.max(0, ended.totalBytes - ended.readUpTo);
   if (unread === 0) return `${head} Nothing unread.`;
   const tail = Buffer.from(ended.tail, 'utf8');
   if (unread <= tail.byteLength)
     return `${head} Unread output:\n${tail.subarray(tail.byteLength - unread).toString('utf8')}`;
-  return `${head} ${String(unread)} bytes unread; the last of them:\n${ended.tail}\n[read the rest with job_output ${ended.jobId}]`;
+  return `${head} ${String(unread)} bytes unread; the last of them:\n${ended.tail}\n[read the rest with job_output ${name}]`;
 }
 
-/** What `job_list` shows: the task's jobs, each with its state. */
-export function jobListText(jobs: readonly MissionJob[]): string {
+/** What `job_list` shows: the jobs the task holds, each with its state. */
+export function jobListText(jobs: readonly (MissionJob & { readonly name?: string })[]): string {
   if (jobs.length === 0) return 'You have no background commands.';
   return jobs
     .map((job) => {
@@ -122,7 +174,7 @@ export function jobListText(jobs: readonly MissionJob[]): string {
           : job.running
             ? 'running'
             : 'stopped with its run';
-      return `- ${job.jobId}: ${job.command} — ${state}`;
+      return `- ${job.name ?? job.jobId}: ${job.command} — ${state}`;
     })
     .join('\n');
 }

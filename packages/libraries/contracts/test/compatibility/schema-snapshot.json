@@ -5255,6 +5255,44 @@
                 "REGENERATION_LIMIT",
                 "MEMORY_LIMIT"
               ]
+            },
+            "finalRetry": {
+              "type": "boolean",
+              "const": true
+            },
+            "jobs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "command",
+                  "seconds"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "seconds": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "from": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 16
             }
           },
           "additionalProperties": false
@@ -13639,6 +13677,44 @@
                                 "REGENERATION_LIMIT",
                                 "MEMORY_LIMIT"
                               ]
+                            },
+                            "finalRetry": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "jobs": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "required": [
+                                  "name",
+                                  "command",
+                                  "seconds"
+                                ],
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  },
+                                  "command": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 120
+                                  },
+                                  "seconds": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "from": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 200
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              "maxItems": 16
                             }
                           },
                           "additionalProperties": false
@@ -23414,6 +23490,44 @@
                 "REGENERATION_LIMIT",
                 "MEMORY_LIMIT"
               ]
+            },
+            "finalRetry": {
+              "type": "boolean",
+              "const": true
+            },
+            "jobs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "command",
+                  "seconds"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "seconds": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "from": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "additionalProperties": false
+              },
+              "maxItems": 16
             }
           },
           "additionalProperties": false
@@ -27535,6 +27649,44 @@
                         "REGENERATION_LIMIT",
                         "MEMORY_LIMIT"
                       ]
+                    },
+                    "finalRetry": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "command",
+                          "seconds"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "command": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "seconds": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 16
                     }
                   },
                   "additionalProperties": false
@@ -39169,6 +39321,44 @@
                         "REGENERATION_LIMIT",
                         "MEMORY_LIMIT"
                       ]
+                    },
+                    "finalRetry": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "jobs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "name",
+                          "command",
+                          "seconds"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "command": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "seconds": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "from": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "maxItems": 16
                     }
                   },
                   "additionalProperties": false
@@ -41123,6 +41313,44 @@
                     "REGENERATION_LIMIT",
                     "MEMORY_LIMIT"
                   ]
+                },
+                "finalRetry": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "jobs": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "name",
+                      "command",
+                      "seconds"
+                    ],
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      },
+                      "command": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "seconds": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "from": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "maxItems": 16
                 }
               },
               "additionalProperties": false
@@ -50412,6 +50640,7 @@
           "required": [
             "regenerationLimit",
             "noProgressRounds",
+            "toolFailureRounds",
             "repeatedIntent",
             "consecutiveErrorLimit",
             "maxNestedInstructions",
@@ -50424,6 +50653,10 @@
               "minimum": 1
             },
             "noProgressRounds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "toolFailureRounds": {
               "type": "integer",
               "minimum": 1
             },
@@ -50479,6 +50712,7 @@
       "required": [
         "regenerationLimit",
         "noProgressRounds",
+        "toolFailureRounds",
         "repeatedIntent",
         "consecutiveErrorLimit",
         "maxNestedInstructions",
@@ -50491,6 +50725,10 @@
           "minimum": 1
         },
         "noProgressRounds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "toolFailureRounds": {
           "type": "integer",
           "minimum": 1
         },

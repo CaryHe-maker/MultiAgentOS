@@ -4,6 +4,7 @@ import {
   jobEndedNotice,
   jobListText,
   jobOfRequest,
+  jobsHeldBy,
   jobsOf,
   jobsOfMission,
   nextJobId,
@@ -92,5 +93,48 @@ describe('the background commands of a task, from the log (Orchestration 6)', ()
     expect(long).toContain('[stopped (SIGTERM), 12 s]');
     expect(long).toContain('5000 bytes unread');
     expect(long).toContain('job_output job_4');
+  });
+});
+
+describe('the jobs a task holds (Orchestration 6.2, 6.4, D64)', () => {
+  const missions = new Map([
+    ['msc_root', { name: 'main' }],
+    ['msc_api', { parentId: 'msc_root', name: 'api' }],
+    ['msc_store', { parentId: 'msc_api', name: 'store', ended: 'SUCCEEDED' }],
+    ['msc_fix', { parentId: 'msc_root', name: 'fix', ended: 'SUCCEEDED' }],
+    ['msc_live', { parentId: 'msc_root', name: 'live' }],
+  ]);
+  const records = [
+    started('msc_root', 'job_1', 'exe_r'),
+    started('msc_store', 'job_1', 'exe_s'),
+    started('msc_fix', 'job_1', 'exe_f'),
+    started('msc_live', 'job_1', 'exe_l'),
+  ];
+  const names = (missionId: string) =>
+    jobsHeldBy(records, missionId, missions).map((job) => [job.name, job.jobKey]);
+
+  it('holds its own and those of subtasks that delivered, up to the nearest task still open', () => {
+    expect(names('msc_root')).toEqual([
+      ['job_1', 'exe_r'],
+      ['fix/job_1', 'exe_f'],
+    ]);
+    // A subtask still running keeps its own; one below it that delivered is its to hold.
+    expect(names('msc_api')).toEqual([['store/job_1', 'exe_s']]);
+    expect(names('msc_live')).toEqual([['job_1', 'exe_l']]);
+  });
+
+  it('names one of a deeper task by the path of the tasks that ended', () => {
+    const closed = new Map([
+      ...missions,
+      ['msc_api', { parentId: 'msc_root', name: 'api', ended: 'SUCCEEDED' }],
+    ]);
+    expect(jobsHeldBy(records, 'msc_root', closed).map((job) => job.name)).toEqual([
+      'job_1',
+      'api/store/job_1',
+      'fix/job_1',
+    ]);
+    expect(jobListText(jobsHeldBy(records, 'msc_root', closed))).toContain(
+      '- api/store/job_1: run job_1 — running',
+    );
   });
 });

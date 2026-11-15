@@ -134,14 +134,8 @@ function Activity({
   readonly line: ActivityLine;
   readonly now: number;
 }): ReactElement {
-  const jobs = jobsText(line, now);
-  // What runs in the background is the system's to say: in its yellow, behind the gray line.
-  return h(
-    Text,
-    { color: 'gray', wrap: 'truncate-end' },
-    lineText(line, now),
-    ...(jobs === undefined ? [] : [' ', h(Text, { color: SYSTEM_COLOR }, jobs)]),
-  );
+  // The background commands are part of the line, in its gray like the tool in front of them.
+  return h(Text, { color: 'gray', wrap: 'truncate-end' }, activityText(line, now));
 }
 
 function useClock(running: boolean): number {

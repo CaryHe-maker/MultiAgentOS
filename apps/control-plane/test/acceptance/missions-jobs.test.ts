@@ -230,6 +230,57 @@ real('background commands (Orchestration 6)', () => {
   );
 
   it(
+    'lets the parent list, wait for and stop a job a subtask left running when it delivered (D64)',
+    async () => {
+      const place = await roots({ 'out/.keep': '' });
+      const marker = join(place.repository, 'out/late.txt');
+      const provider = scriptedAgents(
+        {
+          main: [
+            tool('run_subagents', {
+              tasks: [
+                { name: 'starter', agent: 'worker', goal: 'start a server', writeScope: ['out'] },
+              ],
+            }),
+            sleepFor({ kind: 'children', mode: 'all' }),
+            tool('job_list', {}),
+            tool('job_kill', { jobId: 'starter/job_1' }),
+            sleepFor({ kind: 'jobs', mode: 'all', jobIds: ['starter/job_1'] }),
+            reply('stopped the server of the child'),
+          ],
+        },
+        {
+          starter: [
+            run('sleep 30; echo x > out/late.txt', { runInBackground: true }),
+            tool('finish_subagent', {
+              summary: 'started it',
+              changedFiles: [],
+              status: 'done',
+              validation: [],
+            }),
+          ],
+        },
+      );
+      const started = Date.now();
+      const chat = await chatOn(place, provider);
+      await chat.say('delegate');
+      expect(chat.printed('REPLY')).toContain('stopped the server of the child');
+      expect(Date.now() - started).toBeLessThan(25_000);
+      const all = seen(provider);
+      // Told at every call while it runs, and whose it was (D65).
+      expect(all).toContain(
+        'Background command starter/job_1 (sleep 30; echo x > out/late.txt) is still running',
+      );
+      expect(all).toContain('your subtask starter started it and has ended, so it is yours now');
+      expect(all).toContain('- starter/job_1: sleep 30; echo x > out/late.txt — running');
+      expect(all).toContain('starter/job_1: stopping it');
+      expect(all).toContain('Background command starter/job_1 (sleep 30; echo x > out/late.txt)');
+      expect(await exists(marker)).toBe(false);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'stops the jobs of a task that was stopped',
     async () => {
       const place = await roots({ 'out/.keep': '' });

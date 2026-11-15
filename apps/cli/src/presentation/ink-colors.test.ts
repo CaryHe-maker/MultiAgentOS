@@ -64,7 +64,7 @@ describe('Ink console colours', () => {
     expect(frame).toContain('\u001b[38;2;249;241;165m已排队 1 条');
   });
 
-  it('writes the background commands of a task behind its line in pale yellow, with their time', async () => {
+  it('writes the background commands of a task behind its line in its gray, with their time', async () => {
     const { store, ui } = setup();
     const since = (ago: number) => new Date(Date.now() - ago).toISOString();
     store.update({
@@ -87,7 +87,8 @@ describe('Ink console colours', () => {
     const frame = ui.lastFrame() ?? '';
     // Each one's time, the longest first; past three, an ellipsis.
     expect(frame).toMatch(/· 4 个后台任务 11[12]s \/ (90|91)s \/ (50|51)s \/ \.\.\./u);
-    expect(frame).toContain('\u001b[38;2;249;241;165m· 4 个后台任务');
+    expect(frame).toContain('\u001b[90m  └─ · worker grep 思考中 3s · 4 个后台任务');
+    expect(frame).not.toContain('\u001b[38;2;249;241;165m· 4 个后台任务');
     // Without a background command, nothing is written behind the line.
     expect(frame).not.toMatch(/main.*后台任务/u);
   });
