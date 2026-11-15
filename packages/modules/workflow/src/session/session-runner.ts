@@ -1613,11 +1613,23 @@ export class SessionRunner {
                   ...(job.from === undefined ? {} : { from: job.from }),
                 }))
                 .slice(0, 16);
+        // Once every subtask it started has ended, the task is told so at every call (D70).
+        const missions = scope.missionId === undefined ? undefined : projectMissions(this.#records);
+        const children =
+          missions === undefined
+            ? []
+            : [...missions.values()].filter((mission) => mission.parentId === scope.missionId);
+        const partsBack =
+          children.length > 0 && children.every((child) => child.ended !== undefined);
         return {
           final,
           ...(withdrawn.length === 0 ? {} : { withdrawnTools: [...new Set(withdrawn)] }),
           history: [...projectHistory(this.#records, scope, { final })],
-          status: jobs.length === 0 ? status : { ...status, jobs },
+          status: {
+            ...status,
+            ...(jobs.length === 0 ? {} : { jobs }),
+            ...(partsBack ? { partsBack: true as const } : {}),
+          },
         };
       },
     };

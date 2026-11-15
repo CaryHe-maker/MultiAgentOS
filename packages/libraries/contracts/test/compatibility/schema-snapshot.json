@@ -5256,6 +5256,10 @@
                 "MEMORY_LIMIT"
               ]
             },
+            "partsBack": {
+              "type": "boolean",
+              "const": true
+            },
             "finalRetry": {
               "type": "boolean",
               "const": true
@@ -13677,6 +13681,10 @@
                                 "REGENERATION_LIMIT",
                                 "MEMORY_LIMIT"
                               ]
+                            },
+                            "partsBack": {
+                              "type": "boolean",
+                              "const": true
                             },
                             "finalRetry": {
                               "type": "boolean",
@@ -23491,6 +23499,10 @@
                 "MEMORY_LIMIT"
               ]
             },
+            "partsBack": {
+              "type": "boolean",
+              "const": true
+            },
             "finalRetry": {
               "type": "boolean",
               "const": true
@@ -27649,6 +27661,10 @@
                         "REGENERATION_LIMIT",
                         "MEMORY_LIMIT"
                       ]
+                    },
+                    "partsBack": {
+                      "type": "boolean",
+                      "const": true
                     },
                     "finalRetry": {
                       "type": "boolean",
@@ -39322,6 +39338,10 @@
                         "MEMORY_LIMIT"
                       ]
                     },
+                    "partsBack": {
+                      "type": "boolean",
+                      "const": true
+                    },
                     "finalRetry": {
                       "type": "boolean",
                       "const": true
@@ -41313,6 +41333,10 @@
                     "REGENERATION_LIMIT",
                     "MEMORY_LIMIT"
                   ]
+                },
+                "partsBack": {
+                  "type": "boolean",
+                  "const": true
                 },
                 "finalRetry": {
                   "type": "boolean",

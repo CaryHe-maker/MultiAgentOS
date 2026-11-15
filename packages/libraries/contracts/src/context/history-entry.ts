@@ -189,6 +189,8 @@ export const StatusFactsSchema = closed({
   budget: BudgetViewSchema,
   final: Type.Boolean(),
   wrapUpReason: Type.Optional(WrapUpReasonSchema),
+  /** Every subtask the task started has ended: what is left is the check of the whole (D70). */
+  partsBack: Type.Optional(Type.Literal(true)),
   /** The final call is asked again: the first answer did not call exactly one finishing tool. */
   finalRetry: Type.Optional(Type.Literal(true)),
   /**

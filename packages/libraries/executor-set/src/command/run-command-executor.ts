@@ -13,7 +13,10 @@ import { previewLimitsOf, retainBytes } from '../retention/retention.js';
 /** Leaves room in the preview for the status line and the notice of what was left out. */
 const FRAME_BYTES = 512;
 
-function statusLine(output: CommandOutput): string {
+/** A command this slow says how long it took, so a check run again and again shows its cost (D70). */
+const SLOW_MS = 10_000;
+
+function statusLine(output: CommandOutput, tookMs = 0): string {
   const how =
     output.timedOut || output.signal !== null
       ? `${output.timedOut ? 'timed out' : 'stopped'}${output.signal === null ? '' : ` (${output.signal})`}`
@@ -22,7 +25,8 @@ function statusLine(output: CommandOutput): string {
     output.sandboxDenials > 0
       ? `; the sandbox refused ${String(output.sandboxDenials)} operation${output.sandboxDenials === 1 ? '' : 's'}`
       : '';
-  return `${how}${denied}${output.backend === 'UNISOLATED' ? ' [not isolated]' : ''}`;
+  const took = tookMs >= SLOW_MS ? `, took ${String(Math.round(tookMs / 1000))} s` : '';
+  return `${how}${took}${denied}${output.backend === 'UNISOLATED' ? ' [not isolated]' : ''}`;
 }
 
 /**
@@ -39,6 +43,7 @@ export function createRunCommandExecutor(): Executor<'COMMAND'> {
         if (scope.kind !== 'SANDBOX') return violation('SCOPE_MISSING');
         const limits = previewLimitsOf(environment);
         throwIfAborted(environment.signal);
+        const startedAt = environment.now().getTime();
         const result = await environment.sandbox.run({
           scope,
           command: input.command,
@@ -65,7 +70,7 @@ export function createRunCommandExecutor(): Executor<'COMMAND'> {
           backend: result.backend,
           sandboxDenials: result.denials,
         };
-        const head = `${statusLine(base)}\n`;
+        const head = `${statusLine(base, environment.now().getTime() - startedAt)}\n`;
         const room = Math.max(1, limits.maxBytes - Buffer.byteLength(head, 'utf8') - FRAME_BYTES);
         const mediaType = MEDIA_TYPES.fileText;
         const preview = previewOf(result.output, room, limits.maxLines);

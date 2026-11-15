@@ -91,10 +91,23 @@ function roundNotice(round: number, maxRounds: number): string | undefined {
  * always.
  */
 function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]): string {
-  const { round, maxRounds, budget, final, wrapUpReason, finalRetry, jobs = [] } = status;
+  const {
+    round,
+    maxRounds,
+    budget,
+    final,
+    wrapUpReason,
+    finalRetry,
+    partsBack,
+    jobs = [],
+  } = status;
   const lines: string[] = [];
   if (budget.input !== 'NORMAL' || budget.run !== 'NORMAL')
     lines.push(`Budget: this request ${budget.input}, run ${budget.run}.`);
+  if (partsBack === true && !final)
+    lines.push(
+      'All your subtasks have ended. Run the checks of the whole once, finish what only you can do, and deliver; do not start new comparisons or probes.',
+    );
   // What the task holds still runs: it is said at every call, so it can be stopped (D65).
   for (const job of jobs)
     lines.push(

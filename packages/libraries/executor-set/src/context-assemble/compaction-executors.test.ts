@@ -261,6 +261,11 @@ describe('the status that ends a request (D61)', () => {
     expect(await statusOf(7, { jobs: [] })).toBeUndefined();
   });
 
+  it('tells a task whose subtasks have all ended to check the whole once and deliver (D70)', async () => {
+    expect(await statusOf(12, { partsBack: true })).toContain('All your subtasks have ended.');
+    expect(await statusOf(40, { final: true, partsBack: true })).not.toContain('All your subtasks');
+  });
+
   it('says plainly what a final call asked again must do', async () => {
     const asked = await statusOf(40, { final: true, finalRetry: true });
     expect(asked).toContain('This is your final call');
