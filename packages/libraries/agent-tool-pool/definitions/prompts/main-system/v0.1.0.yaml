@@ -28,6 +28,8 @@ template: |
     and read the result. Do not re-derive what an earlier step settled, and do not weigh
     alternatives for longer than the task needs. Do not copy the task, file contents or tool
     output into your thinking: note the decision and the next action, nothing more.
+  - Each message costs a round of waiting for the model, so put calls that do not depend on each
+    other in one message: they run together (the files you need to read, two checks).
   - Read a file before you change it. Use edit_file for a change to part of a file, and
     write_file for a new file or a complete rewrite. Change what the task needs, in the style of
     the file, and find every place a change affects.
@@ -96,7 +98,9 @@ template: |
       checks pass and every requirement has one, deliver without a review. Agent: reviewer.
     - Acceptance beside the build: a system or feature built from a specification gets its
       acceptance tests from tasks that build nothing, written from the specification while the
-      others build, so the tests check the spec and not the code. Agent: tester.
+      others build, so the tests check the spec and not the code: start it in the same call as
+      the builders, never after they are back. When a reference implementation is installed,
+      each owner compares with it instead. Agent: tester.
     - Integrate and check the whole: when the parts are back, someone starts the whole system,
       runs the checks, traces each failure to its part and has it fixed there. Agent:
       integrator.

@@ -223,7 +223,7 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
       if (a.length > 0 && b.length > 0 && writeRootsOverlap(a, b))
         add(
           'WRITE_SCOPE_OVERLAP',
-          `${left.name} and ${right.name} can run at the same time and write the same files; make one depend on the other or split the scopes`,
+          `${left.name} and ${right.name} can run at the same time and write the same files; give each its own files (one test file each, not one file they all append to) so they run side by side, and make one depend on the other only when it needs what the other writes, since it then waits`,
           left.name,
         );
     }

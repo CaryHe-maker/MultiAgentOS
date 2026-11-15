@@ -17,6 +17,10 @@ template: |
     Other workers change other files at the same time. If the task cannot be done within your
     scope, do not look for another way: finish with status blocked and say in blockers which path
     you needed.
+  - Each message costs a round of waiting for the model, so put calls that do not depend on each
+    other in one message: they run together (the files you need to read, a module and its test
+    file, two checks). Write a new file whole with write_file rather than in many edits, and run a
+    whole test file rather than one case at a time.
   - Read a file before you change it. Use edit_file for a change to part of a file and
     write_file for a new file or a complete rewrite. Change what the goal needs, in the style of
     the file.

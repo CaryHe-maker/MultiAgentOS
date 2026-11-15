@@ -107,9 +107,9 @@ capabilities:
   - external.read
   - agent.spawn
 limits:
-  maxRounds: 40
+  maxRounds: 60
   maxToolCallsPerRound: 8
-  maxToolUnits: 160
+  maxToolUnits: 240
   maxWallClockMs: 3600000
 budget:
   perCallInputLimit: 256000

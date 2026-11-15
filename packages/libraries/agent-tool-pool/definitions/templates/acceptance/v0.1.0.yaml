@@ -37,8 +37,9 @@ playbook:
         max: 3
         context: inherit
       instructions: >-
-        Start 1 to 3 workers, each with one part of the list and its own file or folder of your
-        scope. Each goal says: write the tests from the specification and the interfaces only,
+        Start 1 to 3 workers in one call, each with one part of the list and its own file or
+        folder of your scope, so they write side by side; never one file they all append to,
+        since writers of one file wait for each other. Each goal says: write the tests from the specification and the interfaces only,
         never from the code under test; one test per interface or rule, named after it; start
         the system as the run param says, on free ports, and stop it after; a test that fails
         because a feature is missing is a right test. Sleep until they have all ended.
