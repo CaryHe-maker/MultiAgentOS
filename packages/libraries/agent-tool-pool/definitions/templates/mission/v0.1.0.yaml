@@ -29,6 +29,10 @@ nodes:
       Decisions, by what you see.
       - Parts that can be built side by side go out together in one run_subagents, after you fixed
         what they share. One owner per part, writeScopes that do not overlap.
+      - Fixing what parts share means its interface (names, signatures, formats, behaviour) in the
+        plan or a small file, not its implementation: a shared module that takes more than a few
+        minutes to build is a part with an owner too, and the parts that use it start at once
+        against the interface.
       - The work ends when the slowest part ends: cut parts to similar size. Split a much larger
         part again or give it to a lead; put small ones together. More than four parts: leads.
       - Read before the split only what everyone needs. Workers, explorers and leads start with
