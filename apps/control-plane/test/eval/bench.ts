@@ -17,6 +17,7 @@
 import {
   appendFile,
   copyFile,
+  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -377,6 +378,10 @@ async function main(): Promise<void> {
   if (logDir !== undefined && logFile !== undefined) {
     await copyFile(logFile, join(logDir, 'session-log.jsonl')).catch(() => undefined);
   }
+  // The whole data directory goes with the record: the log with every artifact it points at
+  // (model outputs, tool results, messages), so a run can be replayed and audited afterwards.
+  if (logDir !== undefined)
+    await cp(dataDir, join(logDir, 'data'), { recursive: true }).catch(() => undefined);
   await rm(dataDir, { recursive: true, force: true });
   process.exit(0);
 }

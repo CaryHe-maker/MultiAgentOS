@@ -244,6 +244,21 @@ try {
   result.agentTimedOut = agent.error?.code === 'ETIMEDOUT' || agent.signal === 'SIGTERM';
   writeFileSync(join(runDir, 'agent.stdout.txt'), (agent.stdout ?? '').slice(-20000));
   writeFileSync(join(runDir, 'agent.stderr.txt'), (agent.stderr ?? '').slice(-20000));
+  // What the agent delivered, as it left it, before the hidden tests go in: the files (without
+  // .git) and what git sees changed, so a run can be read afterwards for what was changed.
+  const delivered = sh(['exec', cname, 'sh', '-c', `cd ${workdir} && tar czf - --exclude=.git .`], {
+    encoding: 'buffer',
+    maxBuffer: 1 << 30,
+  });
+  if (delivered.status === 0) writeFileSync(join(runDir, 'delivered.tgz'), delivered.stdout);
+  const status = sh([
+    'exec',
+    cname,
+    'sh',
+    '-c',
+    `cd ${workdir} && git status --short --untracked-files=all 2>/dev/null; git diff --stat HEAD 2>/dev/null`,
+  ]);
+  writeFileSync(join(runDir, 'delivered-status.txt'), status.stdout ?? '');
   // the hidden tests go in only now
   sh(['cp', join(taskDir, 'tests'), `${cname}:/tests`]);
   const verifyStart = Date.now();
