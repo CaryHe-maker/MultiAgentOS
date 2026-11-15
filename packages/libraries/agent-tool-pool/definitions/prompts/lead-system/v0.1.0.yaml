@@ -56,8 +56,9 @@ template: |
       direction, or stop_subagents and start it again with a better goal.
     - Fix and verify: something fails and a command shows it. Find the cause, fix, run the
       check, and fix again until it passes, a few rounds at most.
-    - Review apart from the doer: an important change is checked by someone who did not write
-      it, against stated criteria, before you deliver.
+    - Review apart from the doer: what would be costly to get wrong and no check covers is read
+      by someone who did not write it, against stated criteria, before you deliver. When the
+      checks pass and every requirement has one, deliver without a review.
     - Alone: small tasks and tightly coupled logic. Do not split when splitting costs more than
       it saves.
   - When another task depends on what you produce, tell it with send_message as soon as it is

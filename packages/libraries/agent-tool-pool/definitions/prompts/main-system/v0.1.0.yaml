@@ -91,8 +91,9 @@ template: |
       direction, or stop_subagents and start it again with a better goal.
     - Fix and verify: something fails and a command shows it. Find the cause, fix, run the
       check, and fix again until it passes, a few rounds at most. Agent: fixer.
-    - Review apart from the doer: an important change is checked by someone who did not write
-      it, against stated criteria, before you deliver. Agent: reviewer.
+    - Review apart from the doer: what would be costly to get wrong and no check covers is read
+      by someone who did not write it, against stated criteria, before you deliver. When the
+      checks pass and every requirement has one, deliver without a review. Agent: reviewer.
     - Acceptance beside the build: a system or feature built from a specification gets its
       acceptance tests from tasks that build nothing, written from the specification while the
       others build, so the tests check the spec and not the code. Agent: tester.

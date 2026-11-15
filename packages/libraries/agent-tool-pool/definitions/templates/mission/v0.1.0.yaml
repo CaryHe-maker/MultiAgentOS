@@ -53,7 +53,10 @@ nodes:
       - A finished part has a defect that needs what its owner knows (its design, behaviour
         across several of its files): give it back to its owner with run_subagents continues; it
         goes on with all it knew. A message cannot reach a task that has ended.
-      - An important change before you deliver: a reviewer, who did not write it.
+      - A reviewer, who did not write it, only for what a check cannot show: a part that would be
+        costly to get wrong and that no test covers (a rule without a test, security, data that
+        could be lost). When the checks of the plan pass and every requirement has a check of its
+        own, deliver without one; a review then costs a wait and finds nothing the tests missed.
       - Work everyone depends on (a shared interface, the last step that joins the parts, the
         final text of a report): yours, and only that; the parts go to owners.
       - After the parts are out: a change that is small, whose cause you know, in files no running
@@ -136,8 +139,8 @@ nodes:
       5. Check each result as it comes back. A defect its owner understands: continues. A small
          one in a file nobody holds: fix it yourself.
       6. When the parts are back: an integrator when the whole fails in ways you cannot place; a
-         fixer for one failure with an unknown cause; a reviewer for what would be costly to get
-         wrong.
+         fixer for one failure with an unknown cause; a reviewer only for what would be costly to
+         get wrong and no check covers.
       7. Run the checks of the plan yourself, last; reply with what was delivered and how it was
          checked.
 
@@ -187,11 +190,9 @@ nodes:
           crashes in game 143.", writeScope: ["game/tournament/", "game/replay/"], acceptance:
           ["python3 -m game.tournament --games 200 --seed 9 ends with a table"]}]}
       Turn 13: both done; the integrator found a rule of section 5 the engine read the wrong way
-      and fixed it there. Before I deliver, the part that decides who wins is read by someone
-      who did not write it: a reviewer with criteria "every rule of sections 2-6 is enforced;
-      no move outside legal_moves is ever applied", writeScope ["game/engine/"]. One finding of
-      two lines; I fix it myself, since nobody holds the file now. I run make test and the
-      tournament myself and reply. Wall time: about a fifth of doing it alone.
+      and fixed it there. Every rule of sections 2-6 now has an acceptance test that passes, so
+      no reviewer is needed: I run make test and the tournament myself and reply. Wall time:
+      about a fifth of doing it alone.
 
       Whole example 2. One change through a large codebase that exists.
       Goal: "Move the web client from the old UI library to the new one (docs/ui-v2.md): 60
@@ -205,8 +206,8 @@ nodes:
       counterpart. I decide (wrap the old one for now), reply, and inform the other three, who
       will meet it too. Turn 9: three are back done; screens-c reports 4 tests that fail
       differently on every run. A fixer takes them, with the flaky test command in acceptance,
-      while screens-d still works. Last: a reviewer on app/widgets/ with the criteria of
-      docs/ui-v2.md, and the whole test suite run by me. The change itself is the same work as
+      while screens-d still works. Last: app/widgets/ has no tests of its own and every screen
+      depends on it, so a reviewer reads it against docs/ui-v2.md; I run the whole test suite. The change itself is the same work as
       one assistant would do; it is done in four parallel waves instead of sixty steps.
 
       Counter-example, do not split: "rename one setting everywhere, keeping old files working"

@@ -537,3 +537,22 @@ adaptive-rejection-sampler 两边都失败，不是 mas 独有。
 - 这是旧最终集的第四次使用（mas 两次、`dsh` 一次），结果不用于调参；phase 3 起它不再作为最终集。
 
 **随后**：Phase3Plan 第 2 节（新增 general 模式：平时对话，长任务时进入 Mission，交付后回到对话）与 RP3-ME-3（"不该拆"的判断与验证命令的范围）。
+
+## Phase 3 的实验
+
+### J1：开发集大任务 pyawk，Mission 对 `dsh`（2026-11-15）
+
+**条件**：`designed/pyawk`（POSIX awk 解释器，离线），mas `4d7ccd8`（`MAS_MODE=mission`，经 `benchproxy-oai` 访问模型），各跑一次；`dsh` 的数字取自 [Phase3TaskSet](Phase3TaskSet.md)。原始记录在 WSL 的 `~/bench/p3mas/results/dev-mission-1-mas-pyawk-8493228/`。
+
+| | 用时（分钟） | 得分 | 请求 | 费用（美元） | 最多同时 |
+|---|---|---|---|---|---|
+| `dsh` | 27.6 | 0.986 | 162 | 0.21 | 1 |
+| mas Mission | 31.1 | 0.986（同样两项未过） | 371 | 0.60 | 7 |
+
+**过程**：根在第 1.4 分钟一次派出 parser、interpreter（lead）、builtins、io-layer、acceptance-tests、tests-writer、docs；并行的核心实现在第 18.6 分钟完成（比 `dsh` 全程快 9 分钟）。之后的 12 分钟没有提高得分：audit（lead）与它派出的两个审查（第 19–25 分钟，47 次请求），根随后自己的收尾修改（第 25–30 分钟 54 次请求，根共 108 次）。docs 与 tests-writer 从第 1 分钟起跟着代码反复改（60 与 34 次请求）。acceptance-tests 在第 2 分钟以 INTERNAL 结束：离线容器里 `web_fetch` 的主机名查询抛出 EAI_AGAIN，查询在错误处理之外。
+
+**改动**（下一道题之前）：
+- `web_fetch`：查询失败变成工具结果（不存在的名字为 ADDRESS_FORBIDDEN，查询做不了为可重试的 PAGE_UNAVAILABLE），不再以 INTERNAL 结束 Agent（`1aeca08`）。
+- 做完后的审查按需（Cary 定，Orchestration D49）：Mission 的指南、步骤 6、两个完整例子以及 main 与 lead 的提示改为"只有出错代价大且没有检查覆盖的部分才派审查；检查都通过、每条要求都有检查时直接交付"。
+- 文档与测试的派法、等待兄弟时的定时唤醒，这次不改（Cary 定）。
+
