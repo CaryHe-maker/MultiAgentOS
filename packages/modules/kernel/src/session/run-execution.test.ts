@@ -77,6 +77,7 @@ function setup(
   options: {
     converging?: boolean;
     maxConcurrentAttempts?: number;
+    maxConcurrentExec?: number;
     serialExecution?: boolean;
     /** Call slots; the test can change them. */
     slots?: { free: number };
@@ -194,7 +195,7 @@ function setup(
     newAttemptId: () => nextId('una'),
     limits: {
       maxAttempts: options.maxConcurrentAttempts ?? 6,
-      maxExec: 1,
+      maxExec: options.maxConcurrentExec ?? 1,
       maxWeb: 10,
       serial: options.serialExecution === true,
     },
@@ -939,6 +940,36 @@ describe('pausing and aborting (Kernel/Execution 4e)', () => {
       status: 'REJECTED',
       reasonCode: 'ADMISSION_CHECK_FAILED',
     });
+  });
+
+  it('runs unisolated commands side by side where the roots of their tasks do not meet (D60)', async () => {
+    const run = setup({
+      maxConcurrentExec: 4,
+      protectedPaths: { snapshot: () => Promise.resolve(new Set<string>()) },
+    });
+    const unisolated = (writableRoots: string[]): AttemptSpec['scope'] => ({
+      kind: 'SANDBOX',
+      backend: 'UNISOLATED',
+      approvalDigest: 'a'.repeat(64),
+      profile: {
+        repositoryRoot: '/repository',
+        workdir: '',
+        writableRoots,
+        network: false,
+        homeReadOnly: [],
+        homeMaskedFiles: [],
+        maskedFiles: [],
+        maskedDirs: [],
+        protectedExisting: [],
+      },
+    });
+    const command = { command: 'make', workdir: '', timeoutMs: 1000, network: false };
+    await run.submit('COMMAND', command, unisolated(['src/a']), 1);
+    await run.submit('COMMAND', command, unisolated(['src/b']), 2);
+    await run.submit('COMMAND', command, unisolated(['src/a/x']), 3);
+    // Without a sandbox the commands of different tasks are not run one at a time: only the one
+    // that may write where another runs waits.
+    expect(run.dispatched.filter((request) => request.executionKind === 'COMMAND')).toHaveLength(2);
   });
 
   it('goes on to build the request of a command whose protected paths could be listed', async () => {

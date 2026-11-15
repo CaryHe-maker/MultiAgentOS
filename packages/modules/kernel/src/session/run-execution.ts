@@ -246,8 +246,11 @@ export class RunExecution {
       agentRunId: spec.agentRunId,
       cls: concurrencyClassOf(spec),
       state: 'QUEUED',
-      // What a command may write decides which others it may run beside (M2Design 7.1).
-      ...(spec.scope.kind === 'SANDBOX' && spec.scope.backend === 'BWRAP'
+      // What a command may write decides which others it may run beside (M2Design 7.1). An
+      // unisolated command has the same roots, those of its task, only not enforced; it is
+      // scheduled by them as a sandboxed one is (D60), or the commands of every task of a run
+      // without a sandbox would go one at a time.
+      ...(spec.scope.kind === 'SANDBOX'
         ? {
             roots: [...spec.scope.profile.writableRoots],
             // What it lent or what is protected it only reads (Orchestration 8.2).
