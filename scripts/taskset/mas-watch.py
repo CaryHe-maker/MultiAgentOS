@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live view of one mas run started by mas-live.sh (or phase3-mas.sh), refreshed every few seconds.
 
-    python3 scripts/taskset/mas-watch.py tu-k4 [--every 5]
+    python3 scripts/taskset/mas-watch.py tu-k4 [--every 15]
 
 It reads the Session log inside the run's container while it runs, the model requests the usage
 proxy counted, and, once the run has ended, the record and the verifier's result. It only reads.
@@ -31,16 +31,35 @@ def parse(at):
     return dt.datetime.fromisoformat(at.replace('Z', '+00:00'))
 
 
+class DockerSilent(Exception):
+    """Docker did not answer in time: the run's state is unknown, not 'not started'."""
+
+
+def docker(args, timeout=15):
+    try:
+        return subprocess.run(['docker', *args], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as error:
+        raise DockerSilent() from error
+
+
 def container(label):
-    out = subprocess.run(['docker', 'ps', '--format', '{{.Names}}', '-f', f'name=ar-{label}-mas-'],
-                         capture_output=True, text=True).stdout.split()
+    done = docker(['ps', '--format', '{{.Names}}', '-f', f'name=ar-{label}-mas-'])
+    if done.returncode != 0:
+        raise DockerSilent()
+    out = done.stdout.split()
     return out[0] if out else None
 
 
 def live_log(name):
     cmd = 'cat /tmp/mas-bench-data-*/sessions/*/workflow/log.v1.jsonl 2>/dev/null'
-    text = subprocess.run(['docker', 'exec', name, 'sh', '-c', cmd], capture_output=True, text=True).stdout
-    return [json.loads(line) for line in text.splitlines() if line.strip()]
+    text = docker(['exec', name, 'sh', '-c', cmd], timeout=20).stdout
+    lines = []
+    for line in text.splitlines():
+        try:
+            lines.append(json.loads(line))
+        except ValueError:
+            pass  # the last line may be half written
+    return lines
 
 
 def ended_log(label):
@@ -147,17 +166,21 @@ def render(label, log, ended, result_dir):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('label')
-    ap.add_argument('--every', type=float, default=5)
+    ap.add_argument('--every', type=float, default=15)
     ap.add_argument('--once', action='store_true')
     a = ap.parse_args()
     try:
         while True:
-            name = container(a.label)
-            if name is not None:
-                text, done = render(a.label, live_log(name), False, None), False
-            else:
-                log, where = ended_log(a.label)
-                text, done = render(a.label, log, bool(log), where), bool(log)
+            try:
+                name = container(a.label)
+                if name is not None:
+                    text, done = render(a.label, live_log(name), False, None), False
+                else:
+                    log, where = ended_log(a.label)
+                    text, done = render(a.label, log, bool(log), where), bool(log)
+            except DockerSilent:
+                text, done = (f'{a.label}: Docker does not answer ({time.strftime("%H:%M:%S")}); '
+                              'the run may be stuck. Check Docker Desktop.'), False
             sys.stdout.write('\033[H\033[2J' + text + '\n')
             sys.stdout.flush()
             if done or a.once:
