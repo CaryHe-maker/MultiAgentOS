@@ -15,6 +15,10 @@ export DOCKER_CONFIG=$HOME/.docker-nocreds
 [ -n "${DEEPSEEK_API_KEY:-}" ] || [ -f "${MAO_ENV_FILE:-}" ] || { echo "set DEEPSEEK_API_KEY or MAO_ENV_FILE"; exit 1; }
 mkdir -p "$OUT/started" "$OUT/results" "$OUT/logs"
 commit=$(git -C "$MAO_DIR" rev-parse --short HEAD)
+# bench.ts runs from source, but the packages it imports resolve to their dist: build first, or the
+# run measures the code of the last build under the commit of this one.
+(cd "$MAO_DIR" && corepack pnpm run build > "$OUT/logs/build-$commit.log" 2>&1) ||
+  { echo "the build of $MAO_DIR failed: $OUT/logs/build-$commit.log"; exit 1; }
 
 for id in "$@"; do
   marker="$OUT/started/${LABEL}__${id//\//__}"
