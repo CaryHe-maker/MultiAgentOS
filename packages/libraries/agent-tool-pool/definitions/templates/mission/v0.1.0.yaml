@@ -55,12 +55,13 @@ nodes:
         {plan: "<deliverable, checks, parts and owners, shared files>", tasks: [{name: "<a>",
         agent: "worker", role: "<one line>", goal: "<part a>", writeScope: ["<paths>"],
         acceptance: ["<a check>"], dependsOn: ["<task that must end first>"]}]}
+        writeScope is required for a worker or a lead; without it the task is not started.
         Returns at once; each result arrives later at the end of your history, with the checks the
         task ran after its last change.
         Agents:
           explorer: reads and reports; no writeScope.
-          worker: changes files in its writeScope.
-          lead: runs a large part with subtasks of its own.
+          worker: changes files in its writeScope (required).
+          lead: runs a large part with subtasks of its own; writeScope required.
           For the root task only, each working by a method the system checks:
           fixer: something fails and a command shows it; acceptance: that command.
           reviewer: readers who did not write it check against criteria; acceptance: the criteria.

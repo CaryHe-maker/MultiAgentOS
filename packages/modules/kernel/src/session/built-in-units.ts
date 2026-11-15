@@ -4,6 +4,7 @@ import {
   ModelRawOutputSchema,
   ReplyArgsSchema,
   canonicalJson,
+  parseToolArguments,
   validate,
   type MessagePublishInput,
   type ModelRawOutput,
@@ -33,7 +34,7 @@ async function replyText(
     if (!output.ok) return { refused: notDispatched('INVALID_INPUT') };
     const call = output.value.toolCalls.find((c) => c.toolCallId === input.source.toolCallId);
     if (call === undefined) return { refused: notDispatched('INVALID_INPUT') };
-    const args = validate<ReplyArgs>(ReplyArgsSchema, JSON.parse(call.argumentsText));
+    const args = validate<ReplyArgs>(ReplyArgsSchema, parseToolArguments(call.argumentsText));
     return args.ok ? { text: args.value.text } : { refused: notDispatched('INVALID_INPUT') };
   } catch {
     return { refused: notDispatched('INVALID_INPUT') };

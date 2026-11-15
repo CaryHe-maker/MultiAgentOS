@@ -72,6 +72,11 @@ export interface WriteRequest {
   readonly signal: AbortSignal;
   /** The new bytes from the current ones, or a refusal that leaves the file alone. */
   readonly produce: (current: Buffer | undefined) => Buffer | ExecutorOutcome;
+  /**
+   * Whether a change made since the expected version may be built upon (D76): an edit whose text
+   * to replace is found exactly once in what is there now. Without it, a change refuses the write.
+   */
+  readonly rebase?: (current: Buffer) => boolean;
 }
 
 export type WriteResult =
@@ -80,6 +85,8 @@ export type WriteResult =
       readonly path: string;
       readonly existed: boolean;
       readonly sha256: string;
+      /** The file had changed since the expected version; the write was built on what is there. */
+      readonly rebased?: true;
     }
   | { readonly ok: false; readonly outcome: ExecutorOutcome };
 
@@ -190,7 +197,15 @@ export async function writeGuarded(
     const current = await readCurrent(absolute);
     if (current !== undefined && current.length > MAX_READ_FILE_BYTES)
       return refuse(rejected('LIMIT_EXCEEDED'));
-    if (!matches(current, expected)) return refuse(rejected('FILE_CHANGED'));
+    let expectation = expected;
+    let rebased = false;
+    if (!matches(current, expected)) {
+      if (current === undefined || request.rebase?.(current) !== true)
+        return refuse(rejected('FILE_CHANGED'));
+      // Built on what is there now, which must still be there when it lands.
+      expectation = { baseSha: sha256Hex(current) };
+      rebased = true;
+    }
     const produced = produce(current);
     if (!Buffer.isBuffer(produced)) return refuse(produced);
     if (produced.length > MAX_READ_FILE_BYTES) return refuse(rejected('LIMIT_EXCEEDED'));
@@ -199,7 +214,7 @@ export async function writeGuarded(
       const created = await createParents(scope.root, path, checked.missingFrom);
       if (!created) return refuse(rejected('OUT_OF_SCOPE'));
     }
-    const committed = await commit(absolute, produced, expected, current, signal, hooks);
+    const committed = await commit(absolute, produced, expectation, current, signal, hooks);
     if (committed !== undefined) return refuse(committed);
 
     const parent = await realpath(dirname(absolute));
@@ -210,6 +225,7 @@ export async function writeGuarded(
       path,
       existed: current !== undefined,
       sha256: sha256Hex(produced),
+      ...(rebased ? { rebased: true as const } : {}),
     } as const;
   });
 }

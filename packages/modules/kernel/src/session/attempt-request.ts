@@ -1,4 +1,5 @@
 import {
+  parseToolArguments,
   messageFullText,
   messageShownText,
   parseReferenceName,
@@ -98,34 +99,22 @@ export type RequestRefusal = 'INVALID_INPUT' | 'LIMIT_EXCEEDED' | ArtifactRefusa
 /** The text a `send_message` call carries; what is not valid JSON is shown as it was written. */
 /** The plan out of the arguments of the `run_subagents` call that carried it. */
 function planTextOf(argumentsText: string): string {
-  try {
-    const parsed: unknown = JSON.parse(argumentsText);
-    const plan = (parsed as { readonly plan?: unknown } | null)?.plan;
-    return typeof plan === 'string' ? plan : '';
-  } catch {
-    return '';
-  }
+  const parsed = parseToolArguments(argumentsText);
+  const plan = (parsed as { readonly plan?: unknown } | null | undefined)?.plan;
+  return typeof plan === 'string' ? plan : '';
 }
 
 /** The summary a sender gave, when it gave one. */
 function messageSummaryOf(argumentsText: string): string | undefined {
-  try {
-    const parsed: unknown = JSON.parse(argumentsText);
-    const summary = (parsed as { readonly summary?: unknown } | null)?.summary;
-    return typeof summary === 'string' && summary.trim() !== '' ? summary : undefined;
-  } catch {
-    return undefined;
-  }
+  const parsed = parseToolArguments(argumentsText);
+  const summary = (parsed as { readonly summary?: unknown } | null | undefined)?.summary;
+  return typeof summary === 'string' && summary.trim() !== '' ? summary : undefined;
 }
 
 function messageTextOf(argumentsText: string): string {
-  try {
-    const parsed: unknown = JSON.parse(argumentsText);
-    const said = (parsed as { readonly text?: unknown } | null)?.text;
-    return typeof said === 'string' ? said : argumentsText;
-  } catch {
-    return argumentsText;
-  }
+  const parsed = parseToolArguments(argumentsText);
+  const said = (parsed as { readonly text?: unknown } | null | undefined)?.text;
+  return typeof said === 'string' ? said : argumentsText;
 }
 
 export class RequestBuildError extends Error {
@@ -220,12 +209,11 @@ function parsedCall(call: ModelRawOutput['toolCalls'][number]): ModelToolCall {
     arguments: null,
     argumentsError: 'INVALID_JSON',
   };
-  try {
-    const parsed = JSON.parse(argumentsText) as Exclude<ModelToolCall['arguments'], null>;
-    return parsed === null ? invalid : { toolCallId, toolName, arguments: parsed };
-  } catch {
-    return invalid;
-  }
+  const parsed = parseToolArguments(argumentsText) as
+    Exclude<ModelToolCall['arguments'], null> | null | undefined;
+  return parsed === null || parsed === undefined
+    ? invalid
+    : { toolCallId, toolName, arguments: parsed };
 }
 
 /**
@@ -459,7 +447,7 @@ export class AttemptRequestBuilder {
     const call = raw.toolCalls.find((each) => each.toolCallId === entry.fullFrom?.toolCallId);
     if (call === undefined) return undefined;
     try {
-      const args = JSON.parse(call.argumentsText) as { tasks?: unknown[] };
+      const args = (parseToolArguments(call.argumentsText) ?? {}) as { tasks?: unknown[] };
       const task = (args.tasks ?? []).find(
         (each): each is { name: string; goal?: unknown; acceptance?: unknown } =>
           typeof each === 'object' &&

@@ -680,6 +680,45 @@ real('run_subagents beside ordinary calls (Orchestration 7.3, D41)', () => {
     },
     TIMEOUT,
   );
+
+  it(
+    'runs the other calls of a reply first and then sleeps, instead of refusing the reply (D77)',
+    async () => {
+      const place = await roots();
+      const provider = scriptedAgents(
+        {
+          main: [
+            {
+              calls: [
+                { name: 'list_files', arguments: {} },
+                {
+                  name: 'run_subagents',
+                  arguments: {
+                    tasks: [{ name: 'reader', agent: 'explorer', goal: 'look around' }],
+                  },
+                },
+                { name: 'sleep', arguments: { until: [children()] } },
+              ],
+            },
+            reply('the reader is back'),
+          ],
+        },
+        { reader: [{ wait: delay(800), then: finish('looked around') }] },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('have it looked at and wait');
+      expect(chat.printed('REPLY')).toContain('the reader is back');
+      const all = seen(provider);
+      expect(all).not.toContain('must be the only tool call');
+      expect(all).toContain('looked around');
+      // Woken by the child, not asked again in between: main made two requests in all.
+      const ofMain = provider.requests.filter(
+        (request) => !request.messages.some((message) => isTaskText(textOf(message), 'reader')),
+      );
+      expect(ofMain.length).toBe(2);
+    },
+    TIMEOUT,
+  );
 });
 
 describe('requests, replies and attachments between tasks (Orchestration 5.3, D25)', () => {

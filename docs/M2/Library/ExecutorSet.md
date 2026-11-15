@@ -84,7 +84,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 1. 请求路径规范化：拒绝绝对路径、`..`、空段；
 2. `isWritable(profile, path)`：越出可写根目录为 `WRITE_OUT_OF_SCOPE`，受保护路径或排除规则命中为 `PROTECTED_PATH`；
 3. 从仓库根目录逐段 `lstat` 到父目录，任何一段是符号链接时为 `OUT_OF_SCOPE`；目标本身是符号链接时同样拒绝；不存在的中间目录按需创建；
-4. 持有按规范化路径的锁，比较 `baseSha` 与 `expectAbsent`，不一致时为 `FILE_CHANGED`；
+4. 持有按规范化路径的锁，比较 `baseSha` 与 `expectAbsent`，不一致时为 `FILE_CHANGED`；`file-edit` 例外（D76）：不是 `replaceAll`、`oldString` 跨行或去掉空白后至少 20 个字符、且原样在当前内容里恰好出现一次时，以当前内容为准继续，第 5 步的再次比较也改用当前内容的 SHA，结果文字说明文件在读取后被改过、已按当前内容应用；`file-write` 的覆盖不放宽；
 5. 写入同目录下的临时文件（`O_CREAT | O_EXCL | O_NOFOLLOW`），`fsync` 后再比较一次，然后 `rename`，保留原文件的权限；
 6. `rename` 之后校验父目录的 realpath 仍在仓库内；不在时记为 `GUARD_FAILURE`，上报安全违规。
 

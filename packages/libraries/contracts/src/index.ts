@@ -4,6 +4,7 @@ export * from './platform-common/common-schemas.js';
 export * from './platform-common/opaque-ref.js';
 export * from './platform-common/validation.js';
 export * from './platform-common/canonical-json.js';
+export * from './platform-common/tool-arguments.js';
 export * from './platform-common/reason-code.js';
 export * from './platform-common/repository-exclusions.js';
 export * from './platform-common/web-address.js';

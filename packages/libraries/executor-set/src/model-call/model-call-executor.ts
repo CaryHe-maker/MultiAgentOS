@@ -1,5 +1,6 @@
 import { APICallError } from 'ai';
 import {
+  parseToolArguments,
   MEDIA_TYPES,
   canonicalJson,
   type AssembleContextPack,
@@ -395,17 +396,14 @@ export function parseCall(call: {
   toolName: string;
   argumentsText: string;
 }): ModelToolCall {
-  try {
-    const parsed: unknown = JSON.parse(call.argumentsText);
-    if (parsed !== null)
-      return {
-        toolCallId: call.toolCallId,
-        toolName: call.toolName,
-        arguments: parsed as Record<string, unknown>,
-      };
-  } catch {
-    // falls through to INVALID_JSON
-  }
+  // Read leniently, as every other reader of the call reads it (D75).
+  const parsed = parseToolArguments(call.argumentsText);
+  if (parsed !== null && parsed !== undefined)
+    return {
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      arguments: parsed as Record<string, unknown>,
+    };
   return {
     toolCallId: call.toolCallId,
     toolName: call.toolName,

@@ -195,6 +195,11 @@ export interface AgentState {
   readonly spawnWithdrawn: boolean;
   /** What a pause cancelled, until `resumeAfterPause`. */
   readonly held: readonly Held[];
+  /**
+   * A sleep that came with other calls (D77): they run first, and when the last of them is back
+   * the task sleeps instead of starting another round.
+   */
+  readonly sleepAfter?: Extract<AgentEnding, { kind: 'SLEEP' }>;
   readonly fatal?: ReasonCode;
 }
 
@@ -734,6 +739,27 @@ function afterTools(
   /** False when the round is not judged by progress, such as a refused run_subagents. */
   judged = true,
 ): AgentTransition {
+  // The sleep of the reply, now that its other calls are back (D77); not when the task wraps up,
+  // where only a finishing call is taken: the sleep is then answered as not taken.
+  if (state.sleepAfter !== undefined) {
+    const { sleepAfter, ...rest } = state;
+    if (rest.wrapUpReason === undefined) return ended(rest, sleepAfter, records);
+    return afterTools(
+      rest,
+      context,
+      config,
+      [
+        ...records,
+        feedback(
+          rest,
+          'NOT_EXECUTED',
+          sleepAfter.source.toolCallId,
+          'Not taken: the task is wrapping up, so only the finishing call is taken now.',
+        ),
+      ],
+      judged,
+    );
+  }
   const noProgress = !judged ? state.noProgress : state.roundHadOk ? 0 : state.noProgress + 1;
   // A tool counts its own failures: different tools failing one after the other is the model
   // correcting itself, the same tool failing round after round is not.
@@ -1115,6 +1141,34 @@ function actOn(
   const sole =
     controls.find((control) => control.inline !== true) ??
     (calls.length === 1 ? controls[0] : undefined);
+  // A sleep with ordinary calls (D77): they run, and the task sleeps once they are back. Only when
+  // nothing else in the reply must be alone, and its arguments are valid; otherwise as before.
+  const sleepTool = state.definitions.sleepTool;
+  if (
+    sole !== undefined &&
+    !state.final &&
+    calls.length > 1 &&
+    sleepTool !== undefined &&
+    sole.call.toolName === sleepTool.toolName &&
+    controls.every((control) => control === sole || control.inline === true) &&
+    sole.call.arguments !== null &&
+    validate(sleepTool.parameters, sole.call.arguments).ok
+  ) {
+    if (report.outputRef === undefined) throw new Error('A model report has no output reference');
+    const sleepAfter = sole.ending({
+      modelTurnRequestId: report.requestId,
+      modelOutputRef: report.outputRef,
+      toolCallId: sole.call.toolCallId,
+    }) as Extract<AgentEnding, { kind: 'SLEEP' }>;
+    return actOn(
+      { ...state, sleepAfter },
+      report,
+      calls.filter((call) => call !== sole.call),
+      context,
+      config,
+      records,
+    );
+  }
   if (sole !== undefined) {
     const refusal = soleRefusal(state, calls, sole);
     if (refusal !== undefined)
