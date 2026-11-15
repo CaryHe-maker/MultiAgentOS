@@ -77,6 +77,13 @@ export const ContextHistoryEntrySchema = Type.Union(
       inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
       /** The playbook of the template the task follows, in words (Orchestration 3.9). */
       playbook: Type.Optional(Type.String({ maxLength: 40_000 })),
+      /**
+       * The call that started the task, when its goal or criteria are cut above (D56): the task
+       * is shown them whole from that call, by its name in it.
+       */
+      fullFrom: Type.Optional(
+        closed({ outputRef: artifactRefOf(MEDIA_TYPES.modelOutput), toolCallId: ToolCallIdSchema }),
+      ),
     }),
     /**
      * The result of a task, by the model output that holds its `finish_subagent` call: PINNED in

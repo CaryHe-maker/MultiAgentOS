@@ -40,6 +40,8 @@ export interface TaskScope {
   readonly withPrompt?: boolean;
   /** The playbook of a specialist, in words (Orchestration 3.9). */
   readonly playbook?: string;
+  /** The call that started it, when its goal or criteria are cut here (D56). */
+  readonly fullFrom?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
   /**
    * The ended tasks this one takes up again (`continues`, Orchestration 5.3): their segments are
    * its history, under the header of the earliest; its own goal answers their finishing call.
@@ -193,6 +195,11 @@ function inheritedText(task: TaskScope): string {
           `- Started with you by the same call, each with its own goal: ${inherited.siblings.join(', ')}. Their parts are not yours.`,
         ]),
     `Your goal: ${task.goal}`,
+    ...(task.fullFrom === undefined
+      ? []
+      : [
+          '(Your goal and criteria are cut here; they stand whole in the call above, under your name.)',
+        ]),
   ];
   if (task.acceptance.length > 0)
     lines.push('Acceptance:', ...task.acceptance.map((each, index) => `${String(index)}. ${each}`));
@@ -245,7 +252,8 @@ function projectInherited(
     toolCallId,
     text:
       toolCallId === inherited.toolCallId
-        ? inheritedText(task)
+        ? // A task taken up again is told what its owner was told; its new goal comes later.
+          inheritedText(task.continued?.first ?? task)
         : 'This call belongs to the task above; its result is not yours.',
   }));
   const plain = Object.fromEntries(
@@ -426,6 +434,7 @@ function projectOwn(
               writeScope: [...header.writeScope],
               inputs: [...header.inputs],
               ...(header.playbook === undefined ? {} : { playbook: header.playbook }),
+              ...(header.fullFrom === undefined ? {} : { fullFrom: header.fullFrom }),
             });
             for (const dependency of header.dependencies)
               entries.push({ ...dependency, seq: record.seq });

@@ -145,11 +145,14 @@ describe('mas run "<goal>": a long task of the template mission (Orchestration 1
       expect(seen(provider)).toContain('Not started: write the plan of the work first');
       const look = provider.requests
         .filter((request) =>
-          request.messages.some((message) => textOf(message).includes('Your task (look,')),
+          request.messages.some((message) =>
+            textOf(message).includes('you are a different task: "look"'),
+          ),
         )
-        .flatMap((request) => request.messages.map((message) => textOf(message)))
+        // The call is in the root's turn, among its tool calls, not in a text.
+        .map((request) => JSON.stringify(request.messages))
         .join('\n');
-      expect(look).toContain('The plan of this work, written by the root task');
+      // The explorer starts with the root's context (D56): it reads the plan in the call above.
       expect(look).toContain('PLAN-7: deliver a summary');
     },
     TIMEOUT,

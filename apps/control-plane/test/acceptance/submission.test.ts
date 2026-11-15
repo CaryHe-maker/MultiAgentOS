@@ -305,27 +305,14 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
   );
 });
 
-real('a task that starts with the context of the root (D53)', () => {
+real('a call of run_subagents with a task that breaks a rule (D53, D56)', () => {
   it(
-    'has what the root read, runs as its own Agent, and is refused as a lead',
+    'starts the valid task with the context of the root, and tells which tasks did not start and why',
     async () => {
       const provider = scriptedAgents(
         {
           main: [
             tool('read_file', { path: 'src/value.txt' }),
-            // A lead does not inherit: it would start tasks of its own.
-            tool('run_subagents', {
-              tasks: [
-                {
-                  name: 'big',
-                  agent: 'lead',
-                  goal: 'fix it',
-                  writeScope: ['src'],
-                  context: 'inherit',
-                },
-              ],
-              plan: 'One part: the value, by one task that knows what I read.',
-            }),
             tool('run_subagents', {
               plan: 'One part: the value, by one worker that knows what I read.',
               tasks: [
@@ -334,7 +321,16 @@ real('a task that starts with the context of the root (D53)', () => {
                   agent: 'worker',
                   goal: 'write fixed into src/value.txt',
                   writeScope: ['src'],
-                  context: 'inherit',
+                  role: `the value ${'and more '.repeat(20)}`,
+                  effort: 'medium',
+                },
+                { name: 'ghost', agent: 'wizard', goal: 'cast it', writeScope: ['docs'] },
+                {
+                  name: 'after',
+                  agent: 'worker',
+                  goal: 'after the ghost',
+                  writeScope: ['tests'],
+                  dependsOn: ['ghost'],
                 },
               ],
             }),
@@ -363,15 +359,23 @@ real('a task that starts with the context of the root (D53)', () => {
       const said = provider.requests
         .flatMap((request) => request.messages.map((message) => textOf(message)))
         .join('\n');
-      expect(said).toContain('only a worker or an explorer starts with your context');
+      // The valid task started; the others were named with their reasons (D56).
+      expect(said).toContain('Started 1 subtask(s): fixer.');
+      expect(said).toMatch(/task ghost \(index 1\) was not started: agent/u);
+      expect(said).toContain(
+        'task after was not started: it depends on ghost, which was not started',
+      );
+      expect(said).toContain('task fixer: effort "medium" is not none, low, high or max');
       const log = await logOf(run.dataDir);
       const fixer = log
         .filter((record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN')
         .flatMap((record) => record['nodes'] as Record<string, unknown>[])
         .find((node) => node['name'] === 'fixer');
+      // A worker starts with the context of its caller, without asking for it (D56).
       expect((fixer?.['spawn'] as Record<string, unknown>)['inherits']).toMatchObject({
         as: 'worker',
       });
+      expect(((fixer?.['spawn'] as Record<string, unknown>)['role'] as string).length).toBe(80);
       // It runs as a worker: its own prompt, tools and budget.
       expect((fixer?.['agentRef'] as Record<string, unknown>)['id']).toBe('worker');
       const first = provider.requests.find((request) =>

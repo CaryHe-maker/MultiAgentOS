@@ -29,11 +29,11 @@ modelDescription: >-
   scope you give a task is lent to it: until it ends only it writes there, you write elsewhere,
   and your commands see it read-only. commands false lends the scope without commands. role is
   one line of what the task is responsible for (frontend, backend storage), which every task of
-  the work sees. A task starts from its goal alone; with context "inherit" (worker or explorer)
-  from your context as it is at this call, so it reads nothing you read again and its goal says
-  only what its part is; with continues from the history of an ended task of yours (same agent,
-  old or new name), your goal being what it is asked now: send a defect in a finished part back
-  to its owner this way, for far less than a stranger who reads everything again. Tasks talk to
+  the work sees. A worker or explorer starts with your context at this call, so its goal says
+  only what its part is; a lead or specialist starts from its goal. With continues a task
+  starts from the history of an ended task of yours (same agent, any name), your goal being what
+  it is asked now: send a defect back to its owner this way. A task that breaks a rule is not
+  started, and you are told why; the others start. Tasks talk to
   each other with send_message. It may come with ordinary tool calls in the same reply: the
   tasks start once those calls are back.
   The agents: explorer reads and reports; worker changes files in its writeScope; lead runs a

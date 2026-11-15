@@ -12,7 +12,14 @@ import type { Console, ConsoleView, LiveState } from '@multiagentos/user-interac
 import { afterEach, describe, expect, it } from 'vitest';
 import { composeSystem } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
-import { scriptedAgents, textOf, tool, until, type ScriptedChat } from './chat-driver.js';
+import {
+  isTaskText,
+  scriptedAgents,
+  textOf,
+  tool,
+  until,
+  type ScriptedChat,
+} from './chat-driver.js';
 
 const TIMEOUT = 120_000;
 const OFFLINE_KEY = 'sk-acceptance-offline-key-0000';
@@ -228,7 +235,7 @@ real('ask_user in a long task is a sleep (Orchestration 4.1)', () => {
       // Its second request is out (the scripted turn that waits is spent), then the run is paused.
       const working = () =>
         provider.requests.filter((request) =>
-          request.messages.some((message) => textOf(message).includes('Your task (namer,')),
+          request.messages.some((message) => isTaskText(textOf(message), 'namer')),
         ).length >= 2;
       await until(working, 'the worker at work again', 30_000);
       await run.console.interrupt();

@@ -81,6 +81,15 @@ export function scriptedChat(...turns: readonly ProviderTurn[]): ScriptedChat {
 export const textOf = (message: ChatMessage | undefined): string =>
   typeof message?.content === 'string' ? message.content : JSON.stringify(message?.content ?? '');
 
+/**
+ * The text that tells a task what it is: the header of a task that starts from its goal, or the
+ * answer to the call of a task that starts with its caller's context (D35, D56).
+ */
+export const isTaskText = (text: string, task: string): boolean =>
+  task === ''
+    ? text.includes('Your task (') || text.includes('you are a different task: "')
+    : text.includes(`Your task (${task},`) || text.includes(`you are a different task: "${task}"`);
+
 export async function until(condition: () => boolean, what: string, ms = 15_000): Promise<void> {
   const deadline = Date.now() + ms;
   while (!condition()) {

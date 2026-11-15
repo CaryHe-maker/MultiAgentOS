@@ -365,20 +365,24 @@ describe('run_subagents', () => {
     const checkAssembly = assembled.find(
       (request) => request.agentRunId === children[1]?.agentRunId,
     );
+    // It starts with main's context, the prompt and the call included, is told its task as the
+    // answer to the call, and sees the result of the one before it (D56).
     expect(history(checkAssembly).map((entry) => [entry.kind, entry.name])).toEqual(
       expect.arrayContaining([
-        ['TASK', 'check'],
+        ['HUMAN', undefined],
+        ['FEEDBACK', undefined],
         ['SUBAGENT_RESULT', 'survey'],
       ]),
     );
-    expect(history(checkAssembly).some((entry) => entry.kind === 'HUMAN')).toBe(false);
+    expect(history(checkAssembly).some((entry) => entry.kind === 'TASK')).toBe(false);
   });
 
   it('refuses a call that breaks a rule, answers it, and takes the tool away after two', async () => {
+    // A rule of the call as a whole: a task that breaks a rule of its own is only taken out (D56).
     const overlap = {
       tasks: [
-        { name: 'one', agent: 'worker', goal: 'x', writeScope: ['src'] },
-        { name: 'two', agent: 'worker', goal: 'y', writeScope: ['src/api'] },
+        { name: 'one', agent: 'worker', goal: 'x', writeScope: ['src/a'], dependsOn: ['two'] },
+        { name: 'two', agent: 'worker', goal: 'y', writeScope: ['src/b'], dependsOn: ['one'] },
       ],
     };
     const { kernel, runner, assembled } = setup({
@@ -397,7 +401,7 @@ describe('run_subagents', () => {
       (record) => record.code === 'INVALID_ACTION',
     );
     expect(answers).toHaveLength(2);
-    expect(answers[0]?.message).toContain('WRITE_SCOPE_OVERLAP');
+    expect(answers[0]?.message).toContain('CYCLE');
     expect(answers[1]?.message).toContain('no longer available');
     const withdrawn = assembled.map(
       (request) => (request.input as { withdrawnTools?: string[] }).withdrawnTools,
@@ -704,6 +708,8 @@ describe('messages and waking (Orchestration 4, 5)', () => {
     await begin(kernel);
     const { records } = runner;
     expect(ofType(records, 'MISSION_MESSAGE')).toHaveLength(1);
+    // What was said is in the log itself, for replay and audit (D56).
+    expect(ofType(records, 'MISSION_MESSAGE')[0]?.text).toBe('GET /keys');
     expect(ofType(records, 'MISSION_WOKEN').map((each) => each.causes.map((c) => c.kind))).toEqual(
       expect.arrayContaining([['MESSAGE'], ['CHILDREN']]),
     );

@@ -298,12 +298,13 @@ describe('dependencies and results', () => {
         return names.includes('write_file') && names.includes('finish_subagent');
       });
       const workerSees = worker?.messages.map((m) => textOf(m)).join('\n') ?? '';
-      expect(workerSees).toContain('Your task (apply, worker)');
+      // It starts with main's context and is told its task by the answer to the call (D56).
+      expect(workerSees).toContain('you are a different task: "apply", a worker');
       expect(workerSees).toContain('Result of task survey (explorer): DONE');
       expect(workerSees).toContain('auth lives in src/auth.ts, nothing else');
-      // The worker is not shown what the user typed.
+      // The worker starts with main's context, what the user typed included (D56).
       // (A message of its own: the name of the temporary directory may end in the same letters.)
-      expect(worker?.messages.map((m) => textOf(m)) ?? []).not.toContain('go');
+      expect(worker?.messages.map((m) => textOf(m)) ?? []).toContain('go');
       const lastMessages =
         provider.requests
           .at(-1)

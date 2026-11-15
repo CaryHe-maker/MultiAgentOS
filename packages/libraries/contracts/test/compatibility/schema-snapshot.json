@@ -4642,6 +4642,49 @@
                   "playbook": {
                     "type": "string",
                     "maxLength": 40000
+                  },
+                  "fullFrom": {
+                    "type": "object",
+                    "required": [
+                      "outputRef",
+                      "toolCallId"
+                    ],
+                    "properties": {
+                      "outputRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "const": "application/vnd.multiagentos.model-output+json"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
@@ -5866,6 +5909,49 @@
             "playbook": {
               "type": "string",
               "maxLength": 40000
+            },
+            "fullFrom": {
+              "type": "object",
+              "required": [
+                "outputRef",
+                "toolCallId"
+              ],
+              "properties": {
+                "outputRef": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "const": "application/vnd.multiagentos.model-output+json"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "toolCallId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -11510,6 +11596,49 @@
                           "playbook": {
                             "type": "string",
                             "maxLength": 40000
+                          },
+                          "fullFrom": {
+                            "type": "object",
+                            "required": [
+                              "outputRef",
+                              "toolCallId"
+                            ],
+                            "properties": {
+                              "outputRef": {
+                                "type": "object",
+                                "required": [
+                                  "artifactId",
+                                  "sha256",
+                                  "size",
+                                  "mediaType"
+                                ],
+                                "properties": {
+                                  "artifactId": {
+                                    "type": "string",
+                                    "pattern": "^art_[a-f0-9]{64}$"
+                                  },
+                                  "sha256": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{64}$"
+                                  },
+                                  "size": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "mediaType": {
+                                    "type": "string",
+                                    "const": "application/vnd.multiagentos.model-output+json"
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              "toolCallId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false
                           }
                         },
                         "additionalProperties": false
@@ -12821,6 +12950,49 @@
                                   "playbook": {
                                     "type": "string",
                                     "maxLength": 40000
+                                  },
+                                  "fullFrom": {
+                                    "type": "object",
+                                    "required": [
+                                      "outputRef",
+                                      "toolCallId"
+                                    ],
+                                    "properties": {
+                                      "outputRef": {
+                                        "type": "object",
+                                        "required": [
+                                          "artifactId",
+                                          "sha256",
+                                          "size",
+                                          "mediaType"
+                                        ],
+                                        "properties": {
+                                          "artifactId": {
+                                            "type": "string",
+                                            "pattern": "^art_[a-f0-9]{64}$"
+                                          },
+                                          "sha256": {
+                                            "type": "string",
+                                            "pattern": "^[a-f0-9]{64}$"
+                                          },
+                                          "size": {
+                                            "type": "integer",
+                                            "minimum": 0
+                                          },
+                                          "mediaType": {
+                                            "type": "string",
+                                            "const": "application/vnd.multiagentos.model-output+json"
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      },
+                                      "toolCallId": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128
+                                      }
+                                    },
+                                    "additionalProperties": false
                                   }
                                 },
                                 "additionalProperties": false
@@ -34718,6 +34890,49 @@
                   "playbook": {
                     "type": "string",
                     "maxLength": 40000
+                  },
+                  "fullFrom": {
+                    "type": "object",
+                    "required": [
+                      "outputRef",
+                      "toolCallId"
+                    ],
+                    "properties": {
+                      "outputRef": {
+                        "type": "object",
+                        "required": [
+                          "artifactId",
+                          "sha256",
+                          "size",
+                          "mediaType"
+                        ],
+                        "properties": {
+                          "artifactId": {
+                            "type": "string",
+                            "pattern": "^art_[a-f0-9]{64}$"
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[a-f0-9]{64}$"
+                          },
+                          "size": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "const": "application/vnd.multiagentos.model-output+json"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "toolCallId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 128
+                      }
+                    },
+                    "additionalProperties": false
                   }
                 },
                 "additionalProperties": false
@@ -38165,6 +38380,49 @@
                           "playbook": {
                             "type": "string",
                             "maxLength": 40000
+                          },
+                          "fullFrom": {
+                            "type": "object",
+                            "required": [
+                              "outputRef",
+                              "toolCallId"
+                            ],
+                            "properties": {
+                              "outputRef": {
+                                "type": "object",
+                                "required": [
+                                  "artifactId",
+                                  "sha256",
+                                  "size",
+                                  "mediaType"
+                                ],
+                                "properties": {
+                                  "artifactId": {
+                                    "type": "string",
+                                    "pattern": "^art_[a-f0-9]{64}$"
+                                  },
+                                  "sha256": {
+                                    "type": "string",
+                                    "pattern": "^[a-f0-9]{64}$"
+                                  },
+                                  "size": {
+                                    "type": "integer",
+                                    "minimum": 0
+                                  },
+                                  "mediaType": {
+                                    "type": "string",
+                                    "const": "application/vnd.multiagentos.model-output+json"
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              "toolCallId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              }
+                            },
+                            "additionalProperties": false
                           }
                         },
                         "additionalProperties": false
@@ -40056,6 +40314,49 @@
                       "playbook": {
                         "type": "string",
                         "maxLength": 40000
+                      },
+                      "fullFrom": {
+                        "type": "object",
+                        "required": [
+                          "outputRef",
+                          "toolCallId"
+                        ],
+                        "properties": {
+                          "outputRef": {
+                            "type": "object",
+                            "required": [
+                              "artifactId",
+                              "sha256",
+                              "size",
+                              "mediaType"
+                            ],
+                            "properties": {
+                              "artifactId": {
+                                "type": "string",
+                                "pattern": "^art_[a-f0-9]{64}$"
+                              },
+                              "sha256": {
+                                "type": "string",
+                                "pattern": "^[a-f0-9]{64}$"
+                              },
+                              "size": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "const": "application/vnd.multiagentos.model-output+json"
+                              }
+                            },
+                            "additionalProperties": false
+                          },
+                          "toolCallId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 128
+                          }
+                        },
+                        "additionalProperties": false
                       }
                     },
                     "additionalProperties": false
@@ -50967,6 +51268,9 @@
                         },
                         "additionalProperties": false
                       },
+                      "cut": {
+                        "type": "boolean"
+                      },
                       "inherits": {
                         "type": "object",
                         "required": [
@@ -52287,6 +52591,14 @@
               "type": "string",
               "pattern": "^ref_[1-9][0-9]*$",
               "maxLength": 32
+            },
+            "summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300
+            },
+            "text": {
+              "type": "string"
             },
             "source": {
               "type": "object",
@@ -55893,10 +56205,6 @@
               "continues": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_-]{0,39}$"
-              },
-              "context": {
-                "type": "string",
-                "const": "inherit"
               }
             },
             "additionalProperties": false

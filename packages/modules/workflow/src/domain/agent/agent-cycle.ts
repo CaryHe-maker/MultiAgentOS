@@ -1,3 +1,4 @@
+import { repairSpawnArgs } from '../spawn/repair-spawn.js';
 import {
   WRITE_KINDS,
   canonicalJson,
@@ -214,6 +215,10 @@ export type AgentEnding =
       readonly kind: 'SPAWN';
       readonly arguments: unknown;
       readonly source: ControlSource;
+      /** The tasks taken out of the call and what was set right in it (D56). */
+      readonly notes?: readonly string[];
+      /** The tasks whose goal or criteria the graph holds cut; the call holds them whole. */
+      readonly cut?: readonly string[];
     }
   /** `ask_user` was called validly in form; the runner checks what it points at. */
   | { readonly kind: 'ASK'; readonly arguments: unknown; readonly source: ControlSource }
@@ -871,6 +876,8 @@ interface SoleControl {
   readonly ending: (source: ControlSource) => AgentEnding;
   /** Answered at once without ending the round: it may come with other tool calls. */
   readonly inline?: boolean;
+  /** The arguments as they are checked, when the call was set right first (D56). */
+  readonly args?: unknown;
 }
 
 function soleControlOf(
@@ -889,14 +896,25 @@ function soleControlOf(
       };
     // run_subagents may come with ordinary calls; the runner starts its tasks once they are back,
     // so the checkpoint before them is a cut after what they did (Orchestration 7.3, D41).
-    if (spawn !== undefined && call.toolName === spawn.toolName)
+    if (spawn !== undefined && call.toolName === spawn.toolName) {
+      // A detail of one task does not cost the whole call (D56): what can be set right is, and a
+      // task that is still not valid is taken out and said why.
+      const repaired = repairSpawnArgs(call.arguments);
       return {
         call,
         parameters: spawn.parameters,
         allowedInFinal: false,
-        ending: (source) => ({ kind: 'SPAWN', arguments: call.arguments, source }),
+        args: repaired.args,
+        ending: (source) => ({
+          kind: 'SPAWN',
+          arguments: repaired.args,
+          source,
+          ...(repaired.notes.length === 0 ? {} : { notes: repaired.notes }),
+          ...(repaired.cut.length === 0 ? {} : { cut: repaired.cut }),
+        }),
         inline: true,
       };
+    }
     const ask = state.definitions.askTool;
     if (ask !== undefined && call.toolName === ask.toolName)
       return {
@@ -1006,17 +1024,18 @@ function mixedText(sole: ModelToolCall, calls: readonly ModelToolCall[]): string
 function soleRefusal(
   state: AgentState,
   calls: readonly ModelToolCall[],
-  { call, parameters, allowedInFinal }: SoleControl,
+  { call, parameters, allowedInFinal, args }: SoleControl,
 ): { readonly code: FeedbackCode; readonly detail?: string } | undefined {
   if (calls.length > 1) return { code: 'CONTROL_MIXED', detail: mixedText(call, calls) };
   if (state.final && !allowedInFinal) return { code: 'CONTROL_NOT_ALLOWED' };
-  const checked = call.arguments === null ? undefined : validate(parameters, call.arguments);
+  const checkedArgs = args ?? call.arguments;
+  const checked = call.arguments === null ? undefined : validate(parameters, checkedArgs);
   if (checked !== undefined && checked.ok) return undefined;
   return {
     code: 'CONTROL_ARGUMENTS_INVALID',
     detail: invalidArgumentsText(NOT_TAKEN, checked, call.arguments === null, {
       parameters,
-      args: call.arguments,
+      args: checkedArgs,
     }),
   };
 }
@@ -1077,10 +1096,9 @@ function actOn(
   const inline = new Set(controls.map((control) => control.call.toolCallId));
   const answered: AgentEnding[] = [];
   for (const control of controls) {
+    const checkedArgs = control.args ?? control.call.arguments;
     const checked =
-      control.call.arguments === null
-        ? undefined
-        : validate(control.parameters, control.call.arguments);
+      control.call.arguments === null ? undefined : validate(control.parameters, checkedArgs);
     if (checked === undefined || !checked.ok) {
       records.push(
         feedback(
@@ -1089,7 +1107,7 @@ function actOn(
           control.call.toolCallId,
           invalidArgumentsText(NOT_TAKEN, checked, control.call.arguments === null, {
             parameters: control.parameters,
-            args: control.call.arguments,
+            args: checkedArgs,
           }),
         ),
       );

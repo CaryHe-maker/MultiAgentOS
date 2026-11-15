@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import { probeSandbox } from '@multiagentos/kernel';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  isTaskText,
   openChat,
   scriptedAgents,
   textOf,
@@ -61,9 +62,7 @@ const seen = (provider: ScriptedChat): string =>
 /** What one task was shown, from the requests that carry its task. */
 const seenBy = (provider: ScriptedChat, task: string): string =>
   provider.requests
-    .filter((request) =>
-      request.messages.some((message) => textOf(message).includes(`Your task (${task},`)),
-    )
+    .filter((request) => request.messages.some((message) => isTaskText(textOf(message), task)))
     .flatMap((request) => request.messages.map((message) => textOf(message)))
     .join('\n');
 /** A wait that starts when the provider serves the turn, not when the script is written. */

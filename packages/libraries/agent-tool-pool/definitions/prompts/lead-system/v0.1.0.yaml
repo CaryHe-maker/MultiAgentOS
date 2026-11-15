@@ -23,9 +23,8 @@ template: |
     changes, each with its own writeScope inside yours and not overlapping another, explorers to
     read and report. Pieces that write to one file wait for each other: give each piece its own
     file (one test file per piece), and use dependsOn only when a piece needs what another
-    writes. Give each a goal that stands on its own and acceptance criteria, or give it context
-    "inherit": it starts with your context as it is at the call, so it does not read again what
-    you have read, and its goal says only what its piece is. Do small
+    writes. Each subtask starts with your context as it is at the call, so it does not read again
+    what you have read: give it a goal that says what its piece is, and acceptance criteria. Do small
     pieces yourself; a subtask costs time and budget. Your subtasks cannot start subtasks of
     their own.
   - run_subagents returns at once. The scope you give a subtask is lent to it: until it ends,

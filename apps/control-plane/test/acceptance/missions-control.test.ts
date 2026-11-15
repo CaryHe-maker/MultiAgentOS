@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path';
 import { probeSandbox } from '@multiagentos/kernel';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  isTaskText,
   openChat,
   scriptedAgents,
   textOf,
@@ -59,15 +60,13 @@ const seen = (provider: ScriptedChat): string =>
     .join('\n');
 const seenBy = (provider: ScriptedChat, task: string): string =>
   provider.requests
-    .filter((request) =>
-      request.messages.some((message) => textOf(message).includes(`Your task (${task},`)),
-    )
+    .filter((request) => request.messages.some((message) => isTaskText(textOf(message), task)))
     .flatMap((request) => request.messages.map((message) => textOf(message)))
     .join('\n');
 const toolsOf = (provider: ScriptedChat, task: string): string[] =>
   (
     provider.requests.find((request) =>
-      request.messages.some((message) => textOf(message).includes(`Your task (${task},`)),
+      request.messages.some((message) => isTaskText(textOf(message), task)),
     )?.tools ?? []
   ).map((each) => each.function.name);
 /** A wait that starts when the provider serves the turn. */
@@ -619,8 +618,7 @@ describe('requests, replies and attachments between tasks (Orchestration 5.3, D2
     /Request (\S+) from task/u.exec(seen(provider))?.[1] ?? 'none';
   const ownCallId = (provider: ScriptedChat, task: string, tool: string): string => {
     for (const request of provider.requests) {
-      if (!request.messages.some((message) => textOf(message).includes(`Your task (${task},`)))
-        continue;
+      if (!request.messages.some((message) => isTaskText(textOf(message), task))) continue;
       for (const message of request.messages)
         for (const call of message.tool_calls ?? [])
           if (call.function.name === tool && call.id !== undefined) return call.id;
@@ -759,9 +757,7 @@ describe('requests, replies and attachments between tasks (Orchestration 5.3, D2
       );
       // The receiver (main, whose requests carry no task of their own) read what was attached.
       const mainSaw = provider.requests
-        .filter(
-          (request) => !request.messages.some((message) => textOf(message).includes('Your task (')),
-        )
+        .filter((request) => !request.messages.some((message) => isTaskText(textOf(message), '')))
         .flatMap((request) => request.messages.map((message) => textOf(message)))
         .join('\n');
       expect(mainSaw).toContain('the secret number is 42');
@@ -774,9 +770,7 @@ describe('a message or a look at the tree with other tool calls (Orchestration 5
   /** What main read: its requests carry no task of their own. */
   const mainSaw = (provider: ScriptedChat): string =>
     provider.requests
-      .filter(
-        (request) => !request.messages.some((message) => textOf(message).includes('Your task (')),
-      )
+      .filter((request) => !request.messages.some((message) => isTaskText(textOf(message), '')))
       .flatMap((request) => request.messages.map((message) => textOf(message)))
       .join('\n');
 
@@ -1076,7 +1070,7 @@ describe('a long message is read like a long report (Orchestration 5.3)', () => 
       // Before the read, only the beginning was there.
       const shown = provider.requests
         .filter((request) =>
-          request.messages.some((message) => textOf(message).includes('Your task (listener,')),
+          request.messages.some((message) => isTaskText(textOf(message), 'listener')),
         )
         .map((request) => request.messages.map((message) => textOf(message)).join('\n'))
         .find((text) => text.includes('too long to show here'));
@@ -1126,9 +1120,7 @@ describe('a task that ended is taken up again with all it knows (continues, Orch
   /** The requests of one task, each as the text of its messages in order. */
   const requestsOf = (provider: ScriptedChat, task: string): string[][] =>
     provider.requests
-      .filter((request) =>
-        request.messages.some((message) => textOf(message).includes(`Your task (${task},`)),
-      )
+      .filter((request) => request.messages.some((message) => isTaskText(textOf(message), task)))
       .map((request) => request.messages.map((message) => textOf(message)));
 
   it(

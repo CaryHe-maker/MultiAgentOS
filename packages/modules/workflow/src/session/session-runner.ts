@@ -2624,7 +2624,7 @@ export class SessionRunner {
     ending: Extract<AgentEnding, { kind: 'SPAWN' }>,
   ): Promise<void> {
     const { toolCallId } = ending.source;
-    const refuse = (text: string, withdraw = false): Promise<void> =>
+    const refuse = (text: string, withdraw = false, counted = true): Promise<void> =>
       this.#apply(
         workflowRunId,
         answerDelegatedCall(
@@ -2632,7 +2632,7 @@ export class SessionRunner {
           toolCallId,
           {
             refused: true,
-            spawn: true,
+            spawn: counted,
             withdraw,
             records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, text)],
           },
@@ -2731,18 +2731,69 @@ export class SessionRunner {
       if (phase?.tasks?.context === 'inherit') phaseInherits = phase.tasks.agent;
     }
     const readable = readableArtifacts(this.#records, active.state.agentRunId);
-    const checked = validateSpawn(args, {
+    const spawnContext = {
       rules: this.#deps.config,
       agents: this.#spawnable,
       callerRoots: this.#callerRoots(workflowRunId, active),
       spawned: spawnedBy(this.#records, active.missionId),
-      readable: (artifactId) => readable.has(artifactId),
-    });
+      readable: (artifactId: string) => readable.has(artifactId),
+    };
+    // The tasks that break a rule of their own are taken out, with the tasks that wait for them,
+    // and the others start (D56); a rule of the call as a whole refuses the call.
+    const notStarted = [...(ending.notes ?? [])];
+    let attempt = args;
+    let checked = validateSpawn(attempt, spawnContext);
+    while (!checked.ok) {
+      const errors = checked.errors;
+      let keep = attempt.tasks;
+      if (errors.some((error) => error.code === 'TOO_MANY_TASKS')) {
+        const max = this.#deps.config.maxSubagentsPerCall;
+        for (const task of keep.slice(max))
+          notStarted.push(
+            `task ${task.name} was not started: at most ${String(max)} tasks start in one call; start it in a later call`,
+          );
+        keep = keep.slice(0, max);
+      } else if (errors.some((error) => error.task === undefined)) break;
+      const bad = new Set(
+        errors.flatMap((error) => (error.task === undefined ? [] : [error.task])),
+      );
+      for (const error of errors)
+        if (error.task !== undefined)
+          notStarted.push(`task ${error.task} was not started: ${error.code}: ${error.message}`);
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const task of keep) {
+          const missing = (task.dependsOn ?? []).find(
+            (each) => bad.has(each) || !keep.some((other) => other.name === each),
+          );
+          if (bad.has(task.name) || missing === undefined) continue;
+          notStarted.push(
+            `task ${task.name} was not started: it depends on ${missing}, which was not started`,
+          );
+          bad.add(task.name);
+          changed = true;
+        }
+      }
+      keep = keep.filter((task) => !bad.has(task.name));
+      if (keep.length === 0 || keep.length === attempt.tasks.length) break;
+      attempt = { ...attempt, tasks: keep };
+      checked = validateSpawn(attempt, spawnContext);
+    }
     if (!checked.ok) {
       const withdraw = checked.errors.some((error) => error.code === 'SPAWN_LIMIT');
+      // The root of a long task splits the work: it keeps run_subagents whatever was wrong with
+      // a call (D56); only a limit takes it away.
+      const longRoot = isRoot && this.#mode === 'ORCHESTRATION';
       return refuse(
-        this.#refusalText(checked.errors, withdraw || active.state.invalidSpawns + 1 >= 2),
+        [
+          ...notStarted,
+          this.#refusalText(
+            checked.errors,
+            withdraw || (!longRoot && active.state.invalidSpawns + 1 >= 2),
+          ),
+        ].join('\n'),
         withdraw,
+        !longRoot,
       );
     }
     // A task taken up again (`continues`) is an ended task of this caller's, in this run, run by
@@ -2796,7 +2847,13 @@ export class SessionRunner {
       for (const task of checked.plan.tasks) {
         if (phaseInherits !== undefined)
           inherit.set(task.name, { as: phaseInherits, runAs: active.agentId });
-        else if (task.context === 'inherit')
+        // A worker or explorer starts with its caller's context, which holds what the caller
+        // read and its call (D56); a lead, a specialist and a task taken up again do not.
+        else if (
+          (task.agent === 'worker' || task.agent === 'explorer') &&
+          task.continues === undefined &&
+          !specialists.has(task.name)
+        )
           inherit.set(task.name, { as: task.agent, runAs: task.agent });
       }
     const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
@@ -2845,6 +2902,7 @@ export class SessionRunner {
       specialists,
       continued,
       inherit,
+      { notStarted, cut: ending.cut ?? [] },
     );
   }
 
@@ -2908,6 +2966,11 @@ export class SessionRunner {
      * `context: inherit`, D35, or a task with `context: "inherit"`, D53), by task name.
      */
     inherit: ReadonlyMap<string, { readonly as: string; readonly runAs: string }> = new Map(),
+    /** The tasks of the call that were not started, and those whose goal the graph holds cut (D56). */
+    told: { readonly notStarted: readonly string[]; readonly cut: readonly string[] } = {
+      notStarted: [],
+      cut: [],
+    },
   ): Promise<void> {
     const call = { toolCallId, delegationId: reserved.delegationId };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));
@@ -2930,6 +2993,7 @@ export class SessionRunner {
           dependsOn: task.dependsOn ?? [],
           spawn: {
             ...spawnNodeOf(task, shares.get(task.name)),
+            ...(told.cut.includes(task.name) ? { cut: true } : {}),
             ...(inherits === undefined
               ? {}
               : {
@@ -2963,7 +3027,7 @@ export class SessionRunner {
               current.state,
               'STARTED',
               toolCallId,
-              `Started ${String(tasks.length)} subtask(s): ${tasks.map((task) => task.name).join(', ')}. They run now; their results come to you as they finish. To wait for them, call sleep with until children: you are woken as each one ends, with its result, so you can use it, check it or start what depends on it; the others go on meanwhile. Until each has ended, its scope is its own: you may not write there, and your commands see it read-only.`,
+              `Started ${String(tasks.length)} subtask(s): ${tasks.map((task) => task.name).join(', ')}. They run now; their results come to you as they finish. To wait for them, call sleep with until children: you are woken as each one ends, with its result, so you can use it, check it or start what depends on it; the others go on meanwhile. Until each has ended, its scope is its own: you may not write there, and your commands see it read-only.${told.notStarted.length === 0 ? '' : `\n${told.notStarted.join('\n')}\nCorrect only these and start them in a later call; the tasks above run.`}`,
             ),
           ],
         },
@@ -3621,6 +3685,9 @@ export class SessionRunner {
         ...(kind === 'inform' ? {} : { kind }),
         ...(request === undefined ? {} : { replyTo: request.source.toolCallId }),
         ...(handed?.kind === 'HANDED' ? { referenceId: handed.referenceId } : {}),
+        // What was said goes into the log itself, for replay and audit (D56).
+        ...(args.summary === undefined ? {} : { summary: args.summary }),
+        text: args.text,
         source: {
           modelTurnRequestId: ending.source.modelTurnRequestId,
           outputRef: ending.source.modelOutputRef,

@@ -53,6 +53,11 @@ export const SpawnNodeSchema = closed({
   /** The ended task it takes up again, with that task's history (`continues`, Orchestration 5.3). */
   continues: Type.Optional(closed({ missionId: IdSchemas.missionScopeId })),
   /**
+   * Its goal or a criterion was longer than the graph holds (D56): the node holds the beginning,
+   * the call that started it holds the whole, and the task is shown the whole from there.
+   */
+  cut: Type.Optional(Type.Boolean()),
+  /**
    * A task of a phase with `context: inherit` (Orchestration 3.9, D35): the task whose context it
    * starts with, the AgentRun of that task that made the call, and the Agent the phase names
    * (the task itself runs as the Agent of the task it comes from, so the provider's cache holds).
@@ -400,6 +405,12 @@ export const SessionLogRecordSchema = Type.Union(
       replyTo: Type.Optional(ToolCallIdSchema),
       /** The handover of the tool results it carries, when it carries any. */
       referenceId: Type.Optional(ReferenceIdSchema),
+      /**
+       * What was said, as sent (D56): the log alone shows the communication of a run, for replay
+       * and audit, whatever becomes of the artifacts.
+       */
+      summary: Type.Optional(text(300)),
+      text: Type.Optional(Type.String()),
       source: closed({
         modelTurnRequestId: IdSchemas.requestId,
         outputRef: ArtifactRefSchema,

@@ -449,6 +449,36 @@ export class AttemptRequestBuilder {
     return this.#json<ModelRawOutput>(ref, ModelRawOutputSchema);
   }
 
+  /** The goal and criteria of a task as the call that started it wrote them (D56). */
+  async #wholeTask(entry: {
+    readonly name: string;
+    readonly fullFrom?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
+  }): Promise<{ goal?: string; acceptance?: string[] } | undefined> {
+    if (entry.fullFrom === undefined) return undefined;
+    const raw = await this.#rawOutput(entry.fullFrom.outputRef);
+    const call = raw.toolCalls.find((each) => each.toolCallId === entry.fullFrom?.toolCallId);
+    if (call === undefined) return undefined;
+    try {
+      const args = JSON.parse(call.argumentsText) as { tasks?: unknown[] };
+      const task = (args.tasks ?? []).find(
+        (each): each is { name: string; goal?: unknown; acceptance?: unknown } =>
+          typeof each === 'object' &&
+          each !== null &&
+          (each as { name?: unknown }).name === entry.name,
+      );
+      if (task === undefined) return undefined;
+      return {
+        ...(typeof task.goal === 'string' ? { goal: task.goal } : {}),
+        ...(Array.isArray(task.acceptance) &&
+        task.acceptance.every((each) => typeof each === 'string')
+          ? { acceptance: task.acceptance }
+          : {}),
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
   /** The text `read_output` pages through: the artifact, or the result a model output holds. */
   async #readable(ref: ArtifactRef, toolCallId: string): Promise<string> {
     if (ref.mediaType !== MEDIA_TYPES.modelOutput) return this.#text(ref);
@@ -548,17 +578,22 @@ ${shown}`,
         };
       }
       case 'TASK': {
+        // A goal or criteria cut in the graph are shown whole, from the call that started the
+        // task (D56): the task does not have to look them up.
+        const whole = entry.fullFrom === undefined ? undefined : await this.#wholeTask(entry);
+        const goal = whole?.goal ?? entry.goal;
+        const acceptance = whole?.acceptance ?? entry.acceptance;
         const lines = [
           `Your task (${entry.name}, ${entry.agent}):`,
-          entry.goal,
+          goal,
           ...(entry.writeScope.length === 0
             ? []
             : [`You may change only: ${entry.writeScope.join(', ')}`]),
-          ...(entry.acceptance.length === 0
+          ...(acceptance.length === 0
             ? []
             : [
                 'Acceptance criteria, by index:',
-                ...entry.acceptance.map((each, index) => `${String(index)}. ${each}`),
+                ...acceptance.map((each, index) => `${String(index)}. ${each}`),
               ]),
         ];
         if (entry.playbook !== undefined) lines.push(entry.playbook);

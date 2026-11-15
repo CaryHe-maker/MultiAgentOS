@@ -183,7 +183,10 @@ export function taskScopeOf(
   spawn: NonNullable<GraphNodeRecord['spawn']>,
 ): TaskScope {
   const continued = continuedOf(records, workflowRunId, graph, spawn);
-  const inherited = inheritedOf(records, workflowRunId, graph, node, spawn);
+  // A task taken up again goes on from all its owner knew: the context the owner started with
+  // as well as the owner's own work (D56).
+  const inherited =
+    inheritedOf(records, workflowRunId, graph, node, spawn) ?? continued?.first.inherited;
   const dependencies = graph.graph.edges
     .filter((edge) => edge.to === node.nodeId && edge.kind === 'DEPENDS')
     .flatMap((edge) => {
@@ -219,7 +222,32 @@ export function taskScopeOf(
     ...(spawn.specialist === undefined ? {} : { playbook: renderPlaybook(spawn.specialist) }),
     ...(continued === undefined ? {} : { continued }),
     ...(inherited === undefined ? {} : { inherited }),
+    ...(spawn.cut === true ? fullFromOf(records, workflowRunId, node) : {}),
   };
+}
+
+/** The call that started a task, which holds its goal and criteria whole (D56). */
+function fullFromOf(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+  node: GraphNodeRecord,
+): { fullFrom?: { outputRef: ArtifactRef; toolCallId: string } } {
+  const started = records.find(
+    (record): record is RecordOf<'GRAPH_EXTENDED'> =>
+      record.type === 'GRAPH_EXTENDED' &&
+      record.workflowRunId === workflowRunId &&
+      record.nodes.some((each) => each.nodeId === node.nodeId),
+  );
+  const toolCallId = started?.edges.find(
+    (each) => each.kind === 'DELEGATE' && each.to === node.nodeId && each.call !== undefined,
+  )?.call?.toolCallId;
+  if (toolCallId === undefined) return {};
+  const turn = records.find(
+    (record) =>
+      record.type === 'MODEL_TURN' &&
+      record.toolCalls.some((call) => call.toolCallId === toolCallId),
+  );
+  return turn?.type === 'MODEL_TURN' ? { fullFrom: { outputRef: turn.outputRef, toolCallId } } : {};
 }
 
 /**
