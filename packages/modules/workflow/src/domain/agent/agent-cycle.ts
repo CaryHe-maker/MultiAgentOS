@@ -1,4 +1,5 @@
 import { repairSpawnArgs } from '../spawn/repair-spawn.js';
+import { withCamelNames } from './argument-aliases.js';
 import {
   WRITE_KINDS,
   canonicalJson,
@@ -752,6 +753,24 @@ function invalidReply(
   return nextRound(next, context, [...records, ...notes]);
 }
 
+/** The parameters of the tool a call names, whatever kind of tool it is. */
+function parametersOf(definitions: AgentDefinitions, name: string): unknown {
+  const plain = definitions.tools.find((tool) => tool.modelName === name);
+  if (plain !== undefined) return plain.parameters;
+  const end = definitions.endTools.find((tool) => tool.toolName === name);
+  if (end !== undefined) return end.parameters;
+  return [
+    definitions.todoTool,
+    definitions.spawnTool,
+    definitions.askTool,
+    definitions.sleepTool,
+    definitions.messageTool,
+    definitions.viewTasksTool,
+    definitions.stopTool,
+    ...(definitions.jobTools ?? []),
+  ].find((tool) => tool?.toolName === name)?.parameters;
+}
+
 function handleModel(
   state: AgentState,
   report: Extract<UnitReport, { status: 'OK' }>,
@@ -762,8 +781,20 @@ function handleModel(
     readonly finishReason: string;
     readonly toolCalls: readonly ModelToolCall[];
   };
-  const calls = output.toolCalls;
-  const turn = modelTurnRecord(state, report, calls);
+  // The turn is logged as the model wrote it; the calls are checked and run with their
+  // snake_case names taken over (D57).
+  const turn = modelTurnRecord(state, report, output.toolCalls);
+  const calls = output.toolCalls.map((call): ModelToolCall => {
+    if (call.arguments === null) return call;
+    const args = withCamelNames(parametersOf(state.definitions, call.toolName), call.arguments);
+    return args === call.arguments
+      ? call
+      : {
+          toolCallId: call.toolCallId,
+          toolName: call.toolName,
+          arguments: args as Record<string, unknown>,
+        };
+  });
   // The output holds tool arguments, reply text included: bodies stay in the artifact.
   const complete = completion(state, report) as Extract<NewLogRecord, { type: 'UNIT_COMPLETED' }>;
   const records: NewLogRecord[] = [
