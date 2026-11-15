@@ -377,6 +377,36 @@ describe('waking as each subtask ends, and waiting for siblings (Orchestration 4
   );
 
   it(
+    'tells the task still running when its siblings have all ended that the caller waits on it (D72)',
+    async () => {
+      const place = await roots();
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'quick', agent: 'explorer', goal: 'answer at once' },
+              { name: 'slow', agent: 'explorer', goal: 'answer after a while' },
+            ),
+            sleepFor(children()),
+            reply('both are in'),
+          ],
+        },
+        {
+          quick: [finish('quick result')],
+          slow: [{ wait: delay(1500), then: tool('view_tasks', {}) }, finish('slow result')],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('ask both');
+      expect(chat.printed('REPLY')).toContain('both are in');
+      const line = 'your caller now waits only on you';
+      expect(seenBy(provider, 'slow')).toContain(line);
+      expect(seenBy(provider, 'quick')).not.toContain(line);
+    },
+    TIMEOUT,
+  );
+
+  it(
     'wakes a task that waits for a sibling when the sibling has ended',
     async () => {
       const place = await roots();

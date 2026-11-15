@@ -191,6 +191,10 @@ export const StatusFactsSchema = closed({
   wrapUpReason: Type.Optional(WrapUpReasonSchema),
   /** Every subtask the task started has ended: what is left is the check of the whole (D70). */
   partsBack: Type.Optional(Type.Literal(true)),
+  /** The task's siblings have all ended: its caller now waits only on it (D72). */
+  lastRunning: Type.Optional(Type.Literal(true)),
+  /** The task has started no subtask yet (D73); said once, to a task that can start them. */
+  noSubtasksYet: Type.Optional(Type.Literal(true)),
   /** The final call is asked again: the first answer did not call exactly one finishing tool. */
   finalRetry: Type.Optional(Type.Literal(true)),
   /**

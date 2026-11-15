@@ -5260,6 +5260,14 @@
               "type": "boolean",
               "const": true
             },
+            "lastRunning": {
+              "type": "boolean",
+              "const": true
+            },
+            "noSubtasksYet": {
+              "type": "boolean",
+              "const": true
+            },
             "finalRetry": {
               "type": "boolean",
               "const": true
@@ -13683,6 +13691,14 @@
                               ]
                             },
                             "partsBack": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "lastRunning": {
+                              "type": "boolean",
+                              "const": true
+                            },
+                            "noSubtasksYet": {
                               "type": "boolean",
                               "const": true
                             },
@@ -23503,6 +23519,14 @@
               "type": "boolean",
               "const": true
             },
+            "lastRunning": {
+              "type": "boolean",
+              "const": true
+            },
+            "noSubtasksYet": {
+              "type": "boolean",
+              "const": true
+            },
             "finalRetry": {
               "type": "boolean",
               "const": true
@@ -27663,6 +27687,14 @@
                       ]
                     },
                     "partsBack": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "lastRunning": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "noSubtasksYet": {
                       "type": "boolean",
                       "const": true
                     },
@@ -39342,6 +39374,14 @@
                       "type": "boolean",
                       "const": true
                     },
+                    "lastRunning": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "noSubtasksYet": {
+                      "type": "boolean",
+                      "const": true
+                    },
                     "finalRetry": {
                       "type": "boolean",
                       "const": true
@@ -41335,6 +41375,14 @@
                   ]
                 },
                 "partsBack": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "lastRunning": {
+                  "type": "boolean",
+                  "const": true
+                },
+                "noSubtasksYet": {
                   "type": "boolean",
                   "const": true
                 },

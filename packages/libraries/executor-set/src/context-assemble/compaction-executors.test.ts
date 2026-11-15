@@ -266,6 +266,45 @@ describe('the status that ends a request (D61)', () => {
     expect(await statusOf(40, { final: true, partsBack: true })).not.toContain('All your subtasks');
   });
 
+  it('tells the last subtask still running that its caller waits only on it (D72)', async () => {
+    expect(await statusOf(12, { lastRunning: true })).toContain(
+      'your caller now waits only on you',
+    );
+    expect(await statusOf(40, { final: true, lastRunning: true })).not.toContain('waits only');
+  });
+
+  it('tells a task that can split and has not, once at round 10 (D73)', async () => {
+    const statusWith = async (round: number, tools: string[]) => {
+      const outcome = await createAssembleExecutor().execute(
+        {
+          final: false,
+          tokenBudget: 100_000,
+          instructions: 'You are main.',
+          toolSpecs: tools.map((name) => ({
+            name,
+            description: name,
+            parameters: { type: 'object', properties: {} },
+            purpose: 'UNIT' as const,
+          })),
+          history: [{ seq: 1, category: 'NORMAL', kind: 'HUMAN', text: 'go' }],
+          status: {
+            round,
+            maxRounds: 120,
+            budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
+            final: false,
+            noSubtasksYet: true,
+          },
+        },
+        environmentFor('CONTEXT_ASSEMBLE', NONE),
+      );
+      const pack = JSON.parse(text(outcome)) as AssembleContextPack;
+      return pack.items.find((item) => item.segment === 'STATUS')?.content ?? '';
+    };
+    expect(await statusWith(10, ['run_subagents'])).toContain('Round 10 and no subtasks yet.');
+    expect(await statusWith(11, ['run_subagents'])).not.toContain('no subtasks yet');
+    expect(await statusWith(10, ['read_file'])).not.toContain('no subtasks yet');
+  });
+
   it('says plainly what a final call asked again must do', async () => {
     const asked = await statusOf(40, { final: true, finalRetry: true });
     expect(asked).toContain('This is your final call');

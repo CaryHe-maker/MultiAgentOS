@@ -90,6 +90,9 @@ function roundNotice(round: number, maxRounds: number): string | undefined {
  * the budget only when it is no longer normal, the rounds as `roundNotice` says, the final call
  * always.
  */
+/** The round at which a task that could split and has not is told so, once (D73). */
+const NO_SPLIT_ROUND = 10;
+
 function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]): string {
   const {
     round,
@@ -99,6 +102,8 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     wrapUpReason,
     finalRetry,
     partsBack,
+    lastRunning,
+    noSubtasksYet,
     jobs = [],
   } = status;
   const lines: string[] = [];
@@ -107,6 +112,20 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
   if (partsBack === true && !final)
     lines.push(
       'All your subtasks have ended. Run the checks of the whole once, finish what only you can do, and deliver; do not start new comparisons or probes.',
+    );
+  if (lastRunning === true && !final)
+    lines.push(
+      'Your sibling subtasks have all ended; your caller now waits only on you. Finish what your goal asks and report; leave out checks and comparisons it does not ask for.',
+    );
+  // Once, at the round where an early split has long happened when it happens (D73).
+  if (
+    noSubtasksYet === true &&
+    !final &&
+    round === NO_SPLIT_ROUND &&
+    toolSpecs.some((spec) => spec.name === 'run_subagents')
+  )
+    lines.push(
+      `Round ${String(round)} and no subtasks yet. If the goal has parts that can be built side by side, hand them out now: what you do alone first delays every part.`,
     );
   // What the task holds still runs: it is said at every call, so it can be stopped (D65).
   for (const job of jobs)

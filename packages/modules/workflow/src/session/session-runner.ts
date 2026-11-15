@@ -1621,6 +1621,17 @@ export class SessionRunner {
             : [...missions.values()].filter((mission) => mission.parentId === scope.missionId);
         const partsBack =
           children.length > 0 && children.every((child) => child.ended !== undefined);
+        // A task whose siblings have all ended holds up its caller alone (D72).
+        const parentId =
+          scope.missionId === undefined ? undefined : missions?.get(scope.missionId)?.parentId;
+        const siblings =
+          missions === undefined || parentId === undefined
+            ? []
+            : [...missions.values()].filter(
+                (mission) => mission.parentId === parentId && mission.missionId !== scope.missionId,
+              );
+        const lastRunning =
+          siblings.length > 0 && siblings.every((sibling) => sibling.ended !== undefined);
         return {
           final,
           ...(withdrawn.length === 0 ? {} : { withdrawnTools: [...new Set(withdrawn)] }),
@@ -1629,6 +1640,10 @@ export class SessionRunner {
             ...status,
             ...(jobs.length === 0 ? {} : { jobs }),
             ...(partsBack ? { partsBack: true as const } : {}),
+            ...(lastRunning ? { lastRunning: true as const } : {}),
+            ...(missions !== undefined && children.length === 0
+              ? { noSubtasksYet: true as const }
+              : {}),
           },
         };
       },
