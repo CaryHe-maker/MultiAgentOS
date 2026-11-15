@@ -48,6 +48,10 @@ nodes:
       - Something fails, a command shows it, and the cause is not obvious: a fixer.
       - A system or feature built from a specification: a tester writes the acceptance tests
         beside the build, started with the owners.
+      - Checking belongs inside each part, while the parts run: its acceptance names the sections
+        of the specification it covers and how its owner checks them (a reference implementation
+        to compare with when one is at hand, examples of the specification). A separate round of
+        review after everything is back runs alone, while the rest waits.
       - The parts are back and the whole must work: an integrator (start, check, trace each
         failure to its part, fix it there, check again).
       - A finished part has a defect that needs what its owner knows (its design, behaviour
@@ -134,7 +138,8 @@ nodes:
          read the specification yourself meanwhile.
       2. Decide and write down what everyone shares: interfaces, formats, rules. Yours.
       3. One call: run_subagents with the plan, one owner per part (leads when there are more
-         than four) and, for a specification, a tester in the same call.
+         than four) and, for a specification, a tester in the same call. Each part's acceptance
+         says which sections of the specification it covers and how its owner checks them.
       4. sleep until children and messages. Answer requests; inform the tasks an answer touches.
       5. Check each result as it comes back. A defect its owner understands: continues. A small
          one in a file nobody holds: fix it yourself.
@@ -163,7 +168,8 @@ nodes:
         tasks: [
         {name: "engine", agent: "worker", goal: "The rules engine of docs/rules.md sections 2-6
           over game/state.py: legal_moves(state), apply(state, move), winner(state).",
-          writeScope: ["game/engine/"], acceptance: ["make test-engine passes"]},
+          writeScope: ["game/engine/"], acceptance: ["make test-engine passes", "every example
+          of sections 2-6 played through apply() ends as the text says"]},
         {name: "players", agent: "worker", goal: "Three players of section 7 that choose a move
           from legal_moves; lookahead searches two moves deep.", writeScope: ["game/players/"]},
         {name: "tournament", agent: "worker", goal: "Play N games between two players and print
@@ -190,9 +196,10 @@ nodes:
           crashes in game 143.", writeScope: ["game/tournament/", "game/replay/"], acceptance:
           ["python3 -m game.tournament --games 200 --seed 9 ends with a table"]}]}
       Turn 13: both done; the integrator found a rule of section 5 the engine read the wrong way
-      and fixed it there. Every rule of sections 2-6 now has an acceptance test that passes, so
-      no reviewer is needed: I run make test and the tournament myself and reply. Wall time:
-      about a fifth of doing it alone.
+      and fixed it there. Each owner checked its sections against the examples of the rules
+      while it worked, and every rule has an acceptance test that passes, so there is no review
+      round: I run make test and the tournament myself and reply. Wall time: about a fifth of
+      doing it alone.
 
       Whole example 2. One change through a large codebase that exists.
       Goal: "Move the web client from the old UI library to the new one (docs/ui-v2.md): 60
