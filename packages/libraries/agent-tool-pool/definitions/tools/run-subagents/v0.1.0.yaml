@@ -18,7 +18,7 @@ modelDescription: >-
   does not see your conversation), and optional dependsOn (names of other tasks of
   this call; a task starts after them and receives their results), acceptance (what its result
   must show), inputs (artifacts you hand over), effort and budget (a token share). An explorer
-  thinks at none or low, a worker or lead at low, high or max; an effort the agent does not allow
+  thinks at none or low, a worker or lead at low or high (high by default); an effort the agent does not allow
   is set to the nearest one it does, and the task still runs. Each result you get back is the
   summary of the task and, when it is short enough (1000 lines, 60000 characters), its report; a
   longer report, and the tool results the task handed over, are read with read_output by the

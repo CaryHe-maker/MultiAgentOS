@@ -12,7 +12,6 @@ thinking:
   allowedEfforts:
     - low
     - high
-    - max
 promptRef:
   id: worker-system
   version: v0.1.0

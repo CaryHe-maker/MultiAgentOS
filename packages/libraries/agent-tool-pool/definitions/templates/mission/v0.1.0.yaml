@@ -44,6 +44,10 @@ nodes:
       - The work ends when the slowest part ends: cut the parts to about the same size. A part
         that is much larger than the others (the biggest component, the one with the most rules)
         gets an owner of its own or is split again; small ones go together.
+      - What describes the parts (a README, usage documents, a design note) goes out in the
+        first call too: written from the plan and the interfaces while the parts are built, or
+        each owner writes the section of its own part. Started after the parts are back, it is
+        one more round that runs alone.
       - More than four parts: group them under leads, so you join four results, not eight.
       - A part in code nobody has read yet: one explorer first, then build from what it found.
       - What the work needs to know lies outside the repository, or is a field to survey: a
@@ -157,7 +161,7 @@ nodes:
          fuzzing against the reference) is a round that runs alone: that search belongs in each
          part's acceptance, done by its owner while the parts run side by side. A defect you
          find now goes back to its owner with continues, not to a new task that reads it all
-         again.
+         again. When the checks pass, deliver: no optional improvement after that.
 
       Whole example 1. Built from a specification, nothing exists yet.
       Goal: "Build the card game of docs/rules.md: the rules engine, three computer players
