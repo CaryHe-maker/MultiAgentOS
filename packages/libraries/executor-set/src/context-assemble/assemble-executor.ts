@@ -111,11 +111,11 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     lines.push(`Budget: this request ${budget.input}, run ${budget.run}.`);
   if (partsBack === true && !final)
     lines.push(
-      'All your subtasks have ended. Run the checks of the whole once, finish what only you can do, and deliver; do not start new comparisons or probes.',
+      'All your subtasks have ended. What usually remains is one check of the whole and what only you can do, then delivery.',
     );
   if (lastRunning === true && !final)
     lines.push(
-      'Your sibling subtasks have all ended; your caller now waits only on you. Finish what your goal asks and report; leave out checks and comparisons it does not ask for.',
+      'You are the only subtask still running, and your caller is waiting for your result. Once your goal is done, report back.',
     );
   // Once, at the round where an early split has long happened when it happens (D73).
   if (
@@ -125,7 +125,7 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     toolSpecs.some((spec) => spec.name === 'run_subagents')
   )
     lines.push(
-      `Round ${String(round)} and no subtasks yet. If the goal has parts that can be built side by side, hand them out now: what you do alone first delays every part.`,
+      `Round ${String(round)}, no subtasks yet. Finishing the plan and handing out subtasks sooner lets more of the work run in parallel.`,
     );
   // What the task holds still runs: it is said at every call, so it can be stopped (D65).
   for (const job of jobs)

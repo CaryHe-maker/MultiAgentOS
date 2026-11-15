@@ -268,9 +268,9 @@ describe('the status that ends a request (D61)', () => {
 
   it('tells the last subtask still running that its caller waits only on it (D72)', async () => {
     expect(await statusOf(12, { lastRunning: true })).toContain(
-      'your caller now waits only on you',
+      'You are the only subtask still running',
     );
-    expect(await statusOf(40, { final: true, lastRunning: true })).not.toContain('waits only');
+    expect(await statusOf(40, { final: true, lastRunning: true })).not.toContain('only subtask');
   });
 
   it('tells a task that can split and has not, once at round 10 (D73)', async () => {
@@ -300,7 +300,7 @@ describe('the status that ends a request (D61)', () => {
       const pack = JSON.parse(text(outcome)) as AssembleContextPack;
       return pack.items.find((item) => item.segment === 'STATUS')?.content ?? '';
     };
-    expect(await statusWith(10, ['run_subagents'])).toContain('Round 10 and no subtasks yet.');
+    expect(await statusWith(10, ['run_subagents'])).toContain('Round 10, no subtasks yet.');
     expect(await statusWith(11, ['run_subagents'])).not.toContain('no subtasks yet');
     expect(await statusWith(10, ['read_file'])).not.toContain('no subtasks yet');
   });

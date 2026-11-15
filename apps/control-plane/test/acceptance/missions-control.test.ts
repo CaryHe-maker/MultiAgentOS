@@ -399,7 +399,7 @@ describe('waking as each subtask ends, and waiting for siblings (Orchestration 4
       const chat = await chatOn(place, provider);
       await chat.say('ask both');
       expect(chat.printed('REPLY')).toContain('both are in');
-      const line = 'your caller now waits only on you';
+      const line = 'You are the only subtask still running';
       expect(seenBy(provider, 'slow')).toContain(line);
       expect(seenBy(provider, 'quick')).not.toContain(line);
     },
