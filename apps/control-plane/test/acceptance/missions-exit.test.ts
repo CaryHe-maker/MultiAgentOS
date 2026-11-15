@@ -279,7 +279,7 @@ real('a lead starts tasks of its own (D13, Orchestration 3.6)', () => {
       await chat.say('nest');
       expect(chat.printed('REPLY')).toContain('done');
       const innerRequest = provider.requests.find((request) =>
-        request.messages.some((m) => textOf(m).includes('Your task (inner,')),
+        request.messages.some((m) => isTaskText(textOf(m), 'inner')),
       );
       const innerTools = (innerRequest?.tools ?? []).map((each) => each.function.name);
       expect(innerTools).toContain('finish_subagent');

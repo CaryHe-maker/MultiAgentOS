@@ -1685,7 +1685,12 @@ export class SessionRunner {
     // A task of a phase runs as the Agent of the task it comes from; a task that asked for the
     // context itself (D53) runs as its own Agent, with its own prompt, tools and budget, and pays
     // for the inherited context once, on its first call.
-    const from = origin?.agentRef?.id === agentId ? origin : undefined;
+    // Only a task that is one Agent and runs as another (a phase's worker run as its lead) works
+    // in its caller's binding; a lead started by a lead is a lead of its own level (D58).
+    const from =
+      origin?.agentRef?.id === agentId && taskNode?.spawn?.inherits?.as !== agentId
+        ? origin
+        : undefined;
     const own = this.#bindingAt(agentId, depth, taskNode?.spawn?.commands !== false);
     const lent = this.#bindingAt(agentId, Math.max(0, depth - 1), from?.spawn?.commands !== false);
     // It asks for no more than the Agent its phase names may do: the Kernel grants a task only
