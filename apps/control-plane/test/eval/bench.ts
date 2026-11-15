@@ -34,9 +34,9 @@ import {
   DefinitionCatalog,
   FileDefinitionSource,
 } from '@multiagentos/agent-tool-pool';
-import { parseCli, runCommand } from '@multiagentos/cli';
+import { createTerminal, parseCli, runCommand } from '@multiagentos/cli';
 import type { SystemConfig } from '@multiagentos/contracts';
-import type { ConsoleView } from '@multiagentos/user-interaction';
+import type { Console, ConsoleView } from '@multiagentos/user-interaction';
 import { composeSystem } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
 import { openChat, until, type ChatRequest, type ScriptedChat } from '../acceptance/chat-driver.js';
@@ -133,9 +133,16 @@ async function runMission(
   const questions: string[] = [];
   let submit: ((text: string) => Promise<void>) | undefined;
   let asked: string | undefined;
+  // MAS_UI=1: the console is drawn as `mas run` draws it in a terminal (Ink), while the harness
+  // still answers every question; what it shows is what the run does, nothing waits on a person.
+  const screen = process.env['MAS_UI'] === '1' ? createTerminal() : undefined;
   const view: ConsoleView = {
-    print: (record) => void records.push({ kind: record.kind, text: record.text }),
+    print: (record) => {
+      records.push({ kind: record.kind, text: record.text });
+      screen?.view.print(record);
+    },
     update: (live) => {
+      screen?.view.update(live);
       const pending = live.pending;
       const text = pending?.text;
       if (pending !== undefined && text !== asked && submit !== undefined) {
@@ -149,14 +156,22 @@ async function runMission(
       }
       asked = text;
     },
-    restoreInput: () => undefined,
+    restoreInput: (messages) => screen?.view.restoreInput(messages),
   };
   const terminal = {
     view,
-    attach: (input: { submit(text: string): Promise<void> }) => {
+    attach: (input: Pick<Console, 'submit' | 'interrupt' | 'withdrawLast' | 'steer'>) => {
       submit = (text) => input.submit(text);
+      // What is typed in the console is not a message to the run; Ctrl+C still stops it.
+      const stop = screen?.attach({
+        submit: () => Promise.resolve(),
+        steer: () => Promise.resolve(),
+        withdrawLast: () => undefined,
+        interrupt: () => input.interrupt(),
+      });
       return () => {
         submit = undefined;
+        stop?.();
       };
     },
   };

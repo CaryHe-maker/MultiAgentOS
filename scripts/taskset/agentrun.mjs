@@ -1,6 +1,6 @@
 // Runs one Agent system (mas or dsh) on one Harbor-format task inside the task's container, then runs
 // the task's hidden tests, and appends one line of results (docs/M2/Phase1TaskSet.md).
-//   node agentrun.mjs <mas|dsh> <taskDir> <outDir> [--label x] [--cap 900]
+//   node agentrun.mjs <mas|dsh> <taskDir> <outDir> [--label x] [--cap 900] [--record file]
 // The key comes from DEEPSEEK_API_KEY or from the file named by MAO_ENV_FILE; it is handed to the
 // container through the environment and never printed or recorded.
 import { spawnSync } from 'node:child_process';
@@ -206,9 +206,13 @@ try {
       { env: childEnv, timeout: cap * 1000 },
     );
   } else {
-    agent = sh(
+    // MAS_UI=1: the console of mas is drawn in this terminal (docker exec -it), as `mas run` draws
+    // it, while bench.ts answers its questions; nothing of it is captured.
+    const ui = process.env.MAS_UI === '1';
+    agent = (ui ? (args, opts) => spawnSync('docker', args, { ...opts, stdio: 'inherit' }) : sh)(
       [
         'exec',
+        ...(ui ? ['-it', '-e', 'TERM', '-e', 'COLORTERM'] : []),
         '-w',
         '/mao2',
         '-e',
@@ -310,4 +314,7 @@ if (system === 'dsh') {
 }
 mkdirSync(outDir, { recursive: true });
 appendFileSync(join(outDir, 'results.jsonl'), JSON.stringify(result) + '\n');
+// --record <file>: the result line goes there as well (the console took this terminal's output).
+const record = opt('--record', undefined);
+if (record !== undefined) appendFileSync(record, JSON.stringify(result) + '\n');
 console.log(JSON.stringify(result));

@@ -36,7 +36,13 @@ for id in "$@"; do
   echo "$(date -Iseconds) mas $commit $MAS_MODE" > "$marker"
   cap=$(awk '/^\[agent\]/{a=1;next} /^\[/{a=0} a && /timeout_sec/{gsub(/[^0-9.]/,"",$0); print int($0); exit}' "$dir/task.toml")
   echo "start $id $(date +%H:%M:%S) ($MAS_MODE, mas $commit)"
-  node "$HERE/agentrun.mjs" mas "$dir" "$OUT/results" --label "$LABEL" --cap "${cap:-900}" < /dev/null \
-    >> "$OUT/$LABEL.jsonl" 2> "$OUT/logs/${LABEL}__${id//\//__}.log"
+  if [ "${MAS_UI:-}" = 1 ]; then
+    # The console of the run takes this terminal: the result line goes to the record by --record.
+    node "$HERE/agentrun.mjs" mas "$dir" "$OUT/results" --label "$LABEL" --cap "${cap:-900}" \
+      --record "$OUT/$LABEL.jsonl" 2> "$OUT/logs/${LABEL}__${id//\//__}.log"
+  else
+    node "$HERE/agentrun.mjs" mas "$dir" "$OUT/results" --label "$LABEL" --cap "${cap:-900}" < /dev/null \
+      >> "$OUT/$LABEL.jsonl" 2> "$OUT/logs/${LABEL}__${id//\//__}.log"
+  fi
   echo "end $id $(date +%H:%M:%S) exit $?"
 done
