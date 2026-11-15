@@ -101,8 +101,6 @@ export interface AgentConfig {
   readonly maxNestedInstructions: number;
   readonly maxSubagentsPerCall: number;
   readonly maxDependencyDepth: number;
-  readonly maxTasks: number;
-  readonly maxSpawnCalls: number;
   readonly regenerationLimit: number;
 }
 

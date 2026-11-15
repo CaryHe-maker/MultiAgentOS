@@ -23,8 +23,7 @@ export type SpawnErrorCode =
   | 'WRITE_SCOPE_OUTSIDE'
   | 'WRITE_SCOPE_OVERLAP'
   | 'WRITE_SCOPE_CHAIN'
-  | 'INPUT_NOT_READABLE'
-  | 'SPAWN_LIMIT';
+  | 'INPUT_NOT_READABLE';
 
 export interface SpawnError {
   readonly code: SpawnErrorCode;
@@ -41,8 +40,6 @@ export interface SpawnAgentFacts {
 export interface SpawnRules {
   readonly maxSubagentsPerCall: number;
   readonly maxDependencyDepth: number;
-  readonly maxTasks: number;
-  readonly maxSpawnCalls: number;
 }
 
 export interface SpawnContext {
@@ -51,8 +48,6 @@ export interface SpawnContext {
   readonly agents: ReadonlyMap<string, SpawnAgentFacts>;
   /** What the caller may write, normalized. */
   readonly callerRoots: readonly string[];
-  /** What the work of this input spawned before this call. */
-  readonly spawned: { readonly tasks: number; readonly calls: number };
   /** An artifact the caller can read itself, so it may hand it over. */
   readonly readable: (artifactId: string) => boolean;
 }
@@ -140,13 +135,6 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
     add(
       'TOO_MANY_TASKS',
       `this call has ${String(tasks.length)} tasks, at most ${String(rules.maxSubagentsPerCall)} are allowed in one call; start the rest in a later call, which cannot depend on the tasks of this one, so put what they need in their goals`,
-    );
-  if (context.spawned.calls >= rules.maxSpawnCalls)
-    add('SPAWN_LIMIT', `${String(rules.maxSpawnCalls)} calls of run_subagents were already made`);
-  else if (context.spawned.tasks + tasks.length > rules.maxTasks)
-    add(
-      'SPAWN_LIMIT',
-      `${String(context.spawned.tasks)} tasks were already started, at most ${String(rules.maxTasks)} are allowed`,
     );
 
   const names = new Set<string>();

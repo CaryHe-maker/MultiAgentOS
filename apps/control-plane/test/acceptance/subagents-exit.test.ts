@@ -406,11 +406,8 @@ describe('more budget for the work of an input (M2Design 7.3, rule 6)', () => {
       expect(chat.printed('REPLY')).toContain('done');
       expect(aboutBudget(chat).length).toBeGreaterThanOrEqual(1);
       expect(aboutBudget(chat)[0]).toContain('[y 增加 / n 不增加，收尾]');
-      // The model was never told: every request it got says its budget is fine.
-      for (const request of provider.requests)
-        expect(textOf(request.messages.at(-1))).toContain(
-          'Budget: this request NORMAL, run NORMAL',
-        );
+      // The model was never told: a budget that stays normal is not shown at all (D61).
+      expect(seen(provider)).not.toContain('Budget: this request');
       expect(seen(provider)).not.toContain('WRAP_UP');
       const lines = await audit(place);
       expect(lines).toContain('"capability":"budget.extend"');
@@ -573,6 +570,62 @@ real('A: one question for the same command, whoever asks (M2Design 5.5)', () => 
       const all = seen(provider);
       expect(all).toContain('Result of task left (worker): DONE');
       expect(all).toContain('Result of task right (worker): DONE');
+    },
+    TIMEOUT,
+  );
+});
+
+describe('more subtasks for a run (D62)', () => {
+  const few = (config: SystemConfig): SystemConfig => ({
+    ...config,
+    kernel: { ...config.kernel, tasks: { perRun: 2, extension: { mode: 'ask', max: 4 } } },
+  });
+  const explorer = (name: string) => ({ name, agent: 'explorer', goal: `look at ${name}` });
+  const script = () =>
+    scriptedAgents({
+      main: [
+        spawn(explorer('e1'), explorer('e2')),
+        waitForTasks(),
+        spawn(explorer('e3')),
+        waitForTasks(),
+        reply('done'),
+      ],
+      explorer: [finish('looked'), finish('looked'), finish('looked')],
+    });
+  const aboutTasks = (chat: Chat) =>
+    chat.questions.filter((question) => question.includes('个子任务，到了上限'));
+
+  it(
+    'asks the user at the limit instead of refusing, and with a yes the call starts its tasks',
+    async () => {
+      const place = await roots();
+      const provider = script();
+      const chat = await chatOn(place, provider, { configure: few });
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('done');
+      expect(aboutTasks(chat)).toHaveLength(1);
+      expect(aboutTasks(chat)[0]).toContain('已经启动了 2 个子任务');
+      // The third task was started once the user said yes: three explorers ran.
+      expect(seen(provider)).toContain('Started 1 subtask(s): e3');
+      expect(seen(provider)).not.toContain('TASK_QUOTA');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'refuses the call with a no, tells the caller why, and keeps run_subagents',
+    async () => {
+      const place = await roots();
+      const provider = script();
+      const chat = await chatOn(place, provider, {
+        configure: few,
+        answer: (question) => (question.includes('个子任务，到了上限') ? 'n' : 'y'),
+      });
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toContain('done');
+      expect(seen(provider)).toContain('TASK_QUOTA_REACHED');
+      expect(seen(provider)).not.toContain('Started 1 subtask(s): e3');
+      expect(seen(provider)).not.toContain('run_subagents is no longer available');
     },
     TIMEOUT,
   );

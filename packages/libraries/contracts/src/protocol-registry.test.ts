@@ -48,6 +48,7 @@ const EXPECTED = {
     'CheckpointTaken',
     'JobControlContent',
     'JobEnded',
+    'TaskQuotaDecided',
     'ReportCompactionSourceRequest',
     'AckCompactionRequest',
     'CompactionSourceQuery',

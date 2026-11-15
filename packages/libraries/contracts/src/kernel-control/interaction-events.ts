@@ -105,6 +105,17 @@ export const AuthorizationRequestSchema = Type.Union(
       tasks: count(),
     }),
     /**
+     * The run has started as many subtasks as it may (D62): ALLOW lets it start `add` more, DENY
+     * refuses the call that asked and every later one. The Kernel asks, never the model.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('tasks.extend'),
+      started: count(),
+      limit: count(1),
+      add: count(1),
+    }),
+    /**
      * Reading a folder outside the workspace (Kernel/Core 5h): ALLOW or DENY, for this run. `root` is
      * what an answer allows; `path` is what was asked for.
      */

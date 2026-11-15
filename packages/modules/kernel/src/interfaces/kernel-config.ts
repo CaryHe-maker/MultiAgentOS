@@ -67,6 +67,10 @@ export const DEFAULT_KERNEL_CONFIG: KernelConfig = Object.freeze({
   providerCapacity: 8,
   serialExecution: false,
   memory: Object.freeze({ sampleIntervalMs: 1_000, warningRatio: 0.75, dangerRatio: 0.9 }),
+  tasks: Object.freeze({
+    perRun: 60,
+    extension: Object.freeze({ mode: 'ask' as const, max: 4 }),
+  }),
   budget: Object.freeze({
     runTokenLimit: 24_000_000,
     inputTokenLimit: 8_000_000,

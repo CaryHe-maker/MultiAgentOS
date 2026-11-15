@@ -3,13 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { nearestEffort, validateSpawn, type SpawnContext } from './validate-spawn.js';
 
 const context = (overrides: Partial<SpawnContext> = {}): SpawnContext => ({
-  rules: { maxSubagentsPerCall: 4, maxDependencyDepth: 2, maxTasks: 12, maxSpawnCalls: 4 },
+  rules: { maxSubagentsPerCall: 4, maxDependencyDepth: 2 },
   agents: new Map([
     ['explorer', { writes: false, allowedEfforts: ['none', 'low'] }],
     ['worker', { writes: true, allowedEfforts: ['low', 'high', 'max'] }],
   ]),
   callerRoots: ['.'],
-  spawned: { tasks: 0, calls: 0 },
   readable: () => true,
   ...overrides,
 });
@@ -150,18 +149,6 @@ describe('validateSpawn', () => {
     expect(nearestEffort('none', ['low', 'high', 'max'])).toBe('low');
     expect(nearestEffort('low', ['none', 'high'])).toBe('none');
     expect(nearestEffort('high', [])).toBeUndefined();
-  });
-
-  it('counts tasks and calls per Turn', () => {
-    expect(codes({ tasks: [explorer('a')] }, context({ spawned: { tasks: 0, calls: 4 } }))).toEqual(
-      ['SPAWN_LIMIT'],
-    );
-    expect(
-      codes(
-        { tasks: [explorer('a'), explorer('b')] },
-        context({ spawned: { tasks: 11, calls: 1 } }),
-      ),
-    ).toEqual(['SPAWN_LIMIT']);
   });
 
   it('hands over only what the caller can read', () => {

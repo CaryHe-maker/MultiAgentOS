@@ -92,6 +92,8 @@ export const InteractionMessages = Object.freeze({
     CONTEXT_COMPACTED: '较早的对话刚被压缩，需要重新组织上下文。',
     COMPACTION_SUMMARY_INVALID: '压缩用的摘要不合格。',
     COMPACTION_UNKNOWN: '没有这次压缩。',
+    TASK_QUOTA_ASKED: '这次运行启动的子任务已到上限，正在问用户是否再允许一些。',
+    TASK_QUOTA_REACHED: '这次运行启动的子任务已到上限，不再允许更多。',
   } satisfies Record<ReasonCode, string>,
 });
 

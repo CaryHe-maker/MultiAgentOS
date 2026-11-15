@@ -1528,6 +1528,8 @@ export class Console {
       return text.webFetch(terminalText(event.host), terminalText(event.url));
     if (event.capability === 'budget.extend')
       return text.budgetExtend(event.used, event.limit, event.add, event.tasks);
+    if (event.capability === 'tasks.extend')
+      return text.tasksExtend(event.started, event.limit, event.add);
     if (event.capability === 'external.read')
       return text.externalRead(
         terminalText(event.root),

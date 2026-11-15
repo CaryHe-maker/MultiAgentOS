@@ -443,6 +443,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       ...(config.budget.extension === undefined
         ? {}
         : { budgetExtension: config.budget.extension }),
+      ...(config.tasks === undefined ? {} : { taskQuota: config.tasks }),
       inputIsValid,
       preset: deps.preset,
       web: { deniedDomains: config.web.deniedDomains, searchProvider: config.web.search.provider },

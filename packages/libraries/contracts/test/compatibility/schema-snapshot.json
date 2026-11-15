@@ -4383,6 +4383,8 @@
                       "MISSION_NOT_FOUND",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
+                      "TASK_QUOTA_ASKED",
+                      "TASK_QUOTA_REACHED",
                       "DELEGATION_NOT_FOUND",
                       "ADDRESS_FORBIDDEN",
                       "DOMAIN_DENIED",
@@ -5650,6 +5652,8 @@
                 "MISSION_NOT_FOUND",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
+                "TASK_QUOTA_ASKED",
+                "TASK_QUOTA_REACHED",
                 "DELEGATION_NOT_FOUND",
                 "ADDRESS_FORBIDDEN",
                 "DOMAIN_DENIED",
@@ -9531,6 +9535,44 @@
             "type",
             "questionId",
             "capability",
+            "started",
+            "limit",
+            "add"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "AuthorizationRequest"
+            },
+            "questionId": {
+              "type": "string",
+              "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "capability": {
+              "type": "string",
+              "const": "tasks.extend"
+            },
+            "started": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "add": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "type",
+            "questionId",
+            "capability",
             "root",
             "path",
             "provider"
@@ -11337,6 +11379,8 @@
                               "MISSION_NOT_FOUND",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
+                              "TASK_QUOTA_ASKED",
+                              "TASK_QUOTA_REACHED",
                               "DELEGATION_NOT_FOUND",
                               "ADDRESS_FORBIDDEN",
                               "DOMAIN_DENIED",
@@ -12691,6 +12735,8 @@
                                       "MISSION_NOT_FOUND",
                                       "WRITE_SCOPE_DELEGATED",
                                       "BUDGET_INSUFFICIENT",
+                                      "TASK_QUOTA_ASKED",
+                                      "TASK_QUOTA_REACHED",
                                       "DELEGATION_NOT_FOUND",
                                       "ADDRESS_FORBIDDEN",
                                       "DOMAIN_DENIED",
@@ -14286,6 +14332,8 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "TASK_QUOTA_ASKED",
+                            "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
@@ -16803,6 +16851,44 @@
                     "type",
                     "questionId",
                     "capability",
+                    "started",
+                    "limit",
+                    "add"
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "AuthorizationRequest"
+                    },
+                    "questionId": {
+                      "type": "string",
+                      "pattern": "^qst_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                    },
+                    "capability": {
+                      "type": "string",
+                      "const": "tasks.extend"
+                    },
+                    "started": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "add": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "type",
+                    "questionId",
+                    "capability",
                     "root",
                     "path",
                     "provider"
@@ -18071,6 +18157,8 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "TASK_QUOTA_ASKED",
+                            "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
@@ -18338,6 +18426,8 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "TASK_QUOTA_ASKED",
+                            "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
@@ -19661,6 +19751,8 @@
             "MISSION_NOT_FOUND",
             "WRITE_SCOPE_DELEGATED",
             "BUDGET_INSUFFICIENT",
+            "TASK_QUOTA_ASKED",
+            "TASK_QUOTA_REACHED",
             "DELEGATION_NOT_FOUND",
             "ADDRESS_FORBIDDEN",
             "DOMAIN_DENIED",
@@ -20251,6 +20343,8 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "TASK_QUOTA_ASKED",
+                    "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
@@ -20518,6 +20612,8 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "TASK_QUOTA_ASKED",
+                    "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
@@ -21688,6 +21784,8 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "TASK_QUOTA_ASKED",
+                    "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
@@ -22452,7 +22550,9 @@
                 "MISSION_CLOSED",
                 "MISSION_NOT_FOUND",
                 "DELEGATION_NOT_FOUND",
-                "COMPACTION_UNKNOWN"
+                "COMPACTION_UNKNOWN",
+                "TASK_QUOTA_ASKED",
+                "TASK_QUOTA_REACHED"
               ]
             }
           },
@@ -23055,6 +23155,8 @@
                       "MISSION_NOT_FOUND",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
+                      "TASK_QUOTA_ASKED",
+                      "TASK_QUOTA_REACHED",
                       "DELEGATION_NOT_FOUND",
                       "ADDRESS_FORBIDDEN",
                       "DOMAIN_DENIED",
@@ -27174,6 +27276,8 @@
                               "MISSION_NOT_FOUND",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
+                              "TASK_QUOTA_ASKED",
+                              "TASK_QUOTA_REACHED",
                               "DELEGATION_NOT_FOUND",
                               "ADDRESS_FORBIDDEN",
                               "DOMAIN_DENIED",
@@ -32747,6 +32851,8 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "TASK_QUOTA_ASKED",
+                    "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
@@ -34631,6 +34737,8 @@
                       "MISSION_NOT_FOUND",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
+                      "TASK_QUOTA_ASKED",
+                      "TASK_QUOTA_REACHED",
                       "DELEGATION_NOT_FOUND",
                       "ADDRESS_FORBIDDEN",
                       "DOMAIN_DENIED",
@@ -36728,6 +36836,8 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "TASK_QUOTA_ASKED",
+                    "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
@@ -36995,6 +37105,8 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "TASK_QUOTA_ASKED",
+                    "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
                     "ADDRESS_FORBIDDEN",
                     "DOMAIN_DENIED",
@@ -38121,6 +38233,8 @@
                               "MISSION_NOT_FOUND",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
+                              "TASK_QUOTA_ASKED",
+                              "TASK_QUOTA_REACHED",
                               "DELEGATION_NOT_FOUND",
                               "ADDRESS_FORBIDDEN",
                               "DOMAIN_DENIED",
@@ -39507,6 +39621,24 @@
       "additionalProperties": false,
       "$id": "kernel.unit.TakeCheckpointRequest.v1"
     },
+    "kernel.unit.TaskQuotaDecided.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "granted"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "TaskQuotaDecided"
+        },
+        "granted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.TaskQuotaDecided.v1"
+    },
     "kernel.unit.ToolResultsPruned.v1": {
       "type": "object",
       "required": [
@@ -40055,6 +40187,8 @@
                           "MISSION_NOT_FOUND",
                           "WRITE_SCOPE_DELEGATED",
                           "BUDGET_INSUFFICIENT",
+                          "TASK_QUOTA_ASKED",
+                          "TASK_QUOTA_REACHED",
                           "DELEGATION_NOT_FOUND",
                           "ADDRESS_FORBIDDEN",
                           "DOMAIN_DENIED",
@@ -43991,6 +44125,24 @@
               "type": "object",
               "required": [
                 "type",
+                "granted"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "TaskQuotaDecided"
+                },
+                "granted": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.unit.TaskQuotaDecided.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
                 "missionId",
                 "timerId"
               ],
@@ -46617,6 +46769,8 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "TASK_QUOTA_ASKED",
+                            "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
@@ -46884,6 +47038,8 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "TASK_QUOTA_ASKED",
+                            "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
                             "ADDRESS_FORBIDDEN",
                             "DOMAIN_DENIED",
@@ -48346,6 +48502,8 @@
         "MISSION_NOT_FOUND",
         "WRITE_SCOPE_DELEGATED",
         "BUDGET_INSUFFICIENT",
+        "TASK_QUOTA_ASKED",
+        "TASK_QUOTA_REACHED",
         "DELEGATION_NOT_FOUND",
         "ADDRESS_FORBIDDEN",
         "DOMAIN_DENIED",
@@ -48762,6 +48920,40 @@
               "type": "number",
               "exclusiveMinimum": 0,
               "maximum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "tasks": {
+          "type": "object",
+          "required": [
+            "perRun"
+          ],
+          "properties": {
+            "perRun": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "extension": {
+              "type": "object",
+              "required": [
+                "mode",
+                "max"
+              ],
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "ask",
+                    "extend",
+                    "stop"
+                  ]
+                },
+                "max": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false
@@ -49641,6 +49833,40 @@
               },
               "additionalProperties": false
             },
+            "tasks": {
+              "type": "object",
+              "required": [
+                "perRun"
+              ],
+              "properties": {
+                "perRun": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "extension": {
+                  "type": "object",
+                  "required": [
+                    "mode",
+                    "max"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "ask",
+                        "extend",
+                        "stop"
+                      ]
+                    },
+                    "max": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
             "budget": {
               "type": "object",
               "required": [
@@ -50126,9 +50352,7 @@
             "consecutiveErrorLimit",
             "maxNestedInstructions",
             "maxSubagentsPerCall",
-            "maxDependencyDepth",
-            "maxTasks",
-            "maxSpawnCalls"
+            "maxDependencyDepth"
           ],
           "properties": {
             "regenerationLimit": {
@@ -50177,14 +50401,6 @@
             "maxDependencyDepth": {
               "type": "integer",
               "minimum": 0
-            },
-            "maxTasks": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "maxSpawnCalls": {
-              "type": "integer",
-              "minimum": 1
             }
           },
           "additionalProperties": false,
@@ -50203,9 +50419,7 @@
         "consecutiveErrorLimit",
         "maxNestedInstructions",
         "maxSubagentsPerCall",
-        "maxDependencyDepth",
-        "maxTasks",
-        "maxSpawnCalls"
+        "maxDependencyDepth"
       ],
       "properties": {
         "regenerationLimit": {
@@ -50254,14 +50468,6 @@
         "maxDependencyDepth": {
           "type": "integer",
           "minimum": 0
-        },
-        "maxTasks": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "maxSpawnCalls": {
-          "type": "integer",
-          "minimum": 1
         }
       },
       "additionalProperties": false,
@@ -53542,6 +53748,8 @@
                 "MISSION_NOT_FOUND",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
+                "TASK_QUOTA_ASKED",
+                "TASK_QUOTA_REACHED",
                 "DELEGATION_NOT_FOUND",
                 "ADDRESS_FORBIDDEN",
                 "DOMAIN_DENIED",
@@ -53981,6 +54189,8 @@
                 "MISSION_NOT_FOUND",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
+                "TASK_QUOTA_ASKED",
+                "TASK_QUOTA_REACHED",
                 "DELEGATION_NOT_FOUND",
                 "ADDRESS_FORBIDDEN",
                 "DOMAIN_DENIED",

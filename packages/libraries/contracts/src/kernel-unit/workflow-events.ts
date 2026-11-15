@@ -309,8 +309,22 @@ export const JobEndedSchema = closed(
 );
 export type JobEnded = Static<typeof JobEndedSchema>;
 
+/**
+ * The user answered whether the run may start more subtasks (D62): with `granted` the calls of
+ * run_subagents that waited for the answer are made again; without, they are refused.
+ */
+export const TaskQuotaDecidedSchema = closed(
+  {
+    type: Type.Literal('TaskQuotaDecided'),
+    granted: Type.Boolean(),
+  },
+  'kernel.unit.TaskQuotaDecided.v1',
+);
+export type TaskQuotaDecided = Static<typeof TaskQuotaDecidedSchema>;
+
 export const KernelToWorkflowEventSchema = Type.Union([
   RunStartSchema,
+  TaskQuotaDecidedSchema,
   WakeDueSchema,
   JobEndedSchema,
   CheckpointTakenSchema,

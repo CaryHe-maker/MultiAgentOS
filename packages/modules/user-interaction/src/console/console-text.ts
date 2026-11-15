@@ -154,6 +154,10 @@ export const ConsoleText = Object.freeze({
     }。
 要再增加 ${String(Math.round(add / 10_000))} 万额度继续吗？不增加的话，任务会收尾并交付已完成的部分。
 [y 增加 / n 不增加，收尾]`,
+  tasksExtend: (started: number, limit: number, add: number) =>
+    `这次运行已经启动了 ${String(started)} 个子任务，到了上限 ${String(limit)}。
+要再允许启动 ${String(add)} 个吗？不允许的话，后面的工作由已有的任务完成。
+[y 允许 / n 不允许]`,
   webFetch: (host: string, url: string) =>
     `允许 Agent 访问网站 ${host} 吗？页面内容会作为资料交给 Agent。
 地址：${url}

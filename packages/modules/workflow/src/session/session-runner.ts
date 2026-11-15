@@ -78,13 +78,7 @@ import { projectHistory, type ProjectionScope } from '../domain/context/history-
 import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
 import { placementOf } from '../domain/spawn/placement.js';
 import { readableArtifacts } from '../domain/spawn/readable-artifacts.js';
-import {
-  callOf,
-  spawnedBy,
-  spawnNodeOf,
-  stepScopeOf,
-  taskScopeOf,
-} from '../domain/spawn/spawn-graph.js';
+import { callOf, spawnNodeOf, stepScopeOf, taskScopeOf } from '../domain/spawn/spawn-graph.js';
 import {
   finishedOutcome,
   resultOf,
@@ -305,6 +299,12 @@ export class SessionRunner {
   #mode: 'CHAT' | 'ORCHESTRATION' = 'CHAT';
   /** The checkpoint of the input whose work goes on; undefined while waiting for one. */
   #inputCheckpointId: string | undefined;
+  /** Calls of run_subagents that wait for the user's answer about more subtasks (D62). */
+  readonly #awaitingQuota: {
+    readonly workflowRunId: string;
+    readonly agentRunId: string;
+    readonly ending: Extract<AgentEnding, { kind: 'SPAWN' }>;
+  }[] = [];
   /** Every AgentRun that has not ended, by id: SubAgents run beside the AgentRun that spawned them. */
   readonly #agents = new Map<string, ActiveAgent>();
   /** A repository tool succeeded in the current run. */
@@ -498,6 +498,9 @@ export class SessionRunner {
         break;
       case 'HumanAnswered':
         await this.#onHumanAnswered(workflowRunId, event);
+        break;
+      case 'TaskQuotaDecided':
+        await this.#onTaskQuotaDecided(workflowRunId);
         break;
       case 'RunPaused':
         await this.#append([
@@ -2620,6 +2623,23 @@ export class SessionRunner {
   }
 
   /**
+   * The user answered about more subtasks (D62): every call that waited is made again; the Kernel
+   * lets it start, or refuses it now that the answer was no.
+   */
+  async #onTaskQuotaDecided(workflowRunId: string): Promise<void> {
+    const waiting = this.#awaitingQuota.filter((each) => each.workflowRunId === workflowRunId);
+    this.#awaitingQuota.splice(
+      0,
+      this.#awaitingQuota.length,
+      ...this.#awaitingQuota.filter((each) => each.workflowRunId !== workflowRunId),
+    );
+    for (const each of waiting) {
+      const active = this.#agents.get(each.agentRunId);
+      if (active !== undefined) await this.#onSpawn(workflowRunId, active, each.ending);
+    }
+  }
+
+  /**
    * `run_subagents` (M2Design 3.6): the tasks are checked as a whole, the Kernel lends their
    * shares as a whole, and only then does the graph grow. The caller waits until they all ended.
    */
@@ -2742,7 +2762,6 @@ export class SessionRunner {
       rules: this.#deps.config,
       agents: this.#spawnable,
       callerRoots: this.#callerRoots(workflowRunId, active),
-      spawned: spawnedBy(this.#records, active.missionId),
       readable: (artifactId: string) => readable.has(artifactId),
     };
     // The tasks that break a rule of their own are taken out, with the tasks that wait for them,
@@ -2787,19 +2806,15 @@ export class SessionRunner {
       checked = validateSpawn(attempt, spawnContext);
     }
     if (!checked.ok) {
-      const withdraw = checked.errors.some((error) => error.code === 'SPAWN_LIMIT');
       // The root of a long task splits the work: it keeps run_subagents whatever was wrong with
-      // a call (D56); only a limit takes it away.
+      // a call (D56). How many tasks a run starts is the Kernel's to count (D62).
       const longRoot = isRoot && this.#mode === 'ORCHESTRATION';
       return refuse(
         [
           ...notStarted,
-          this.#refusalText(
-            checked.errors,
-            withdraw || (!longRoot && active.state.invalidSpawns + 1 >= 2),
-          ),
+          this.#refusalText(checked.errors, !longRoot && active.state.invalidSpawns + 1 >= 2),
         ].join('\n'),
-        withdraw,
+        false,
         !longRoot,
       );
     }
@@ -2865,8 +2880,13 @@ export class SessionRunner {
       }
     const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
     if (lent.kind === 'BLOCKED') return;
-    // A refusal for the budget says nothing against the tasks: it is not counted as a wrong
-    // call, or two of them would take run_subagents away from a root that must follow a playbook.
+    // Left unanswered: the call is made again when the user has answered (D62).
+    if (lent.kind === 'ASKED') {
+      this.#awaitingQuota.push({ workflowRunId, agentRunId: active.state.agentRunId, ending });
+      return;
+    }
+    // A refusal for the budget or the number of tasks says nothing against the tasks: it is not
+    // counted as a wrong call, or two of them would take run_subagents away.
     if (lent.kind === 'REFUSED')
       return lent.budget
         ? this.#answerControl(
@@ -2874,7 +2894,7 @@ export class SessionRunner {
             active,
             toolCallId,
             true,
-            'BUDGET_INSUFFICIENT',
+            lent.text.startsWith('TASK_QUOTA') ? 'TASK_QUOTA_REACHED' : 'BUDGET_INSUFFICIENT',
             lent.text,
           )
         : refuse(lent.text);
@@ -2922,6 +2942,7 @@ export class SessionRunner {
     | { readonly kind: 'GRANTED'; readonly reserved: DelegationReserved }
     | { readonly kind: 'REFUSED'; readonly text: string; readonly budget: boolean }
     | { readonly kind: 'BLOCKED' }
+    | { readonly kind: 'ASKED' }
   > {
     const sessionId = this.#sessionIdOrThrow();
     const reserved = await this.#deps.gateway.reserveDelegation(
@@ -2942,6 +2963,14 @@ export class SessionRunner {
     if (reserved.outcome === 'ACCEPTED') return { kind: 'GRANTED', reserved };
     // The run is closing: whoever asked is told by the run, not by this answer.
     if (reserved.reasonCode === 'RUN_BLOCKED') return { kind: 'BLOCKED' };
+    // The user is asked whether the run may start more (D62): the call waits for the answer.
+    if (reserved.reasonCode === 'TASK_QUOTA_ASKED') return { kind: 'ASKED' };
+    if (reserved.reasonCode === 'TASK_QUOTA_REACHED')
+      return {
+        kind: 'REFUSED',
+        text: 'TASK_QUOTA_REACHED: this run has started as many subtasks as it may, and the user did not allow more. Nothing was started. Do the rest yourself, or with the tasks that run.',
+        budget: true,
+      };
     const text =
       reserved.reasonCode === 'BUDGET_INSUFFICIENT'
         ? `BUDGET_INSUFFICIENT: at most ${String(reserved.delegable)} tokens can be lent to subtasks right now, in total${

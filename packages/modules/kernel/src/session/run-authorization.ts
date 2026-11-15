@@ -310,6 +310,36 @@ export class RunAuthorization {
     };
   }
 
+  /**
+   * More subtasks for the run (D62): one question at a time, whoever reached the limit; the calls
+   * that reach it while it is open wait for the same answer.
+   */
+  askTasks(
+    wants: { readonly started: number; readonly limit: number; readonly add: number },
+    waiter: string,
+    agentRunId: string,
+  ): AccessCheck {
+    const key = `tasks.extend\u0000`;
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'tasks.extend', critical: false, key },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'tasks.extend',
+        started: wants.started,
+        limit: wants.limit,
+        add: wants.add,
+      },
+    };
+  }
+
   /** `web.fetch`: once for each host; AgentRuns that reach for the same new host share the question. */
   askWebFetch(url: string, host: string, waiter: string, agentRunId: string): AccessCheck {
     const key = resourceKey('web.fetch', host);
@@ -496,7 +526,8 @@ export class RunAuthorization {
       return settled;
     }
     // Not an access to remember: the run takes the answer and acts on it.
-    if (question.capability === 'budget.extend') return settled;
+    if (question.capability === 'budget.extend' || question.capability === 'tasks.extend')
+      return settled;
     this.#remember(question, question.capability, scope);
     return settled;
   }

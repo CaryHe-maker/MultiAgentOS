@@ -127,6 +127,19 @@ export const KernelConfigSchema = closed(
       warningRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
       dangerRatio: Type.Number({ exclusiveMinimum: 0, maximum: 1 }),
     }),
+    /**
+     * How many subtasks a run may start (D62): `perRun` at first; at that many the Kernel asks the
+     * user (`ask`) for `perRun` more, adds them without asking (`extend`) or refuses (`stop`), at
+     * most `extension.max` times. 60, `ask`, 4 times, when absent.
+     */
+    tasks: Type.Optional(
+      closed({
+        perRun: count(1),
+        extension: Type.Optional(
+          closed({ mode: Type.Enum(['ask', 'extend', 'stop']), max: count() }),
+        ),
+      }),
+    ),
     /** The per-call parameters live in each Agent definition (Kernel/Monitor 6). */
     budget: closed({
       runTokenLimit: count(1),
@@ -188,8 +201,6 @@ export const WorkflowConfigSchema = closed(
     /** `run_subagents` (M2Design 3.6). */
     maxSubagentsPerCall: count(1),
     maxDependencyDepth: count(),
-    maxTasks: count(1),
-    maxSpawnCalls: count(1),
   },
   'platform.config.WorkflowConfig.v1',
 );

@@ -436,10 +436,10 @@ run_subagents({
 | 任意两个可能同时运行的任务（彼此之间没有依赖路径）`writeScope` 不相交 | `WRITE_SCOPE_OVERLAP`（建议加依赖或拆分范围） |
 | `effort`：不在 Agent 允许的范围内时**不拒绝**，改为 Agent 允许的最近的一个（两个一样近取较低的：explorer 要 `high` 得到 `low`），任务照常启动；工具说明列出每个 Agent 允许的值。effort 是工作方式不是权限，不值得为它让一批正确的任务都不启动 | （无） |
 | `inputs` 中的产物都是调用方自己读得到的（它的步骤产生的、用户给它的、交给它的项目文件） | `INPUT_NOT_READABLE` |
-| 累计任务数 ≤ `maxTasks`（缺省 12）；`run_subagents` 调用次数 ≤ `maxSpawnCalls`（缺省 4）。都按 Turn 计（Orchestration 运行整体是一个 Turn） | `SPAWN_LIMIT` |
+| 整次运行启动的子任务数 ≤ `kernel.tasks.perRun`（缺省 60），由 Kernel 在借出份额时计数；到了上限先问用户（`tasks.extend`），同意再允许 `perRun` 个，拒绝才以 `TASK_QUOTA_REACHED` 拒绝（Orchestration D62；此前是每个 Turn 12 个任务、4 次调用） | `TASK_QUOTA_ASKED` / `TASK_QUOTA_REACHED` |
 | 各任务的 `budget.tokens` 之和 ≤ 调用方当前可委派的额度（由 Kernel 的 `reserveDelegation` 判定，第 7.3 节） | `BUDGET_INSUFFICIENT`（写明可委派的余额与各任务的份额） |
 
-调用方连续 2 次校验失败，或触及 `SPAWN_LIMIT` 时，Workflow 从它之后的工具列表中收回 `run_subagents`，并以 FEEDBACK 告知它自行完成。
+调用方连续 2 次校验失败时，Workflow 从它之后的工具列表中收回 `run_subagents`，并以 FEEDBACK 告知它自行完成；长任务的根不收回（Orchestration D56），子任务数到上限也不收回（D62）。
 
 **执行语义**
 

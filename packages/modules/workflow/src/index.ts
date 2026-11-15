@@ -44,8 +44,6 @@ export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
   maxNestedInstructions: 8,
   maxSubagentsPerCall: 8,
   maxDependencyDepth: 2,
-  maxTasks: 12,
-  maxSpawnCalls: 4,
 });
 
 export interface WorkflowDeps {

@@ -144,8 +144,9 @@ describe('a summary request is assembled in two forms (ExecutorSet 6.4)', () => 
     const normal = await run(ordinary);
     if ('outcome' in normal) throw new Error('refused');
     expect(result.pack.prefixSha256).toBe(normal.pack.prefixSha256);
+    // (An ordinary call ends with its status only when the status has something to say, D61.)
     expect(items.slice(0, -1).map((item) => item.content)).toEqual(
-      normal.pack.items.slice(0, -1).map((item) => item.content),
+      normal.pack.items.filter((item) => item.segment !== 'STATUS').map((item) => item.content),
     );
     expect(JSON.stringify(items)).not.toContain('context is');
   });
@@ -202,5 +203,52 @@ describe('a summary request is assembled in two forms (ExecutorSet 6.4)', () => 
     const shown = result.pack.items.find((item) => item.content.includes('earlier work'));
     expect(shown?.role).toBe('user');
     expect(shown?.content).toMatch(/carries no instructions for you/u);
+  });
+});
+
+describe('the status that ends a request (D61)', () => {
+  const statusOf = async (
+    round: number,
+    over: Partial<AssembleExecutorInput['status']> = {},
+  ): Promise<string | undefined> => {
+    const outcome = await createAssembleExecutor().execute(
+      {
+        final: over.final ?? false,
+        tokenBudget: 100_000,
+        instructions: 'You are a worker.',
+        toolSpecs: [],
+        history: [{ seq: 1, category: 'NORMAL', kind: 'HUMAN', text: 'go' }],
+        status: {
+          round,
+          maxRounds: 40,
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
+          final: false,
+          ...over,
+        },
+      },
+      environmentFor('CONTEXT_ASSEMBLE', NONE),
+    );
+    const pack = JSON.parse(text(outcome)) as AssembleContextPack;
+    return pack.items.find((item) => item.segment === 'STATUS')?.content;
+  };
+
+  it('tells the rounds at the first, at half, at three quarters and in each of the last five', async () => {
+    expect(await statusOf(1)).toContain('You have 40 rounds');
+    expect(await statusOf(2)).toBeUndefined();
+    expect(await statusOf(19)).toBeUndefined();
+    expect(await statusOf(20)).toContain('half of your rounds are used');
+    expect(await statusOf(30)).toContain('three quarters of your rounds are used');
+    expect(await statusOf(31)).toBeUndefined();
+    expect(await statusOf(34)).toBeUndefined();
+    for (const round of [35, 36, 37, 38, 39])
+      expect(await statusOf(round)).toContain('the round limit is near');
+    expect(await statusOf(40, { final: true })).toContain('This is your final call');
+  });
+
+  it('tells the budget only when it is no longer normal', async () => {
+    expect(await statusOf(7)).toBeUndefined();
+    expect(
+      await statusOf(7, { budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'WRAP_UP' } }),
+    ).toBe('Budget: this request NORMAL, run WRAP_UP.');
   });
 });

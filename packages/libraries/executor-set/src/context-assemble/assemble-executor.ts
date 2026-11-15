@@ -61,30 +61,50 @@ const ROUND_WARNING_AHEAD = 5;
 const ROUND_LIMIT_HANDOVER =
   ' The user will read this to decide what to ask next: list what is finished (files changed, what you confirmed), what remains, and the next prompt the user could send to continue.';
 
+/**
+ * What the status says about rounds, and when (D61): the limit once at the first round, then at
+ * half and at three quarters of it, then at each of the last working rounds. Told every round, a
+ * model counted its rounds in half of its thinking.
+ */
+function roundNotice(round: number, maxRounds: number): string | undefined {
+  // Round `maxRounds` is the final call, so the last working round is `maxRounds - 1`.
+  const working = maxRounds - 1 - round;
+  if (working >= 0 && working < ROUND_WARNING_AHEAD) {
+    const when =
+      working === 0
+        ? 'This is your last working round; the next round'
+        : `After ${String(working)} more working round${working === 1 ? '' : 's'}, round ${String(maxRounds)}`;
+    return `Round ${String(round)} of ${String(maxRounds)}. Warning: the round limit is near. ${when} is your final call and you can only report. Stop starting new work; finish what you have begun, or leave it in a state you can describe to the user.`;
+  }
+  if (round === 1)
+    return `You have ${String(maxRounds)} rounds for this work. You are told again when half of them and three quarters are used, and in each of the last ${String(ROUND_WARNING_AHEAD)}.`;
+  if (round === Math.ceil(maxRounds / 2))
+    return `Round ${String(round)} of ${String(maxRounds)}: half of your rounds are used.`;
+  if (round === Math.ceil((maxRounds * 3) / 4))
+    return `Round ${String(round)} of ${String(maxRounds)}: three quarters of your rounds are used; plan how you will finish.`;
+  return undefined;
+}
+
+/**
+ * The status that ends a request, or nothing when there is nothing the model must know now (D61):
+ * the budget only when it is no longer normal, the rounds as `roundNotice` says, the final call
+ * always.
+ */
 function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]): string {
   const { round, maxRounds, budget, final, wrapUpReason } = status;
-  const lines = [
-    `Status: round ${String(round)} of ${String(maxRounds)}. Budget: this request ${budget.input}, run ${budget.run}.`,
-  ];
+  const lines: string[] = [];
+  if (budget.input !== 'NORMAL' || budget.run !== 'NORMAL')
+    lines.push(`Budget: this request ${budget.input}, run ${budget.run}.`);
   if (final) {
     const finish = toolSpecs.filter((spec) => spec.purpose === 'CONTROL').map((spec) => spec.name);
     const reason = wrapUpReason === undefined ? '' : ` because ${WRAP_UP_TEXT[wrapUpReason]}`;
     const handover = wrapUpReason === 'ROUND_LIMIT' ? ROUND_LIMIT_HANDOVER : '';
     lines.push(
-      `This is your final call${reason}. Call ${finish.join(' or ') || 'the finish tool'} now with your best answer: say what is done and what is not; cite only content you have read and list what you could not confirm.${handover}`,
+      `Round ${String(round)} of ${String(maxRounds)}. This is your final call${reason}. Call ${finish.join(' or ') || 'the finish tool'} now with your best answer: say what is done and what is not; cite only content you have read and list what you could not confirm.${handover}`,
     );
   } else {
-    // Round `maxRounds` is the final call, so the last working round is `maxRounds - 1`.
-    const working = maxRounds - 1 - round;
-    if (working >= 0 && working < ROUND_WARNING_AHEAD) {
-      const when =
-        working === 0
-          ? 'This is your last working round; the next round'
-          : `After ${String(working)} more working round${working === 1 ? '' : 's'}, round ${String(maxRounds)}`;
-      lines.push(
-        `Warning: the round limit is near. ${when} is your final call and you can only report. Stop starting new work; finish what you have begun, or leave it in a state you can describe to the user.`,
-      );
-    }
+    const notice = roundNotice(round, maxRounds);
+    if (notice !== undefined) lines.push(notice);
   }
   return lines.join('\n');
 }
@@ -283,14 +303,22 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
     if (measured() > input.tokenBudget) return rejected('LIMIT_EXCEEDED');
   } else if (!asking && !input.final && measured() >= input.tokenBudget * CONTEXT_WARNING_SHARE) {
     const warning = renderContextWarning(measured(), input.tokenBudget);
-    const warned = { ...status, content: `${status.content}\n${warning}` };
+    const warned = {
+      ...status,
+      content: status.content === '' ? warning : `${status.content}\n${warning}`,
+    };
     total += draftTokens(warned) - draftTokens(status);
     if (measured() > input.tokenBudget) return rejected('LIMIT_EXCEEDED');
     status = warned;
   }
 
   const contextPackId = newContextPackId();
-  const items = finishItems<Item>(contextPackId, [...head, ...history.flat(), status]);
+  // A status with nothing to say is left out (D61): the request ends with the history.
+  const items = finishItems<Item>(contextPackId, [
+    ...head,
+    ...history.flat(),
+    ...(status.content === '' ? [] : [status]),
+  ]);
   const prefixSha256 = sha256Hex(
     canonicalJson({ instructions: input.instructions, toolSpecs: input.toolSpecs }),
   );

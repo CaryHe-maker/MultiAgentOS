@@ -1291,6 +1291,8 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
       },
       testAgentBudget,
     ),
+    // These cases are about shares, not about how many tasks a run starts (D62).
+    taskQuota: { perRun: 100_000 },
     agentShare: (agentRef) => {
       const agent = agents[agentRef.id];
       return agent === undefined

@@ -92,7 +92,8 @@ describe('context-assemble', () => {
     expect(history[1]).toMatchObject({ reasoningContent: 'hmm' });
     expect(history[2]?.content).toBe('the user rejected tool "read_file"\n[toolCallId: call_1]');
     expect(history[3]?.content).toContain('not trusted by the user');
-    expect(pack.items.at(-1)?.segment).toBe('STATUS');
+    // Round 2 with the budget normal: there is no status to tell (D61).
+    expect(pack.items.some((item) => item.segment === 'STATUS')).toBe(false);
   });
 
   it('ends every tool result with its toolCallId, whatever the result was', async () => {

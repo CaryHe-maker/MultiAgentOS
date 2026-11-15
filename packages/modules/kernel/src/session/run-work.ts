@@ -223,6 +223,14 @@ export interface RunWorkDeps {
    * tokens left (M2Design 7.3, rule 6); `ask`, 4 times, when absent.
    */
   readonly budgetExtension?: { readonly mode: 'ask' | 'extend' | 'stop'; readonly max: number };
+  /**
+   * How many subtasks the run may start, and what happens at that many (D62): `perRun` more by the
+   * user's answer, by the configuration, or none. 60, `ask`, 4 times, when absent.
+   */
+  readonly taskQuota?: {
+    readonly perRun: number;
+    readonly extension?: { readonly mode: 'ask' | 'extend' | 'stop'; readonly max: number };
+  };
 }
 
 type Response = SyscallAck | SyscallRejected;
@@ -370,6 +378,13 @@ export class RunWork {
   #budgetDeclined = false;
   /** What the open question about the budget would add. */
   #budgetOffer = 0;
+  /** The subtasks the run has started, how many it may, and how that grew (D62). */
+  #tasksStarted = 0;
+  #taskLimit: number | undefined;
+  #taskExtensions = 0;
+  #taskDeclined = false;
+  /** The AgentRun whose call opened the question about more subtasks. */
+  #taskAskedBy = '';
   /** The failed external reads since the last success or pause: two pause the run (Core 5h). */
   #externalFailures: ExternalReadPaused['attempts'][number][] = [];
   #inputs = 0;
@@ -899,6 +914,8 @@ export class RunWork {
       return refuse('FORBIDDEN');
     const names = new Set(request.tasks.map((task) => task.name));
     if (names.size !== request.tasks.length) return refuse('INVALID_INPUT');
+    const quota = this.#taskQuota(request.tasks.length, requestId, parentAgentRunId);
+    if (quota !== undefined) return refuse(quota);
     const parentRoots = writableRoots(parent.ceiling);
     const context = { sessionId: request.sessionId, workflowRunId: request.workflowRunId };
     const tasks: {
@@ -953,6 +970,7 @@ export class RunWork {
       return response;
     }
     this.#delegations.create(delegationId, parent.mission, tasks);
+    this.#tasksStarted += tasks.length;
     this.#activity.waitingForSubtasks(parentAgentRunId);
     const response: DelegationReserved = {
       requestId,
@@ -1307,6 +1325,61 @@ export class RunWork {
     this.#waiting.set(requestId, waiting);
     this.#activity.awaitingAuthorization(agentRunId);
     return true;
+  }
+
+  /**
+   * Whether the run may start `count` more subtasks (D62): within its limit, yes; at the limit the
+   * limit grows by the configuration, or the user is asked and the call is refused until the
+   * answer comes (Workflow makes it again then), or it is refused for good.
+   */
+  #taskQuota(
+    count: number,
+    requestId: string,
+    agentRunId: string,
+  ): 'TASK_QUOTA_ASKED' | 'TASK_QUOTA_REACHED' | undefined {
+    const perRun = this.#deps.taskQuota?.perRun ?? 60;
+    const policy = this.#deps.taskQuota?.extension ?? { mode: 'ask' as const, max: 4 };
+    this.#taskLimit ??= perRun;
+    if (this.#tasksStarted + count <= this.#taskLimit) return undefined;
+    if (policy.mode === 'stop' || this.#taskDeclined || this.#taskExtensions >= policy.max)
+      return 'TASK_QUOTA_REACHED';
+    if (policy.mode === 'extend') {
+      this.#extendTasks(perRun, requestId, agentRunId, 'CONFIGURED');
+      return this.#tasksStarted + count <= this.#taskLimit ? undefined : 'TASK_QUOTA_REACHED';
+    }
+    const check = this.#authorization.askTasks(
+      { started: this.#tasksStarted, limit: this.#taskLimit, add: perRun },
+      requestId,
+      agentRunId,
+    );
+    if (check.requested !== undefined) {
+      this.#taskAskedBy = agentRunId;
+      this.#host.toInteraction(check.requested);
+      this.#deps.audit({
+        type: 'AUTHORIZATION_ASKED',
+        requestId,
+        agentRunId,
+        capability: 'tasks.extend',
+      });
+    }
+    return 'TASK_QUOTA_ASKED';
+  }
+
+  #extendTasks(
+    add: number,
+    requestId: string,
+    agentRunId: string,
+    by: 'USER' | 'CONFIGURED',
+  ): void {
+    this.#taskLimit = (this.#taskLimit ?? 0) + add;
+    this.#taskExtensions += 1;
+    this.#deps.audit({
+      type: 'TASK_QUOTA_EXTENDED',
+      requestId,
+      agentRunId,
+      limit: this.#taskLimit,
+      by,
+    });
   }
 
   #extendBudget(
@@ -1757,6 +1830,22 @@ export class RunWork {
     const settled = this.#authorization.answer(request.questionId, request.answer.scope);
     if (settled === undefined) return this.#refuse(requestId, request, 'QUESTION_NOT_PENDING');
     this.#host.toInteraction(settled.resolved);
+    // More subtasks (D62): yes lets the run start `perRun` more, no refuses every later call; the
+    // calls that waited are made again by Workflow, which is told either way.
+    if (settled.capability === 'tasks.extend') {
+      if (settled.resolution === 'GRANTED')
+        this.#extendTasks(
+          this.#deps.taskQuota?.perRun ?? 60,
+          settled.waiters[0] ?? requestId,
+          this.#taskAskedBy,
+          'USER',
+        );
+      else this.#taskDeclined = true;
+      this.#host.toWorkflowEvent({
+        type: 'TaskQuotaDecided',
+        granted: settled.resolution === 'GRANTED',
+      });
+    }
     // More budget (rule 6): yes adds what was offered; no is not asked again for this input.
     if (settled.capability === 'budget.extend') {
       const first = settled.waiters[0];

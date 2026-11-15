@@ -153,6 +153,14 @@ export type AttemptAudit =
       readonly tokens: number;
       readonly by: 'USER' | 'CONFIGURED';
     }
+  /** The run may start more subtasks (D62): how many in all now, by whom. */
+  | {
+      readonly type: 'TASK_QUOTA_EXTENDED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly limit: number;
+      readonly by: 'USER' | 'CONFIGURED';
+    }
   /** A command ran without a question under `kernel.command.approval: auto` (M2Design 5.2). */
   | {
       readonly type: 'COMMAND_AUTO_APPROVED';
