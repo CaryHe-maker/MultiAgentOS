@@ -103,9 +103,15 @@ describe('validateSpawn', () => {
     ]);
   });
 
-  it('lets tasks that wait for each other share files', () => {
+  it('refuses workers that write the same files one after the other (D55)', () => {
     expect(
       codes({ tasks: [worker('a', ['src']), worker('b', ['src/api'], { dependsOn: ['a'] })] }),
+    ).toEqual(['WRITE_SCOPE_CHAIN']);
+  });
+
+  it('lets a worker wait for another that writes other files', () => {
+    expect(
+      codes({ tasks: [worker('a', ['src/a']), worker('b', ['src/b'], { dependsOn: ['a'] })] }),
     ).toEqual([]);
   });
 

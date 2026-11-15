@@ -397,3 +397,65 @@ real('a task that starts with the context of the root (D53)', () => {
     TIMEOUT,
   );
 });
+
+real('a tester after the build (D55)', () => {
+  it(
+    'is refused once the builders are back, and the root is told to read their checks',
+    async () => {
+      const provider = scriptedAgents({
+        main: [
+          tool('run_subagents', {
+            plan: 'One part: the value, by one worker.',
+            tasks: [
+              {
+                name: 'fixer',
+                agent: 'worker',
+                goal: 'write fixed into src/value.txt',
+                writeScope: ['src'],
+              },
+            ],
+          }),
+          tool('sleep', { until: [{ kind: 'children' }] }),
+          tool('run_subagents', {
+            tasks: [
+              {
+                name: 'tests',
+                agent: 'tester',
+                goal: 'acceptance tests of the value',
+                writeScope: ['tests'],
+                acceptance: [`run with: ${check}`],
+              },
+            ],
+          }),
+          tool('reply', { text: 'done without a tester' }),
+        ],
+        worker: [
+          tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
+          tool('run_command', { command: check }),
+          tool('finish_subagent', {
+            summary: 'wrote fixed',
+            status: 'done',
+            changedFiles: ['src/value.txt'],
+            validation: [{ command: check, exitCode: 0 }],
+          }),
+        ],
+      });
+      const run = await missionOn('make the value check pass', provider, {
+        'src/value.txt': 'broken\n',
+        'tests/.keep': '',
+      });
+      expect(run.code).toBe(0);
+      const said = provider.requests
+        .flatMap((request) => request.messages.map((message) => textOf(message)))
+        .join('\n');
+      expect(said).toContain('Not started: a tester writes the acceptance tests beside the build');
+      const log = await logOf(run.dataDir);
+      const started = log
+        .filter((record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN')
+        .flatMap((record) => record['nodes'] as Record<string, unknown>[])
+        .map((node) => node['name']);
+      expect(started).toEqual(['fixer']);
+    },
+    TIMEOUT,
+  );
+});

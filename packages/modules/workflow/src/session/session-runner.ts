@@ -2766,6 +2766,29 @@ export class SessionRunner {
         );
       continued.set(task.name, before.missionId);
     }
+    // A tester writes acceptance tests beside the build (D55): started once the build has come
+    // back, without builders of its own, it is a round that runs alone while every task waits.
+    const BUILDERS = ['worker', 'lead'];
+    const built = [...projectGraph(this.#records, workflowRunId).nodes.values()].some(
+      (node) =>
+        node.mission?.parentId === active.missionId &&
+        node.spawn !== undefined &&
+        node.spawn.specialist === undefined &&
+        BUILDERS.includes(node.agentRef?.id ?? ''),
+    );
+    if (
+      built &&
+      requested.tasks.some((task) => task.agent === 'tester') &&
+      !requested.tasks.some((task) => BUILDERS.includes(task.agent))
+    )
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        true,
+        'TESTER_AFTER_BUILD',
+        'Not started: a tester writes the acceptance tests beside the build, in the same call as the tasks that build. The build has come back, and each result shows the check its task ran after its last change, as the system saw it. Read those; for the whole, run the checks of the plan yourself once, or start an integrator when the whole fails in ways you cannot place.',
+      );
     // Who starts with the caller's context (D35, D53): every task of a phase that says so, or a
     // task that asks for it. The comparison switch turns both off.
     const inherit = new Map<string, { readonly as: string; readonly runAs: string }>();

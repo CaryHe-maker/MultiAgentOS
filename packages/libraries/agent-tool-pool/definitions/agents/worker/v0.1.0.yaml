@@ -83,7 +83,7 @@ capabilities:
   - workspace.write
   - command.exec
 limits:
-  maxRounds: 60
+  maxRounds: 40
   maxToolCallsPerRound: 8
   maxToolUnits: 240
   maxWallClockMs: 1800000

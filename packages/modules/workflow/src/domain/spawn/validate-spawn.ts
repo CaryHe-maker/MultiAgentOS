@@ -22,6 +22,7 @@ export type SpawnErrorCode =
   | 'WRITE_SCOPE_FORBIDDEN'
   | 'WRITE_SCOPE_OUTSIDE'
   | 'WRITE_SCOPE_OVERLAP'
+  | 'WRITE_SCOPE_CHAIN'
   | 'INPUT_NOT_READABLE'
   | 'CONTEXT_NOT_INHERITABLE'
   | 'SPAWN_LIMIT';
@@ -234,11 +235,22 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
       const left = tasks[i];
       const right = tasks[j];
       if (left === undefined || right === undefined) continue;
-      if (ancestorsOf(waits, left.name).has(right.name)) continue;
-      if (ancestorsOf(waits, right.name).has(left.name)) continue;
       const a = roots.get(left.name) ?? [];
       const b = roots.get(right.name) ?? [];
-      if (a.length > 0 && b.length > 0 && writeRootsOverlap(a, b))
+      const overlap = a.length > 0 && b.length > 0 && writeRootsOverlap(a, b);
+      const chained =
+        ancestorsOf(waits, left.name).has(right.name) ||
+        ancestorsOf(waits, right.name).has(left.name);
+      // Two workers that write the same files one after the other are one piece of work split
+      // into waits (D55): the second only starts when the first has ended.
+      if (chained && overlap && left.agent === 'worker' && right.agent === 'worker')
+        add(
+          'WRITE_SCOPE_CHAIN',
+          `${left.name} and ${right.name} write the same files one after the other; that is one task's work done in two waits. Give each its own files (one test file each) so they run side by side, or make them one task`,
+          left.name,
+        );
+      if (chained) continue;
+      if (overlap)
         add(
           'WRITE_SCOPE_OVERLAP',
           `${left.name} and ${right.name} can run at the same time and write the same files; give each its own files (one test file each, not one file they all append to) so they run side by side, and make one depend on the other only when it needs what the other writes, since it then waits`,
