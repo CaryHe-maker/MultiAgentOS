@@ -55683,6 +55683,10 @@
               "continues": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              },
+              "context": {
+                "type": "string",
+                "const": "inherit"
               }
             },
             "additionalProperties": false

@@ -23,6 +23,7 @@ export type SpawnErrorCode =
   | 'WRITE_SCOPE_OUTSIDE'
   | 'WRITE_SCOPE_OVERLAP'
   | 'INPUT_NOT_READABLE'
+  | 'CONTEXT_NOT_INHERITABLE'
   | 'SPAWN_LIMIT';
 
 export interface SpawnError {
@@ -128,6 +129,8 @@ export function nearestEffort(
   )[0];
 }
 
+const INHERITING_AGENTS: readonly string[] = ['worker', 'explorer'];
+
 export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): SpawnValidation {
   const { rules } = context;
   const errors: SpawnError[] = [];
@@ -184,6 +187,21 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
       add('UNKNOWN_AGENT', `${task.agent} cannot be started`, task.name);
       continue;
     }
+    // A task that inherits does the work itself, as worker or explorer (D53): a lead or a
+    // specialist starts tasks or follows a playbook of its own, and a continued task already
+    // has the history it goes on from.
+    if (task.context === 'inherit' && !INHERITING_AGENTS.includes(task.agent))
+      add(
+        'CONTEXT_NOT_INHERITABLE',
+        `${task.name} is a ${task.agent}; only a worker or an explorer starts with your context`,
+        task.name,
+      );
+    if (task.context === 'inherit' && task.continues !== undefined)
+      add(
+        'CONTEXT_NOT_INHERITABLE',
+        `${task.name} both continues ${task.continues} and inherits your context; choose one`,
+        task.name,
+      );
     const scope = task.writeScope ?? [];
     if (facts.writes && scope.length === 0)
       add('WRITE_SCOPE_REQUIRED', `${task.name} needs a writeScope`, task.name);

@@ -62,7 +62,8 @@ export interface TaskScope {
     readonly as: string;
     /** The tasks started by the same call. */
     readonly siblings: readonly string[];
-    readonly from: Extract<ProjectionScope, { kind: 'NODE' }>;
+    /** The view it comes from: a task's, a step's of a template, or main's of a chat (D53). */
+    readonly from: ProjectionScope;
   };
 }
 

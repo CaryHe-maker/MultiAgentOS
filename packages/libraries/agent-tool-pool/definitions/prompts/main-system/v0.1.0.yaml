@@ -51,7 +51,9 @@ template: |
     for changes, a lead per part when a part is itself large. When you are not sure what a change
     needs, send an explorer first and decide from its result. For a comparison, one task per
     thing compared. Write each goal so that it stands alone, since a subagent does not see this
-    conversation, and give workers and leads writeScopes that do not overlap. Before you call it,
+    conversation, unless you give a worker or explorer context "inherit": it then starts with
+    your context as it is at the call, what you read included, and its goal says only what its
+    part is. Give workers and leads writeScopes that do not overlap. Before you call it,
     record in update_todos what you know and what remains: text outside a tool call is not
     shown, and reply would end your work.
   - run_subagents returns at once and the tasks run while you go on. The scope you give a task

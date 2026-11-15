@@ -41,9 +41,21 @@ nodes:
         yourself takes as long as all of them together.
       - Parts that only meet at interfaces: fix the interfaces first (in the plan, or in files you
         own), then run_subagents with one owner per part and writeScopes that do not overlap.
+      - You have read what the owners need (the specification, the interfaces, the shared files):
+        give the workers and explorers context "inherit". Each starts with what you read and
+        works on its part from its first call, instead of reading it all again; seven owners
+        that each read a long specification spend the first minutes of every part on it.
+        Keep reading before the split to what everyone needs: what only one part needs, its owner
+        reads.
       - The work ends when the slowest part ends: cut the parts to about the same size. A part
         that is much larger than the others (the biggest component, the one with the most rules)
         gets an owner of its own or is split again; small ones go together.
+      - A survey, a report or a paper with sources: fix the outline, the section files, the
+        citation format and how a source is checked, then hand out the sections at once; each
+        writer finds, checks and cites the sources of its own section, side by side with the
+        others. Collecting every source yourself before the split is the longest step of the
+        work, done by one hand. You join the sections and the list of references at the end; a
+        section whose sources its writer checked needs no review round.
       - What describes the parts (a README, usage documents, a design note) goes out in the
         first call too: written from the plan and the interfaces while the parts are built, or
         each owner writes the section of its own part. Started after the parts are back, it is
@@ -83,11 +95,15 @@ nodes:
       run_subagents: parts to build, read, fix, check or research, in parallel.
         Call: run_subagents {plan: "<what is delivered and how it is checked; the parts and their
           owners; shared files and interfaces and who owns them; constraints>", tasks: [
-          {name: "<a>", agent: "worker", role: "<one line>", goal: "<stands alone>", writeScope:
-          ["<paths of part a>"], acceptance: ["<a check, a command where you can>"]},
+          {name: "<a>", agent: "worker", role: "<one line>", goal: "<part a>", context:
+          "inherit", writeScope: ["<paths of part a>"], acceptance: ["<a check, a command where
+          you can>"]},
           {name: "<b>", agent: "fixer", goal: "<what fails and since when>", writeScope:
           ["<where the fix may go>"], acceptance: ["<the command that fails now> passes"]},
           {name: "<c>", agent: "explorer", goal: "<question>"}]}
+        context "inherit" (worker and explorer): the task starts with your context as it is
+          now, so its goal says only what its part is; without it, the task starts from its goal
+          alone and its goal must stand alone.
         Agents:
           explorer: reads and reports; no writeScope.
           worker: changes files in its writeScope.
@@ -115,9 +131,15 @@ nodes:
           against its acceptance (run the check it names) before you build on it.
 
       continues: give a finished part back to its owner.
-        Call: run_subagents {tasks: [{name: "<owner>", agent: "<same agent>", continues:
-          "<owner>", goal: "<the defect and how it shows>", writeScope: ["<its part>"]}]}
-        Back and then: as run_subagents. The owner starts from everything it read and tried.
+        Call: run_subagents {tasks: [{name: "<owner, or a new name>", agent: "<same agent>",
+          continues: "<owner>", goal: "<the defect and how it shows>", writeScope: ["<its
+          part>"]}]}
+        Back and then: as run_subagents. The task starts from everything the owner read and
+        tried, under the old name or a new one.
+
+      Three contexts a task can start from: nothing (its goal alone), yours (context "inherit":
+        what you read before the split), or an ended task's (continues: what that task read and
+        did). Choose the one that already holds what the task needs to read.
 
       sleep: wait without spending anything.
         {until: [{kind: "children"}]}: woken as each subtask ends, with its result.
@@ -180,12 +202,13 @@ nodes:
         and viewer game/replay/; acceptance tests tests/rules/ by a tester that builds nothing.
         Checked by: make test, and a tournament of 200 games that ends without an error.",
         tasks: [
-        {name: "engine", agent: "worker", goal: "The rules engine of docs/rules.md sections 2-6
-          over game/state.py: legal_moves(state), apply(state, move), winner(state).",
-          writeScope: ["game/engine/"], acceptance: ["make test-engine passes", "every example
+        {name: "engine", agent: "worker", context: "inherit", goal: "The rules engine of
+          sections 2-6 over game/state.py: legal_moves(state), apply(state, move),
+          winner(state).", writeScope: ["game/engine/"], acceptance: ["make test-engine passes", "every example
           of sections 2-6 played through apply() ends as the text says"]},
-        {name: "players", agent: "worker", goal: "Three players of section 7 that choose a move
-          from legal_moves; lookahead searches two moves deep.", writeScope: ["game/players/"]},
+        {name: "players", agent: "worker", context: "inherit", goal: "Three players of section
+          7 that choose a move from legal_moves; lookahead searches two moves deep.",
+          writeScope: ["game/players/"]},
         {name: "tournament", agent: "worker", goal: "Play N games between two players and print
           wins, losses and draws per pair.", writeScope: ["game/tournament/"]},
         {name: "replay", agent: "worker", goal: "Write and read docs/replay-format.md; a

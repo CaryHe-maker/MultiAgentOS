@@ -65,6 +65,12 @@ export const SubagentTaskSchema = closed({
    * asked now. Work goes back to the task that knows the code, at the price of a cached prefix.
    */
   continues: Type.Optional(NameSchema),
+  /**
+   * `inherit` (D53): a worker or explorer starts with the caller's context as it stands at this
+   * call, so it does not read again what the caller has read, and runs as the caller's Agent so
+   * the provider's cache holds that context. It starts no subtasks.
+   */
+  context: Type.Optional(Type.Literal('inherit')),
 });
 export type SubagentTask = Static<typeof SubagentTaskSchema>;
 

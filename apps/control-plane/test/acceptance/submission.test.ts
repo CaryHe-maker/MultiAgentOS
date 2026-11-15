@@ -304,3 +304,89 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
     TIMEOUT,
   );
 });
+
+real('a task that starts with the context of the root (D53)', () => {
+  it(
+    'has what the root read, runs as its own Agent, and is refused as a lead',
+    async () => {
+      const provider = scriptedAgents(
+        {
+          main: [
+            tool('read_file', { path: 'src/value.txt' }),
+            // A lead does not inherit: it would start tasks of its own.
+            tool('run_subagents', {
+              tasks: [
+                {
+                  name: 'big',
+                  agent: 'lead',
+                  goal: 'fix it',
+                  writeScope: ['src'],
+                  context: 'inherit',
+                },
+              ],
+              plan: 'One part: the value, by one task that knows what I read.',
+            }),
+            tool('run_subagents', {
+              plan: 'One part: the value, by one worker that knows what I read.',
+              tasks: [
+                {
+                  name: 'fixer',
+                  agent: 'worker',
+                  goal: 'write fixed into src/value.txt',
+                  writeScope: ['src'],
+                  context: 'inherit',
+                },
+              ],
+            }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            tool('reply', { text: 'fixed by a worker that had my context' }),
+          ],
+        },
+        {
+          fixer: [
+            tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
+            tool('run_command', { command: check }),
+            tool('finish_subagent', {
+              summary: 'wrote fixed',
+              status: 'done',
+              changedFiles: ['src/value.txt'],
+              validation: [{ command: check, exitCode: 0 }],
+            }),
+          ],
+        },
+      );
+      const run = await missionOn('make the value check pass', provider, {
+        'src/value.txt': 'broken-before-the-fix\n',
+      });
+      expect(run.code).toBe(0);
+      expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
+      const said = provider.requests
+        .flatMap((request) => request.messages.map((message) => textOf(message)))
+        .join('\n');
+      expect(said).toContain('only a worker or an explorer starts with your context');
+      const log = await logOf(run.dataDir);
+      const fixer = log
+        .filter((record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN')
+        .flatMap((record) => record['nodes'] as Record<string, unknown>[])
+        .find((node) => node['name'] === 'fixer');
+      expect((fixer?.['spawn'] as Record<string, unknown>)['inherits']).toMatchObject({
+        as: 'worker',
+      });
+      // It runs as a worker: its own prompt, tools and budget.
+      expect((fixer?.['agentRef'] as Record<string, unknown>)['id']).toBe('worker');
+      const first = provider.requests.find((request) =>
+        request.messages.some((message) =>
+          textOf(message).includes('you are a different task: "fixer"'),
+        ),
+      );
+      expect(first).toBeDefined();
+      const told = first?.messages.map((message) => textOf(message)).join('\n') ?? '';
+      // What the root read is in its context: it need not read the file again.
+      expect(told).toContain('broken-before-the-fix');
+      expect(told).toContain('Your goal: write fixed into src/value.txt');
+      expect(JSON.stringify(first?.tools)).not.toContain('run_subagents');
+      expect(JSON.stringify(first?.tools)).toContain('finish_subagent');
+    },
+    TIMEOUT,
+  );
+});

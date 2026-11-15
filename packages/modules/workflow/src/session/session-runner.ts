@@ -78,7 +78,13 @@ import { projectHistory, type ProjectionScope } from '../domain/context/history-
 import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
 import { placementOf } from '../domain/spawn/placement.js';
 import { readableArtifacts } from '../domain/spawn/readable-artifacts.js';
-import { callOf, spawnedBy, spawnNodeOf, taskScopeOf } from '../domain/spawn/spawn-graph.js';
+import {
+  callOf,
+  spawnedBy,
+  spawnNodeOf,
+  stepScopeOf,
+  taskScopeOf,
+} from '../domain/spawn/spawn-graph.js';
 import {
   finishedOutcome,
   resultOf,
@@ -1653,13 +1659,18 @@ export class SessionRunner {
     const taskNode = this.#taskNodeOf(workflowRunId, node);
     // A task that inherits is asked with the very prompt and tools of the task it comes from, or
     // the provider's cache of that context is lost (D35); what it may not do is refused instead.
-    const from =
+    // It comes from a task that was started by a call, or from the root of the work (D53).
+    const segments =
       taskNode?.spawn?.inherits === undefined
-        ? undefined
-        : [...graph.nodes.values()].find(
-            (each) =>
-              each.mission?.id === taskNode.spawn?.inherits?.missionId && each.spawn !== undefined,
+        ? []
+        : [...graph.nodes.values()].filter(
+            (each) => each.mission?.id === taskNode.spawn?.inherits?.missionId,
           );
+    const origin = segments.find((each) => each.spawn !== undefined) ?? segments[0];
+    // A task of a phase runs as the Agent of the task it comes from; a task that asked for the
+    // context itself (D53) runs as its own Agent, with its own prompt, tools and budget, and pays
+    // for the inherited context once, on its first call.
+    const from = origin?.agentRef?.id === agentId ? origin : undefined;
     const own = this.#bindingAt(agentId, depth, taskNode?.spawn?.commands !== false);
     const lent = this.#bindingAt(agentId, Math.max(0, depth - 1), from?.spawn?.commands !== false);
     // It asks for no more than the Agent its phase names may do: the Kernel grants a task only
@@ -1774,19 +1785,8 @@ export class SessionRunner {
     const task =
       taskNode?.spawn !== undefined
         ? taskScopeOf(this.#records, workflowRunId, graph, taskNode, taskNode.spawn)
-        : node.goal !== undefined && this.#mode === 'ORCHESTRATION'
-          ? {
-              // A template step is told what its step is, and keeps the user's goal (3.5).
-              name: node.name,
-              agent: agentId,
-              goal: node.goal,
-              acceptance: [],
-              writeScope: [],
-              inputs: [],
-              dependencies: [],
-              withPrompt: true,
-              ...(node.guide === undefined ? {} : { playbook: node.guide }),
-            }
+        : this.#mode === 'ORCHESTRATION'
+          ? stepScopeOf(node)
           : undefined;
     const scope: ProjectionScope =
       this.#mode === 'CHAT' && taskNode === undefined && node.mission?.parentId === undefined
@@ -2695,14 +2695,13 @@ export class SessionRunner {
         'Not started: you are a subtask, not the task whose context you were given. You start no subtasks: do your goal yourself and finish with your finishing call.',
       );
     const followed = ownTask?.spawn?.specialist;
-    let inherit: { readonly as: string } | undefined;
+    let phaseInherits: string | undefined;
     if (followed !== undefined) {
       const off = playbookRefusal(this.#records, active.missionId, followed, args.tasks);
       if (off !== undefined)
         return this.#answerControl(workflowRunId, active, toolCallId, true, 'PLAYBOOK', off);
       const phase = phaseOfCall(this.#records, active.missionId, followed, args.tasks);
-      if (phase?.tasks?.context === 'inherit' && this.#deps.inheritContext !== false)
-        inherit = { as: phase.tasks.agent };
+      if (phase?.tasks?.context === 'inherit') phaseInherits = phase.tasks.agent;
     }
     const readable = readableArtifacts(this.#records, active.state.agentRunId);
     const checked = validateSpawn(args, {
@@ -2740,6 +2739,16 @@ export class SessionRunner {
         );
       continued.set(task.name, before.missionId);
     }
+    // Who starts with the caller's context (D35, D53): every task of a phase that says so, or a
+    // task that asks for it. The comparison switch turns both off.
+    const inherit = new Map<string, { readonly as: string; readonly runAs: string }>();
+    if (this.#deps.inheritContext !== false)
+      for (const task of checked.plan.tasks) {
+        if (phaseInherits !== undefined)
+          inherit.set(task.name, { as: phaseInherits, runAs: active.agentId });
+        else if (task.context === 'inherit')
+          inherit.set(task.name, { as: task.agent, runAs: task.agent });
+      }
     const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
     if (lent.kind === 'BLOCKED') return;
     // A refusal for the budget says nothing against the tasks: it is not counted as a wrong
@@ -2844,8 +2853,11 @@ export class SessionRunner {
     specialists: ReadonlyMap<string, NonNullable<SpawnNode['specialist']>> = new Map(),
     /** The ended task each continuing task takes up, by task name. */
     continued: ReadonlyMap<string, string> = new Map(),
-    /** The tasks start with the caller's context (a phase with `context: inherit`, D35). */
-    inherit?: { readonly as: string },
+    /**
+     * The tasks that start with the caller's context, and the Agent each is (a phase with
+     * `context: inherit`, D35, or a task with `context: "inherit"`, D53), by task name.
+     */
+    inherit: ReadonlyMap<string, { readonly as: string; readonly runAs: string }> = new Map(),
   ): Promise<void> {
     const call = { toolCallId, delegationId: reserved.delegationId };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));
@@ -2857,29 +2869,33 @@ export class SessionRunner {
       workflowRunId,
       revisionNumber,
       { nodeId: active.nodeId, call, missionId },
-      tasks.map((task) => ({
-        name: task.name,
-        // A task that inherits runs as the caller's Agent: same prompt, same tools, same cache.
-        agentRef: this.#refOf(inherit === undefined ? task.agent : active.agentId),
-        goal: task.goal,
-        dependsOn: task.dependsOn ?? [],
-        spawn: {
-          ...spawnNodeOf(task, shares.get(task.name)),
-          ...(inherit === undefined
-            ? {}
-            : {
-                inherits: {
-                  missionId,
-                  agentRunId: active.state.agentRunId,
-                  as: inherit.as,
-                },
-              }),
-          ...specialistOf(specialists, task.name),
-          ...(continued.get(task.name) === undefined
-            ? {}
-            : { continues: { missionId: continued.get(task.name) ?? '' } }),
-        },
-      })),
+      tasks.map((task) => {
+        const inherits = inherit.get(task.name);
+        return {
+          name: task.name,
+          // A task of a phase runs as the caller's Agent (same prompt, tools and cache, D35); a task
+          // that asked for the context runs as its own (D53).
+          agentRef: this.#refOf(inherits?.runAs ?? task.agent),
+          goal: task.goal,
+          dependsOn: task.dependsOn ?? [],
+          spawn: {
+            ...spawnNodeOf(task, shares.get(task.name)),
+            ...(inherits === undefined
+              ? {}
+              : {
+                  inherits: {
+                    missionId,
+                    agentRunId: active.state.agentRunId,
+                    as: inherits.as,
+                  },
+                }),
+            ...specialistOf(specialists, task.name),
+            ...(continued.get(task.name) === undefined
+              ? {}
+              : { continues: { missionId: continued.get(task.name) ?? '' } }),
+          },
+        };
+      }),
     );
     await this.#extend(workflowRunId, revisionNumber, 'SPAWN', revision);
     // The call comes back at once (D14): the tasks run while the caller goes on or sleeps.

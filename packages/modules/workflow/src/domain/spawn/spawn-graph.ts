@@ -204,9 +204,12 @@ function inheritedOf(
 ): TaskScope['inherited'] {
   const { inherits } = spawn;
   if (inherits === undefined) return undefined;
-  const from = [...graph.nodes.values()].find(
-    (each) => each.mission?.id === inherits.missionId && each.spawn !== undefined,
+  // The task it comes from was started by a call, or is the root of the work (D53), whose first
+  // segment holds its step.
+  const segments = [...graph.nodes.values()].filter(
+    (each) => each.mission?.id === inherits.missionId,
   );
+  const from = segments.find((each) => each.spawn !== undefined) ?? segments[0];
   const started = records.find(
     (record): record is RecordOf<'GRAPH_EXTENDED'> =>
       record.type === 'GRAPH_EXTENDED' &&
@@ -216,21 +219,47 @@ function inheritedOf(
   const edge = started?.edges.find(
     (each) => each.kind === 'DELEGATE' && each.to === node.nodeId && each.call !== undefined,
   );
-  if (from?.spawn === undefined || started === undefined || edge?.call === undefined)
-    return undefined;
+  if (from === undefined || started === undefined || edge?.call === undefined) return undefined;
   const before = records.filter((record) => record.seq < started.seq);
+  const task =
+    from.spawn !== undefined
+      ? taskScopeOf(before, workflowRunId, graph, from, from.spawn)
+      : stepScopeOf(from);
   return {
     cut: started.seq,
     toolCallId: edge.call.toolCallId,
     as: inherits.as,
     siblings: started.nodes.filter((each) => each.nodeId !== node.nodeId).map((each) => each.name),
-    from: {
-      kind: 'NODE',
-      workflowRunId,
-      agentRunId: inherits.agentRunId,
-      missionId: inherits.missionId,
-      task: taskScopeOf(before, workflowRunId, graph, from, from.spawn),
-    },
+    // main of a chat sees the whole Session; a step of a template, or a task, its own work.
+    from:
+      task === undefined
+        ? { kind: 'MAIN', missionId: inherits.missionId }
+        : {
+            kind: 'NODE',
+            workflowRunId,
+            agentRunId: inherits.agentRunId,
+            missionId: inherits.missionId,
+            task,
+          },
+  };
+}
+
+/**
+ * A step of a template (Orchestration 3.5) is told what its step is, and keeps the user's goal;
+ * a node without a goal of its own is main of a chat, which has no step.
+ */
+export function stepScopeOf(node: GraphNodeRecord): TaskScope | undefined {
+  if (node.goal === undefined || node.agentRef === undefined) return undefined;
+  return {
+    name: node.name,
+    agent: node.agentRef.id,
+    goal: node.goal,
+    acceptance: [],
+    writeScope: [],
+    inputs: [],
+    dependencies: [],
+    withPrompt: true,
+    ...(node.guide === undefined ? {} : { playbook: node.guide }),
   };
 }
 
