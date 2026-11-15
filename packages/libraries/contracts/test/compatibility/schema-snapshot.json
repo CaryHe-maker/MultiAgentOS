@@ -9703,6 +9703,38 @@
       "additionalProperties": false,
       "$id": "kernel.control.AuthorizationResolved.v1"
     },
+    "kernel.control.BackgroundJobs.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "agentRunId",
+        "startedAt"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "BackgroundJobs"
+        },
+        "agentRunId": {
+          "type": "string",
+          "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "missionId": {
+          "type": "string",
+          "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+        },
+        "startedAt": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "maxItems": 16
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.control.BackgroundJobs.v1"
+    },
     "kernel.control.CheckpointDiff.v1": {
       "type": "object",
       "required": [
@@ -17613,6 +17645,38 @@
                 }
               ],
               "$id": "kernel.control.ActivityEvent.v1"
+            },
+            {
+              "type": "object",
+              "required": [
+                "type",
+                "agentRunId",
+                "startedAt"
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "BackgroundJobs"
+                },
+                "agentRunId": {
+                  "type": "string",
+                  "pattern": "^agr_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "missionId": {
+                  "type": "string",
+                  "pattern": "^msc_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+                },
+                "startedAt": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "maxItems": 16
+                }
+              },
+              "additionalProperties": false,
+              "$id": "kernel.control.BackgroundJobs.v1"
             },
             {
               "anyOf": [

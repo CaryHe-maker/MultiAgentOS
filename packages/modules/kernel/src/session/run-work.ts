@@ -1169,6 +1169,7 @@ export class RunWork {
 
   /** A background command ended (Orchestration 6.4): Workflow hears it while the run works. */
   jobEnded(fact: JobEndedFact): void {
+    this.#activity.jobEnded(fact.jobKey);
     const { phase } = this.#host.control();
     if (phase === 'CONVERGING' || phase === 'CLOSED') return;
     const { jobKey, exit, durationMs, totalBytes, tail } = fact;

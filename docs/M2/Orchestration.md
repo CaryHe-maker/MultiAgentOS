@@ -549,7 +549,8 @@ run_command({ command, workdir?, timeoutMs?, network?, runInBackground?: boolean
 | 事件 | 后台命令 |
 |---|---|
 | 发起它的那一段结束（休眠、`reply`） | 继续运行：它属于任务，不属于 AgentRun |
-| 任务结束（交回结果、失败） | 停止，结束通知写进任务的最后记录 |
+| 任务交回结果 | 继续运行；结束通知交给最近一个还没结束的祖先任务（第 6.4 节），最远到根 |
+| 任务失败、被停止 | 停止，结束记录写在这个任务名下 |
 | 暂停 | 继续运行（与 dsh、Claude Code 一致；暂停只停 Agent 的推进） |
 | 中止 | 全部停止 |
 | checkpoint | 不等它（D9），把运行中的命令记进 checkpoint |

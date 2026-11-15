@@ -64,6 +64,34 @@ describe('Ink console colours', () => {
     expect(frame).toContain('\u001b[38;2;249;241;165m已排队 1 条');
   });
 
+  it('writes the background commands of a task behind its line in pale yellow, with their time', async () => {
+    const { store, ui } = setup();
+    const since = (ago: number) => new Date(Date.now() - ago).toISOString();
+    store.update({
+      status: '运行中',
+      activity: [
+        { agentRunId: 'arn_m', label: 'main', branch: '', phase: '等待子任务', since: since(0) },
+        {
+          agentRunId: 'arn_g',
+          label: 'worker grep',
+          branch: '  └─ ',
+          phase: '思考中',
+          since: since(3000),
+          jobs: { startedAt: [since(50_500), since(111_500), since(90_500), since(20_500)] },
+        },
+      ],
+      waiting: 0,
+      queued: [],
+    });
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+    // Each one's time, the longest first; past three, an ellipsis.
+    expect(frame).toMatch(/· 4 个后台任务 11[12]s \/ (90|91)s \/ (50|51)s \/ \.\.\./u);
+    expect(frame).toContain('\u001b[38;2;249;241;165m· 4 个后台任务');
+    // Without a background command, nothing is written behind the line.
+    expect(frame).not.toMatch(/main.*后台任务/u);
+  });
+
   it('says how full the context is on the status line, in whatever state it is', async () => {
     const { store, ui } = setup();
     store.update({ status: '等待输入', activity: [], waiting: 0, queued: [], context: 30 });

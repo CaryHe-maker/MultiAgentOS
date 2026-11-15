@@ -153,6 +153,7 @@ const EXPECTED = {
     'UndoRequest',
     'RecoverRunRequest',
     'ActivityEvent',
+    'BackgroundJobs',
     'AdmissionProjection',
     'AnswerAuthorizationRequest',
     'AnswerHumanRequest',

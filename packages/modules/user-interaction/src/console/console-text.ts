@@ -258,6 +258,16 @@ export const ConsoleText = Object.freeze({
     `消息太长（${(bytes / 1024).toFixed(0)} KB），超过 ${(limit / 1024).toFixed(0)} KB 的上限，没有发出。请缩短后再发。`,
   /** The last line of an activity area that does not fit the screen. */
   moreActivities: (count: number): string => `… 另有 ${String(count)} 项活动`,
+  /**
+   * Behind a task's line in the activity area: its background commands, and how long each has run,
+   * the longest first; past three, the rest is an ellipsis.
+   */
+  backgroundJobs: (seconds: readonly number[]): string => {
+    const longest = [...seconds].sort((a, b) => b - a);
+    const shown = longest.slice(0, 3).map((each) => `${String(each)}s`);
+    if (longest.length > 3) shown.push('...');
+    return `· ${String(longest.length)} 个后台任务 ${shown.join(' / ')}`;
+  },
   /** `/compact` is refused while the run is not waiting for input, or main is being compacted already. */
   compactNotNow: '暂时无法压缩：请等当前运行或正在进行的压缩结束后再试。',
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,

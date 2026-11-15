@@ -1,6 +1,7 @@
-import type { ActivityEvent } from '@multiagentos/contracts';
+import type { ActivityEvent, BackgroundJobs, UnitReport } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { RunActivity, type ActivityOutput } from './run-activity.js';
+import type { AttemptSpec } from './run-attempts.js';
 
 const setup = () => {
   const events: ActivityOutput[] = [];
@@ -58,5 +59,67 @@ describe('the activity of tasks (Orchestration 3.2, 4)', () => {
     activity.registered('agr_x', 'main');
     activity.sleeping('agr_x');
     expect(lines()).toEqual([['agr_x', undefined, undefined, 'ENDED']]);
+  });
+});
+
+describe('the background commands of a task (Orchestration 6.1)', () => {
+  let clock = 0;
+  const setupJobs = () => {
+    const events: ActivityOutput[] = [];
+    const activity = new RunActivity({
+      emit: (event) => void events.push(event),
+      now: () => new Date(clock),
+    });
+    const jobs = () =>
+      events
+        .filter((event): event is BackgroundJobs => event.type === 'BackgroundJobs')
+        .map(({ agentRunId, missionId, startedAt }) => [agentRunId, missionId, startedAt]);
+    return { activity, jobs };
+  };
+  const spec = (agentRunId: string) =>
+    ({
+      agentRunId,
+      unit: { executionKind: 'COMMAND' },
+      display: { toolName: 'run_command', argsSummary: 'sh diff.sh' },
+    }) as unknown as AttemptSpec;
+  const report = (agentRunId: string, unitAttemptId: string, job?: object) =>
+    ({
+      status: 'OK',
+      agentRunId,
+      unitAttemptId,
+      executionKind: 'COMMAND',
+      output: { exitCode: null, ...(job === undefined ? {} : { job }) },
+    }) as unknown as UnitReport;
+
+  it('counts a command moved to the background from when it started, until it ends', () => {
+    const { activity, jobs } = setupJobs();
+    activity.registered('agr_g', 'worker grep', 'agr_m', { missionId: 'msc_g' });
+    clock = 1000;
+    activity.running(spec('agr_g'), 'una_1', false);
+    clock = 600_000;
+    activity.reported(spec('agr_g'), report('agr_g', 'una_1', { jobKey: 'exe_1', promoted: true }));
+    clock = 700_000;
+    activity.running(spec('agr_g'), 'una_2', false);
+    activity.reported(
+      spec('agr_g'),
+      report('agr_g', 'una_2', { jobKey: 'exe_2', promoted: false }),
+    );
+    activity.jobEnded('exe_1');
+    activity.jobEnded('exe_2');
+    activity.jobEnded('exe_2');
+    expect(jobs()).toEqual([
+      ['agr_g', 'msc_g', [new Date(1000).toISOString()]],
+      ['agr_g', 'msc_g', [new Date(1000).toISOString(), new Date(700_000).toISOString()]],
+      ['agr_g', 'msc_g', [new Date(700_000).toISOString()]],
+      ['agr_g', 'msc_g', []],
+    ]);
+  });
+
+  it('says nothing of a command that ended in the foreground', () => {
+    const { activity, jobs } = setupJobs();
+    activity.registered('agr_x', 'main');
+    activity.running(spec('agr_x'), 'una_1', false);
+    activity.reported(spec('agr_x'), report('agr_x', 'una_1'));
+    expect(jobs()).toEqual([]);
   });
 });

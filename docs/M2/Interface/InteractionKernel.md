@@ -199,7 +199,7 @@ type KernelToInteractionEvent =
   | AuthorizationRequest | AuthorizationResolved
   | HumanRequest | HumanResolved
   | MessagePublished | RunStateChanged | ActivityEvent | RunFinished;
-  // ContextCompacted、CompactionFailed（第 3.4 节）、ExternalReadPaused（Kernel/Core 5h）
+  // ContextCompacted、CompactionFailed（第 3.4 节）、ExternalReadPaused（Kernel/Core 5h）、BackgroundJobs
 
 type AuthorizationRequest =
   | {
@@ -296,6 +296,13 @@ interface ActivityEvent {            // 只用于界面，由 Kernel 依据登�
   retry?: { attempt: number; retryAt: string };   // phase = 'RETRYING' 时必填：第几次技术重试、何时重试（M2Design 第 7.4 节）
   todos?: { total: number; done: number; current?: string };   // Workflow 经 updateActivity 交来的待办进度，原样转发
   at: string;
+}
+
+interface BackgroundJobs {           // 只用于界面：一个任务正在运行的后台命令（Orchestration 6.1），有变化就发
+  type: 'BackgroundJobs';
+  agentRunId: string;                // 启动它的 AgentRun
+  missionId?: string;                // 它的任务；活动区按任务计，任务换了新的一段也还在
+  startedAt: string[];               // 每一条开始运行的时刻（转到后台的命令从它开始运行时算）；空数组表示已经没有了
 }
 
 type ActivityPhase =

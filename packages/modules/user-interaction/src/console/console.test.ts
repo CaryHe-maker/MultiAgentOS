@@ -390,6 +390,95 @@ describe('Console', () => {
     ]);
   });
 
+  it('puts the background commands of a task behind its line, by task, until none is left', async () => {
+    const t = setup({ clock: { ms: 60_000 } });
+    await t.console.submit('hi');
+    const at = (ms: number) => new Date(ms).toISOString();
+    const activity = (agentRunId: string, label: string, missionId: string, parent?: string) =>
+      t.event({
+        type: 'ActivityEvent',
+        agentRunId,
+        missionId,
+        ...(parent === undefined ? {} : { parentMissionId: parent }),
+        label,
+        phase: 'THINKING',
+        at: at(0),
+      });
+    const jobs = () => t.live()?.activity.map((line) => [line.label, line.jobs]);
+    await activity('arn_main', 'main', 'msc_root');
+    await activity('arn_g1', 'worker grep', 'msc_grep', 'msc_root');
+    await t.event({
+      type: 'BackgroundJobs',
+      agentRunId: 'arn_g1',
+      missionId: 'msc_grep',
+      startedAt: [at(1000), at(2000)],
+    });
+    expect(jobs()).toEqual([
+      ['main', undefined],
+      ['worker grep', { startedAt: [at(1000), at(2000)] }],
+    ]);
+    // A new segment of the task keeps the jobs its task started.
+    await activity('arn_g2', 'worker grep', 'msc_grep', 'msc_root');
+    expect(jobs()?.[1]).toEqual(['worker grep', { startedAt: [at(1000), at(2000)] }]);
+    await t.event({
+      type: 'BackgroundJobs',
+      agentRunId: 'arn_g1',
+      missionId: 'msc_grep',
+      startedAt: [],
+    });
+    expect(jobs()).toEqual([
+      ['main', undefined],
+      ['worker grep', undefined],
+    ]);
+  });
+
+  it('shows the background commands of a task that delivered on its nearest ancestor still shown', async () => {
+    const t = setup({ clock: { ms: 60_000 } });
+    await t.console.submit('hi');
+    const at = (ms: number) => new Date(ms).toISOString();
+    const activity = (
+      agentRunId: string,
+      label: string,
+      phase: 'THINKING' | 'ENDED',
+      missionId: string,
+      parent?: string,
+    ) =>
+      t.event({
+        type: 'ActivityEvent',
+        agentRunId,
+        missionId,
+        ...(parent === undefined ? {} : { parentMissionId: parent }),
+        label,
+        phase,
+        at: at(0),
+      });
+    const jobs = () => t.live()?.activity.map((line) => [line.label, line.jobs]);
+    await activity('arn_main', 'main', 'THINKING', 'msc_root');
+    await activity('arn_lead', 'lead api', 'THINKING', 'msc_api', 'msc_root');
+    await activity('arn_w', 'worker store', 'THINKING', 'msc_store', 'msc_api');
+    await t.event({
+      type: 'BackgroundJobs',
+      agentRunId: 'arn_w',
+      missionId: 'msc_store',
+      startedAt: [at(3000)],
+    });
+    await t.event({
+      type: 'BackgroundJobs',
+      agentRunId: 'arn_main',
+      missionId: 'msc_root',
+      startedAt: [at(5000)],
+    });
+    // The worker delivers: its command runs on, and its lead shows it.
+    await activity('arn_w', 'worker store', 'ENDED', 'msc_store', 'msc_api');
+    expect(jobs()).toEqual([
+      ['main', { startedAt: [at(5000)] }],
+      ['lead api', { startedAt: [at(3000)] }],
+    ]);
+    // The lead delivers as well: main shows its own and the worker's, 1 + 1.
+    await activity('arn_lead', 'lead api', 'ENDED', 'msc_api', 'msc_root');
+    expect(jobs()).toEqual([['main', { startedAt: [at(3000), at(5000)] }]]);
+  });
+
   it('gives queued messages back when the run ends and offers to continue after BUDGET', async () => {
     const t = setup();
     await t.console.submit('hi');

@@ -329,6 +329,23 @@ export const ActivityEventSchema = Type.Union(
 );
 export type ActivityEvent = Static<typeof ActivityEventSchema>;
 
+/**
+ * The background commands a task has running now (Orchestration 6.1), only for the interface: the
+ * activity area shows how long each has run behind the task's line. Sent when they change; an
+ * empty `startedAt` says there are none any more.
+ */
+export const BackgroundJobsSchema = closed(
+  {
+    type: Type.Literal('BackgroundJobs'),
+    agentRunId: IdSchemas.agentRunId,
+    missionId: Type.Optional(IdSchemas.missionScopeId),
+    /** When each of them started; one moved to the background started when the command did. */
+    startedAt: Type.Array(TimestampSchema, { maxItems: 16 }),
+  },
+  'kernel.control.BackgroundJobs.v1',
+);
+export type BackgroundJobs = Static<typeof BackgroundJobsSchema>;
+
 export const RunFinishedSchema = Type.Union([...runEnd('RunFinished')], {
   $id: 'kernel.control.RunFinished.v1',
 });
@@ -386,6 +403,7 @@ export const KernelToInteractionEventSchema = Type.Union([
   MessagePublishedSchema,
   RunStateChangedSchema,
   ActivityEventSchema,
+  BackgroundJobsSchema,
   RunFinishedSchema,
   UndoConfirmationRequestedSchema,
   UndoCancelledSchema,

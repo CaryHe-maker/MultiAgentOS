@@ -1,13 +1,15 @@
 import {
   newId,
   type ActivityEvent,
+  type BackgroundJobs,
+  type CommandOutput,
   type ExecutionKind,
   type MessagePublished,
   type UnitReport,
 } from '@multiagentos/contracts';
 import type { AttemptSpec } from './run-attempts.js';
 
-export type ActivityOutput = ActivityEvent | MessagePublished;
+export type ActivityOutput = ActivityEvent | BackgroundJobs | MessagePublished;
 
 export interface RunActivityDeps {
   readonly emit: (event: ActivityOutput) => void;
@@ -38,6 +40,13 @@ export class RunActivity {
   /** Tasks asleep between segments: the line they keep, until the task ends. */
   readonly #sleeping = new Map<string, { agentRunId: string; label: string; parent?: string }>();
   readonly #todos = new Map<string, NonNullable<ActivityEvent['todos']>>();
+  /** When each command in flight started: a command moved to the background has run since then. */
+  readonly #commandStarts = new Map<string, string>();
+  /** The background commands running now, by job key, with the task that started them. */
+  readonly #jobs = new Map<
+    string,
+    { readonly agentRunId: string; readonly missionId?: string; readonly since: string }
+  >();
 
   public constructor(deps: RunActivityDeps) {
     this.#deps = deps;
@@ -121,6 +130,8 @@ export class RunActivity {
       case 'MESSAGE_PUBLISH':
         return;
       default:
+        if (spec.unit.executionKind === 'COMMAND')
+          this.#commandStarts.set(unitAttemptId, this.#deps.now().toISOString());
         this.#emit(spec.agentRunId, 'CALLING_TOOL', this.#unit(spec, unitAttemptId, 'RUNNING'));
     }
   }
@@ -184,6 +195,8 @@ export class RunActivity {
       return;
     }
     if (spec === undefined || NOT_TOOLS.has(report.executionKind)) return;
+    if (report.executionKind === 'COMMAND')
+      this.#jobStarted(report.agentRunId, report.unitAttemptId, report.output);
     this.#emit(report.agentRunId, 'CALLING_TOOL', {
       ...this.#unit(spec, report.unitAttemptId, 'DONE'),
       ...(report.fullRef === undefined ? {} : { fullRef: report.fullRef }),
@@ -237,6 +250,43 @@ export class RunActivity {
       label: asleep.label,
       phase: 'ENDED',
       at: this.#deps.now().toISOString(),
+    });
+  }
+
+  /** A command that runs on as a job: counted behind its task's line until it ends. */
+  #jobStarted(agentRunId: string, unitAttemptId: string, output: unknown): void {
+    const started = this.#commandStarts.get(unitAttemptId);
+    this.#commandStarts.delete(unitAttemptId);
+    const { job } = (output ?? {}) as Partial<CommandOutput>;
+    if (job === undefined) return;
+    const { missionId } = this.#missionFields(agentRunId);
+    const now = this.#deps.now().toISOString();
+    this.#jobs.set(job.jobKey, {
+      agentRunId,
+      ...(missionId === undefined ? {} : { missionId }),
+      since: job.promoted ? (started ?? now) : now,
+    });
+    this.#emitJobs(agentRunId, missionId);
+  }
+
+  /** A background command ended or was stopped (Orchestration 6.4). */
+  jobEnded(jobKey: string): void {
+    const job = this.#jobs.get(jobKey);
+    if (job === undefined) return;
+    this.#jobs.delete(jobKey);
+    this.#emitJobs(job.agentRunId, job.missionId);
+  }
+
+  #emitJobs(agentRunId: string, missionId: string | undefined): void {
+    const same = [...this.#jobs.values()].filter((job) =>
+      missionId === undefined ? job.agentRunId === agentRunId : job.missionId === missionId,
+    );
+    const startedAt = same.map((job) => job.since).sort();
+    this.#deps.emit({
+      type: 'BackgroundJobs',
+      agentRunId,
+      ...(missionId === undefined ? {} : { missionId }),
+      startedAt,
     });
   }
 

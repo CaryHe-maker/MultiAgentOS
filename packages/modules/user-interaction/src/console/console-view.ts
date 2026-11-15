@@ -37,6 +37,11 @@ export interface ActivityLine {
   readonly tool?: string;
   /** Present while a technical retry waits; the view counts down to `retryAt`. */
   readonly retry?: { readonly attempt: number; readonly retryAt: string };
+  /**
+   * The background commands this task started and that still run (Orchestration 6.1): when each
+   * started, so the view counts their seconds. Absent when there are none.
+   */
+  readonly jobs?: { readonly startedAt: readonly string[] };
 }
 
 /** The one item the input area asks about; the rest wait behind it in arrival order. */

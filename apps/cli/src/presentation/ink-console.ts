@@ -104,6 +104,18 @@ function seconds(from: string, now: number): number {
  * only reads as being hurried (docs/M2/Phase1Console.md 2.1, UI-3).
  */
 function activityText(line: ActivityLine, now: number): string {
+  const jobs = jobsText(line, now);
+  return jobs === undefined ? lineText(line, now) : `${lineText(line, now)} ${jobs}`;
+}
+
+/** The background commands of the task, behind its line: none, no text. */
+function jobsText(line: ActivityLine, now: number): string | undefined {
+  return line.jobs === undefined
+    ? undefined
+    : ConsoleText.backgroundJobs(line.jobs.startedAt.map((startedAt) => seconds(startedAt, now)));
+}
+
+function lineText(line: ActivityLine, now: number): string {
   const phase =
     line.retry !== undefined
       ? [
@@ -122,7 +134,14 @@ function Activity({
   readonly line: ActivityLine;
   readonly now: number;
 }): ReactElement {
-  return h(Text, { color: 'gray', wrap: 'truncate-end' }, activityText(line, now));
+  const jobs = jobsText(line, now);
+  // What runs in the background is the system's to say: in its yellow, behind the gray line.
+  return h(
+    Text,
+    { color: 'gray', wrap: 'truncate-end' },
+    lineText(line, now),
+    ...(jobs === undefined ? [] : [' ', h(Text, { color: SYSTEM_COLOR }, jobs)]),
+  );
 }
 
 function useClock(running: boolean): number {

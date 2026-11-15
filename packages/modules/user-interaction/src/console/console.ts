@@ -219,6 +219,13 @@ export class Console {
   /** The run ended from outside (INTERRUPTED): the next message opens the next run (5.2). */
   #continueOnInput = false;
   readonly #activity = new Map<string, ActivityLine>();
+  /** The background commands of each task (by task, or by AgentRun outside a Mission). */
+  readonly #jobs = new Map<string, NonNullable<ActivityLine['jobs']>>();
+  /**
+   * The parent of every task seen in this run, kept after its line goes: the background commands
+   * of a task that delivered run on, and are shown on its nearest ancestor still in the tree.
+   */
+  readonly #parentOf = new Map<string, string>();
   /** Every AgentRun of the current run, in the order it appeared (`/timeline`). */
   readonly #timeline: TimelineEntry[] = [];
   #timelineRun: string | undefined;
@@ -423,8 +430,11 @@ export class Console {
     const generating = new Map(
       [...this.#generating.values()].map((call) => [call.agentRunId, call]),
     );
+    const jobsByLine = this.#jobsByLine();
     return inTree(
-      [...this.#activity.values()].map((line) => {
+      [...this.#activity.values()].map((each) => {
+        const jobs = jobsByLine.get(each.missionId ?? each.agentRunId);
+        const line = jobs === undefined ? each : { ...each, jobs };
         if (line.waitsForUser === true) return line;
         const startedAt = answering.get(line.agentRunId);
         if (startedAt !== undefined)
@@ -439,6 +449,25 @@ export class Console {
             };
       }),
     ).map(({ item, branch }) => ({ ...item, branch }));
+  }
+
+  /**
+   * The background commands each line shows: a task's own, and those of tasks below it whose
+   * lines are gone (they delivered, their commands run on), all together.
+   */
+  #jobsByLine(): Map<string, NonNullable<ActivityLine['jobs']>> {
+    const shown = new Set(
+      [...this.#activity.values()].map((line) => line.missionId ?? line.agentRunId),
+    );
+    const byLine = new Map<string, NonNullable<ActivityLine['jobs']>>();
+    for (const [key, jobs] of this.#jobs) {
+      let at: string | undefined = key;
+      while (at !== undefined && !shown.has(at)) at = this.#parentOf.get(at);
+      if (at === undefined) continue;
+      const before = byLine.get(at)?.startedAt ?? [];
+      byLine.set(at, { startedAt: [...before, ...jobs.startedAt] });
+    }
+    return byLine;
   }
 
   /** `/timeline`: when each AgentRun of this run started and ended, children below parents. */
@@ -1313,8 +1342,10 @@ export class Console {
         this.#activity.delete(COMPACTION_LINE);
         if (event.state === 'INTERRUPTING') this.#aborting = true;
         // The tree stays while the run is held, so that a note can still name its task.
-        if (event.state === 'AWAITING_INPUT' || event.state === 'CONVERGING')
+        if (event.state === 'AWAITING_INPUT' || event.state === 'CONVERGING') {
           this.#activity.clear();
+          this.#jobs.clear();
+        }
         if (event.state === 'PAUSED') this.#hint = text.paused;
         else if (event.state === 'RUNNING') this.#hint = undefined;
         break;
@@ -1449,6 +1480,8 @@ export class Console {
         // A segment ends when its task sleeps, as when it ends.
         if ((event.phase === 'ENDED' || event.phase === 'SLEEPING') && entry !== undefined)
           entry.to = event.at;
+        const parent = event.parentMissionId ?? event.parentAgentRunId;
+        if (parent !== undefined) this.#parentOf.set(event.missionId ?? event.agentRunId, parent);
         // A task woken again: its new segment takes the place of the line it slept on.
         if (event.missionId !== undefined)
           for (const [agentRunId, line] of this.#activity)
@@ -1499,6 +1532,12 @@ export class Console {
             text: text.earlyEnd[event.wrapUpReason] ?? event.wrapUpReason,
           });
         break;
+      case 'BackgroundJobs': {
+        const key = event.missionId ?? event.agentRunId;
+        if (event.startedAt.length === 0) this.#jobs.delete(key);
+        else this.#jobs.set(key, { startedAt: event.startedAt });
+        break;
+      }
       case 'RunFinished':
         this.#runFinished(event);
         break;
@@ -1593,6 +1632,8 @@ export class Console {
     this.#runState = 'CLOSED';
     this.#aborting = false;
     this.#activity.clear();
+    this.#jobs.clear();
+    this.#parentOf.clear();
     this.#openRequest = undefined;
     this.#pending.splice(0);
     this.#notice(text.finished[event.closeReason]);
