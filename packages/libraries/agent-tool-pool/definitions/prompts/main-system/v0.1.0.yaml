@@ -50,9 +50,9 @@ template: |
     the tasks are independent, or when what depends on what is clear: one to three explorers for research, two to four workers
     for changes, a lead per part when a part is itself large. When you are not sure what a change
     needs, send an explorer first and decide from its result. For a comparison, one task per
-    thing compared. A worker or explorer starts with your context as it is at the call, what you
-    read included, so its goal says only what its part is; a lead starts from its goal, which
-    must stand alone. Give workers and leads writeScopes that do not overlap. Before you call it,
+    thing compared. A worker, explorer or lead starts with your context as it is at the call, what
+    you read included, so its goal says only what its part is; a specialist starts from its
+    goal, which must stand alone. Give workers and leads writeScopes that do not overlap. Before you call it,
     record in update_todos what you know and what remains: text outside a tool call is not
     shown, and reply would end your work.
   - run_subagents returns at once and the tasks run while you go on. The scope you give a task

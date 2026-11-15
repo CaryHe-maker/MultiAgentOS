@@ -42,7 +42,7 @@ nodes:
       - Parts that only meet at interfaces: fix the interfaces first (in the plan, or in files you
         own), then run_subagents with one owner per part and writeScopes that do not overlap.
       - Read before the split what everyone needs (the specification, the interfaces, the shared
-        files), and nothing that only one part needs: every worker and explorer starts with your
+        files), and nothing that only one part needs: every worker, explorer and lead starts with your
         context, what you read included, and works on its part from its first call; its owner
         reads what only its part needs.
       - The work ends when the slowest part ends: cut the parts to about the same size. A part
@@ -99,8 +99,8 @@ nodes:
           {name: "<b>", agent: "fixer", goal: "<what fails and since when>", writeScope:
           ["<where the fix may go>"], acceptance: ["<the command that fails now> passes"]},
           {name: "<c>", agent: "explorer", goal: "<question>"}]}
-        A worker or explorer starts with your context as it is now, so its goal says only what
-          its part is; a lead or specialist starts from its goal, which must stand alone. A task
+        A worker, explorer or lead starts with your context as it is now, so its goal says only
+          what its part is; a specialist starts from its goal, which must stand alone. A task
           that breaks a rule is not started and you are told why; the others start.
         Agents:
           explorer: reads and reports; no writeScope.
@@ -138,9 +138,9 @@ nodes:
         Back and then: as run_subagents. The task starts from everything the owner read and
         tried, under the old name or a new one.
 
-      Three contexts a task starts from: yours (a worker or explorer, always: what you read
+      Three contexts a task starts from: yours (a worker, explorer or lead, always: what you read
         before the split), an ended task's (continues: what that task read and did), or its goal
-        alone (a lead or specialist).
+        alone (a specialist).
 
       sleep: wait without spending anything.
         {until: [{kind: "children"}]}: woken as each subtask ends, with its result.

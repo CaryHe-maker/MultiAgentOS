@@ -286,9 +286,14 @@ export function scriptedAgents(
       // A task that inherits a context (D35) is told who it is by the answer to the call that
       // started it, after the history of the task it comes from.
       const all = request.messages.map((message) => textOf(message)).join('\n');
+      // A task of a task that inherited has its caller's answer above its own: the last one
+      // names it (D58).
+      const inherited = [...byTask.keys()]
+        .map((name) => ({ name, at: all.lastIndexOf(`you are a different task: "${name}"`) }))
+        .filter((each) => each.at >= 0)
+        .sort((left, right) => right.at - left.at)[0]?.name;
       const task =
-        [...byTask.keys()].find((name) => all.includes(`you are a different task: "${name}"`)) ??
-        [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
+        inherited ?? [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
       // A summary of a task's history carries the task's name too: it still goes to the summaries.
       const own = agent === 'summary' ? undefined : task;
       const key = own ?? agent;

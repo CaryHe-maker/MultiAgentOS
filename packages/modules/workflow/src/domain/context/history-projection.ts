@@ -185,7 +185,9 @@ function inheritedText(task: TaskScope): string {
     `From here on you are a different task: "${task.name}", a ${inherited?.as ?? 'worker'} that the task above started with this call. Everything above is what that task had read and done up to the call. You have it so that you need not read it again; it is not your work to continue.`,
     'What changes for you:',
     '- You do NOT follow the playbook or the phases above, and you do not finish that task. You do only the goal below.',
-    '- You start no subtasks: run_subagents and stop_subagents are refused. You do the work yourself.',
+    inherited?.as === 'lead'
+      ? '- Your part is yours to split: start subtasks of your own with run_subagents; they start with your context.'
+      : '- You start no subtasks: run_subagents and stop_subagents are refused. You do the work yourself.',
     inherited?.as === 'explorer' || task.writeScope.length === 0
       ? '- You change no file: you read, search and report.'
       : `- You may write only: ${task.writeScope.join(', ')}. Everything else is read-only for you.`,
@@ -222,8 +224,20 @@ function projectInherited(
   options: ProjectionOptions,
 ): readonly ContextHistoryEntry[] {
   const before = records.filter((record) => record.seq < inherited.cut);
-  // No reminder of that task's unanswered requests: they are not this task's to answer.
-  const above = projectOwn(before, inherited.from, { ...options, final: true });
+  // No reminder of that task's unanswered requests: they are not this task's to answer. A task
+  // that itself started with its caller's context passes on all of it (D58): a worker of a lead
+  // sees what the root read, what the lead read, and the lead's call.
+  const fromTask = inherited.from.kind === 'NODE' ? inherited.from.task : undefined;
+  const aboveEntries =
+    inherited.from.kind === 'NODE' && fromTask?.inherited !== undefined
+      ? projectInherited(before, inherited.from, fromTask, fromTask.inherited, {
+          ...options,
+          final: true,
+        })
+      : (() => {
+          const own = projectOwn(before, inherited.from, { ...options, final: true });
+          return applyCompactions(own.entries, own.compaction);
+        })();
   // The calls of the turn that started this task: each needs its answer, or the history stops.
   const turn = [...before]
     .reverse()
@@ -233,7 +247,7 @@ function projectInherited(
         record.toolCalls.some((call) => call.toolCallId === inherited.toolCallId),
     );
   const answered = new Set(
-    above.entries.flatMap((entry) =>
+    aboveEntries.flatMap((entry) =>
       (entry.kind === 'FEEDBACK' ||
         entry.kind === 'TOOL_RESULT' ||
         entry.kind === 'HUMAN_ANSWER') &&
@@ -262,7 +276,7 @@ function projectInherited(
   const own = projectOwn(records, { ...scope, task: plain }, options);
   return applyCompactions(
     [
-      ...applyCompactions(above.entries, above.compaction),
+      ...aboveEntries,
       ...told,
       // Its task is told by the answer above, and it knows the plan from the context it has.
       ...own.entries.filter(

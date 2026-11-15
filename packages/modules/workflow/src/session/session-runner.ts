@@ -2712,7 +2712,9 @@ export class SessionRunner {
       projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId) ??
         ({} as GraphNodeRecord),
     );
-    if (ownTask?.spawn?.inherits !== undefined)
+    // A task that runs as its caller's Agent for a phase is not a lead; a lead that started with
+    // its caller's context is, and splits its part (D58).
+    if (ownTask?.spawn?.inherits !== undefined && ownTask.spawn.inherits.as !== 'lead')
       return this.#answerControl(
         workflowRunId,
         active,
@@ -2847,10 +2849,10 @@ export class SessionRunner {
       for (const task of checked.plan.tasks) {
         if (phaseInherits !== undefined)
           inherit.set(task.name, { as: phaseInherits, runAs: active.agentId });
-        // A worker or explorer starts with its caller's context, which holds what the caller
-        // read and its call (D56); a lead, a specialist and a task taken up again do not.
+        // A worker, explorer or lead starts with its caller's context, which holds what the
+        // caller read and its call (D56, D58); a specialist and a task taken up again do not.
         else if (
-          (task.agent === 'worker' || task.agent === 'explorer') &&
+          (task.agent === 'worker' || task.agent === 'explorer' || task.agent === 'lead') &&
           task.continues === undefined &&
           !specialists.has(task.name)
         )

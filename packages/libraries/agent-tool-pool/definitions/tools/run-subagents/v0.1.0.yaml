@@ -29,8 +29,8 @@ modelDescription: >-
   scope you give a task is lent to it: until it ends only it writes there, you write elsewhere,
   and your commands see it read-only. commands false lends the scope without commands. role is
   one line of what the task is responsible for (frontend, backend storage), which every task of
-  the work sees. A worker or explorer starts with your context at this call, so its goal says
-  only what its part is; a lead or specialist starts from its goal. With continues a task
+  the work sees. A worker, explorer or lead starts with your context at this call, so its goal
+  says only what its part is; a specialist starts from its goal. With continues a task
   starts from the history of an ended task of yours (same agent, any name), your goal being what
   it is asked now: send a defect back to its owner this way. A task that breaks a rule is not
   started, and you are told why; the others start. Tasks talk to

@@ -463,3 +463,85 @@ real('a tester after the build (D55)', () => {
     TIMEOUT,
   );
 });
+
+real('a lead that starts with the context of the root (D58)', () => {
+  it(
+    'splits its part, and its worker starts with all of it: what the root read and the lead’s call',
+    async () => {
+      const provider = scriptedAgents(
+        { main: [] },
+        {
+          part: [
+            tool('run_subagents', {
+              tasks: [
+                {
+                  name: 'w',
+                  agent: 'worker',
+                  goal: 'write fixed into src/value.txt',
+                  writeScope: ['src'],
+                },
+              ],
+            }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            tool('finish_subagent', {
+              summary: 'w wrote fixed',
+              status: 'done',
+              changedFiles: [],
+              validation: [{ command: check, exitCode: 0 }],
+            }),
+          ],
+          w: [
+            tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
+            tool('run_command', { command: check }),
+            tool('finish_subagent', {
+              summary: 'wrote fixed',
+              status: 'done',
+              changedFiles: ['src/value.txt'],
+              validation: [{ command: check, exitCode: 0 }],
+            }),
+          ],
+        },
+      );
+      provider.add(
+        tool('read_file', { path: 'src/value.txt' }),
+        tool('run_subagents', {
+          plan: 'One part: the value, by a lead that splits it.',
+          tasks: [{ name: 'part', agent: 'lead', goal: 'the value part', writeScope: ['src'] }],
+        }),
+        tool('sleep', { until: [{ kind: 'children' }] }),
+        tool('reply', { text: 'done through a lead' }),
+      );
+      const run = await missionOn('make the value check pass', provider, {
+        'src/value.txt': 'broken-before-the-fix\n',
+      });
+      expect(run.code).toBe(0);
+      expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
+      const log = await logOf(run.dataDir);
+      const spawned = log
+        .filter((record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN')
+        .flatMap((record) => record['nodes'] as Record<string, unknown>[]);
+      const inheritsOf = (name: string) =>
+        (spawned.find((node) => node['name'] === name)?.['spawn'] as Record<string, unknown>)[
+          'inherits'
+        ];
+      expect(inheritsOf('part')).toMatchObject({ as: 'lead' });
+      expect(inheritsOf('w')).toMatchObject({ as: 'worker' });
+      const first = (name: string) =>
+        provider.requests
+          .find((request) =>
+            request.messages.some((message) =>
+              textOf(message).includes(`you are a different task: "${name}"`),
+            ),
+          )
+          ?.messages.map((message) => textOf(message))
+          .join('\n') ?? '';
+      expect(first('part')).toContain('broken-before-the-fix');
+      expect(first('part')).toContain('Your part is yours to split');
+      // The worker of the lead has the root's reading and the lead's own task above its own.
+      expect(first('w')).toContain('broken-before-the-fix');
+      expect(first('w')).toContain('you are a different task: "part"');
+      expect(first('w')).toContain('Your goal: write fixed into src/value.txt');
+    },
+    TIMEOUT,
+  );
+});
