@@ -47,22 +47,54 @@ export interface CallResult {
   readonly toolCallId?: string;
   /** The handover that carries the result and what the task listed, and what is in it. */
   readonly referenceId?: string;
-  readonly references?: readonly { readonly toolCallId: string; readonly tool: string }[];
+  readonly references?: readonly HandedReference[];
 }
 
-/** What a task handed over, as an entry shows it: the reference id and the items of the handover. */
+export interface HandedReference {
+  readonly toolCallId: string;
+  readonly tool: string;
+  readonly previewRef?: ArtifactRef;
+}
+
+/**
+ * What a task handed over, as an entry shows it: the reference id, the items of the handover, and
+ * the preview of each tool result, which the caller sees with the result (D54).
+ */
 export function handoverFieldsOf(
   records: readonly SessionLogRecord[],
   outcome: TaskOutcome,
-): { referenceId?: string; references?: { toolCallId: string; tool: string }[] } {
+): { referenceId?: string; references?: HandedReference[] } {
   const handover =
     outcome.referenceId === undefined ? undefined : registeredOf(records, outcome.referenceId);
   return handover === undefined
     ? {}
     : {
         referenceId: handover.referenceId,
-        references: handover.items.map(({ toolCallId, tool }) => ({ toolCallId, tool })),
+        references: handover.items.map(({ toolCallId, tool }) => {
+          const previewRef = previewOf(records, toolCallId);
+          return { toolCallId, tool, ...(previewRef === undefined ? {} : { previewRef }) };
+        }),
       };
+}
+
+/** The preview of a tool call's result: what its caller saw, never the full output. */
+function previewOf(
+  records: readonly SessionLogRecord[],
+  toolCallId: string,
+): ArtifactRef | undefined {
+  const submitted = records.find(
+    (record) =>
+      record.type === 'UNIT_SUBMITTED' &&
+      record.inputSource.kind === 'TOOL_CALL' &&
+      record.inputSource.toolCallId === toolCallId,
+  );
+  if (submitted?.type !== 'UNIT_SUBMITTED') return undefined;
+  const completed = records.find(
+    (record) => record.type === 'UNIT_COMPLETED' && record.requestId === submitted.requestId,
+  );
+  return completed?.type === 'UNIT_COMPLETED' && completed.status === 'OK'
+    ? completed.outputRef
+    : undefined;
 }
 
 /**

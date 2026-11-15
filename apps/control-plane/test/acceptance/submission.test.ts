@@ -386,6 +386,13 @@ real('a task that starts with the context of the root (D53)', () => {
       expect(told).toContain('Your goal: write fixed into src/value.txt');
       expect(JSON.stringify(first?.tools)).not.toContain('run_subagents');
       expect(JSON.stringify(first?.tools)).toContain('finish_subagent');
+      // Its last check after its last change goes with its result, shown there (D54): the root
+      // reads it instead of looking it up or running it again.
+      const result = said.slice(said.lastIndexOf('Result of task fixer'));
+      expect(result).toMatch(/the system saw \S+ \(run_command\) exit 0 after its last change/u);
+      expect(result).toMatch(
+        /Tool result ref_\d+\/\S+ \(run_command\) of this task, as it saw it:/u,
+      );
     },
     TIMEOUT,
   );

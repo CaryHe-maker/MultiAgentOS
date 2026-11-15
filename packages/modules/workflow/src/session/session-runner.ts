@@ -277,6 +277,11 @@ interface ActiveAgent {
   readonly changed: readonly string[];
   /** Files changed after the last successful command: a worker should check its work. */
   readonly unchecked: boolean;
+  /**
+   * The call of the last command that exited 0 after its last change, if any (D54): handed over
+   * with its result, so the caller reads that check instead of running it again.
+   */
+  readonly lastCheck?: string | undefined;
   readonly completionAsked: boolean;
 }
 
@@ -1631,6 +1636,16 @@ export class SessionRunner {
     };
   }
 
+  /** The tool call a unit was submitted for, by its request. */
+  #toolCallOf(requestId: string): string | undefined {
+    for (let index = this.#records.length - 1; index >= 0; index -= 1) {
+      const record = this.#records[index];
+      if (record?.type === 'UNIT_SUBMITTED' && record.requestId === requestId)
+        return record.inputSource.kind === 'TOOL_CALL' ? record.inputSource.toolCallId : undefined;
+    }
+    return undefined;
+  }
+
   /** The node a task was started by: itself, or the first segment of its task. */
   #taskNodeOf(workflowRunId: string, node: GraphNodeRecord): GraphNodeRecord | undefined {
     if (node.spawn !== undefined) return node;
@@ -2053,12 +2068,14 @@ export class SessionRunner {
       const ranClean =
         report.executionKind === 'COMMAND' &&
         (report.output as { readonly exitCode?: number }).exitCode === 0;
+      const wrote = (WRITE_KINDS as readonly string[]).includes(report.executionKind);
+      const call = ranClean ? this.#toolCallOf(report.requestId) : undefined;
+      const lastCheck = call ?? (wrote ? undefined : found.lastCheck);
       active = {
         ...found,
         changed: [...new Set([...found.changed, ...(report.changedFiles ?? [])])],
-        unchecked: ranClean
-          ? false
-          : found.unchecked || (WRITE_KINDS as readonly string[]).includes(report.executionKind),
+        unchecked: ranClean ? false : found.unchecked || wrote,
+        lastCheck,
       };
       this.#agents.set(report.agentRunId, active);
     }
@@ -2300,13 +2317,23 @@ export class SessionRunner {
     const finished = finishedOutcome(args, task.criteria, active.changed);
     // Its result and the tool results it listed are handed over: those that pass, the others are
     // only told of.
+    // Its last check goes with it, whether it listed it or not (D54).
+    const listed = [...(args.references ?? [])];
+    if (active.lastCheck !== undefined && !listed.includes(active.lastCheck))
+      listed.push(active.lastCheck);
     const handed = await this.#hand(
       workflowRunId,
       active,
       { toolCallId, ref: ending.source.modelOutputRef },
-      args.references ?? [],
+      listed,
     );
-    const outcome = { ...finished, notes: [...finished.notes, ...handed.notes] };
+    const attested =
+      active.lastCheck === undefined
+        ? []
+        : [
+            `the system saw ${active.lastCheck} (run_command) exit 0 after its last change; its output is shown below`,
+          ];
+    const outcome = { ...finished, notes: [...finished.notes, ...attested, ...handed.notes] };
     await this.#endAgentRun(workflowRunId, active, 'ENDED');
     await this.#endNode(
       workflowRunId,

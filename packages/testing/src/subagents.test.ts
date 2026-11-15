@@ -452,6 +452,8 @@ describe('run_subagents', () => {
     expect(joined?.[0]?.notes).toEqual([
       'criterion 0 not_met: it builds',
       'changed but not reported: src/a.ts',
+      // Its check after its last change goes with its result (D54).
+      'the system saw call_1 (run_command) exit 0 after its last change; its output is shown below',
     ]);
   });
 

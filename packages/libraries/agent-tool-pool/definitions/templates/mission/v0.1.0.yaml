@@ -125,10 +125,13 @@ nodes:
         writeScopes of tasks that can run at once never overlap; dependsOn orders tasks you know
           must wait.
         Back: at once, "started". Each result arrives later at the end of your history: a summary,
-          the report when it is short, ref_N references to read the rest with read_output. A
-          specialist's is one report: done, partial (with what is left and why) or failed.
-        Then: work on what is yours, or sleep {until: [{kind: "children"}]}. Check each result
-          against its acceptance (run the check it names) before you build on it.
+          the report when it is short, and the output of the last check the task ran after its
+          last change, which the system saw exit 0 and shows with the result. A specialist's is
+          one report: done, partial (with what is left and why) or failed.
+        Then: work on what is yours, or sleep {until: [{kind: "children"}]}. Read each result
+          against its acceptance: the check shown with it is the evidence, so do not run it
+          again; run a check yourself only when none is shown or it does not cover the
+          acceptance.
 
       continues: give a finished part back to its owner.
         Call: run_subagents {tasks: [{name: "<owner, or a new name>", agent: "<same agent>",
@@ -173,8 +176,9 @@ nodes:
          than four) and, for a specification, a tester in the same call. Each part's acceptance
          says which sections of the specification it covers and how its owner checks them.
       4. sleep until children and messages. Answer requests; inform the tasks an answer touches.
-      5. Check each result as it comes back. A defect its owner understands: continues. A small
-         one in a file nobody holds: fix it yourself.
+      5. Read each result as it comes back, with the check the system shows for it; run nothing
+         that check already shows. A defect its owner understands: continues. A small one in a
+         file nobody holds: fix it yourself.
       6. When the parts are back: an integrator when the whole fails in ways you cannot place; a
          fixer for one failure with an unknown cause; a reviewer only for what would be costly to
          get wrong and no check covers.

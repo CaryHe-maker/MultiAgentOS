@@ -94,7 +94,15 @@ export const ContextHistoryEntrySchema = Type.Union(
       /** What the task handed over, read by `read_output` as `referenceId/toolCallId`. */
       referenceId: Type.Optional(ReferenceIdSchema),
       references: Type.Optional(
-        Type.Array(closed({ toolCallId: ToolCallIdSchema, tool: text(128) }), { maxItems: 20 }),
+        Type.Array(
+          closed({
+            toolCallId: ToolCallIdSchema,
+            tool: text(128),
+            /** The preview of that tool result, shown with the result (D54); never the full output. */
+            previewRef: Type.Optional(ArtifactRefSchema),
+          }),
+          { maxItems: 20 },
+        ),
       ),
     }),
     /** What the user answered to `ask_user`: the result of that call, the text in an artifact. */

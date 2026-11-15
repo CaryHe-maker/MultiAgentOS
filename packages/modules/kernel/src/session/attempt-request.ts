@@ -171,6 +171,13 @@ type Schema = Parameters<typeof validate>[0];
 
 /** What of the user's answer to `ask_user` the model is shown; the rest is cut. */
 const ANSWER_SHOWN_CHARS = 8000;
+/** What of a tool result a task handed over is shown with its result (D54): its end, which says how it ended. */
+const HANDED_SHOWN_CHARS = 6000;
+
+function handedShown(text: string, name: string): string {
+  if (text.length <= HANDED_SHOWN_CHARS) return text;
+  return `[cut: the first ${String(text.length - HANDED_SHOWN_CHARS)} of ${String(text.length)} characters are left out; read_output ${name} reads them]\n${text.slice(-HANDED_SHOWN_CHARS)}`;
+}
 /** The estimate may be low by this much; a reservation must still hold (Kernel/Monitor 3.2). */
 const RESERVED_INPUT_SHARE = 1.05;
 
@@ -581,18 +588,26 @@ ${shown}`,
               : subagentShownText(report, name),
           );
         }
-        // What the task handed over is not shown: it is read when wanted, by its reference.
+        // What the task handed over is shown with it, as the task saw it (D54), so the caller
+        // reads the evidence here instead of looking it up or running the check again; what is
+        // longer is read by its reference.
         const { referenceId } = entry;
         const handed = (entry.references ?? []).filter(
           (each) => each.toolCallId !== entry.toolCallId,
         );
-        if (referenceId !== undefined && handed.length > 0)
-          lines.push(
-            'Tool results of this task that you may read with read_output (not shown here):',
-            ...handed.map(
-              (each) => `- ${referenceName(referenceId, each.toolCallId)} (${each.tool})`,
-            ),
-          );
+        if (referenceId !== undefined)
+          for (const each of handed) {
+            const name = referenceName(referenceId, each.toolCallId);
+            const preview =
+              each.previewRef === undefined || this.#deps.artifacts.isFullOutput(each.previewRef)
+                ? undefined
+                : await this.#text(each.previewRef);
+            lines.push(
+              preview === undefined
+                ? `Tool result ${name} (${each.tool}) of this task, read with read_output.`
+                : `Tool result ${name} (${each.tool}) of this task, as it saw it:\n${handedShown(preview, name)}`,
+            );
+          }
         return { ...base, kind: 'NOTE', text: lines.join('\n') };
       }
       case 'MESSAGE': {
