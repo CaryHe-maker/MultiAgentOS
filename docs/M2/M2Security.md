@@ -56,6 +56,7 @@
 | 借命令名单之外的写法绕过 | 名单只是界面分类，不是安全边界；安全边界是网络隔离与只读挂载。解析失败、命令名不是字面量、含命令替换时，名单匹配取语法树与原始文字的并集，且不提供"均允许" | ExecutorSet 第 5c 节 |
 | 批准之后被换成别的命令 | `approvalDigest`：询问展示的内容参与计算，Supervisor 启动前重算，不一致 `APPROVAL_MISMATCH`；启动前复查工作目录与可写根目录不是符号链接 | Interface/KernelSupervisor 第 3 节 |
 | 沙盒不可用时静默放行 | 缺省 `deny`：`run_command` 不出现；`ask-unisolated` 时每条命令注明"未隔离"、只能单次允许，所有命令视为全局屏障 | Supervisor 第 5 节 |
+| 未隔离的命令改动别的任务的文件 | 内核支持 Landlock 时，未隔离命令的写入限制在任务自己的可写根目录、系统临时目录、`/dev` 与家目录下的缓存（D79）；不支持时不强制 | KernelSupervisor 第 6 节 |
 | 命令超时后进程残留、仍在改文件 | 进程组 SIGTERM → SIGKILL；PID 命名空间使外层结束即全部结束；仍无法确认时 `STOP_UNCONFIRMED` 停机 | SystemFaultHandling |
 | 内存耗尽使进程被系统杀死 | Monitor 采样，WARNING 收尾、DANGER 中断收敛后受控退出（退出码 75） | Monitor 第 4a 节 |
 | 命令输出夹带提示注入 | 输出是工具结果，不获得指令权威；预览与完整输出保持来源标记 | 同 3 节 |

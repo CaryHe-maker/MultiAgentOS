@@ -26,6 +26,7 @@ import {
 } from '@multiagentos/contracts';
 import { PRLIMIT_PATH, buildBwrapArgs } from './bwrap-args.js';
 import { sanitizeGitConfig } from './git-config.js';
+import { landlockArgs, landlockWritable, probeLandlock } from './landlock.js';
 
 /**
  * Starts a command in `bwrap` and ends it (M2Design 4.7, 6.1; Kernel/Supervisor 5). It checks
@@ -52,6 +53,11 @@ export interface SandboxRunnerDeps {
   readonly maxFileBytes?: number;
   /** Memory a command may fill; default half of the machine's memory. */
   readonly maxDataBytes?: number;
+  /**
+   * The Python that restricts the writes of an unisolated command with Landlock (D79); probed
+   * when not given, `false` to run such commands without it.
+   */
+  readonly landlock?: string | false;
 }
 
 export interface TrackedSandboxRunner extends SandboxRunner {
@@ -59,6 +65,8 @@ export interface TrackedSandboxRunner extends SandboxRunner {
   killAll(): void;
   /** Number of commands still running. */
   active(): number;
+  /** Whether an unisolated command writes only where its task may (Landlock, D79). */
+  readonly unisolatedWritesEnforced: boolean;
 }
 
 const STATUS_FD = 3;
@@ -203,6 +211,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
   const hostEnv = deps.hostEnv ?? process.env;
   const bwrap = deps.bwrapPath ?? 'bwrap';
   const tmpSizeSupported = supportsTmpfsSize(bwrap);
+  const landlock = deps.landlock === false ? undefined : (deps.landlock ?? probeLandlock());
 
   const run: SandboxRunner['run'] = (options) =>
     new Promise<SandboxRunResult>((resolve, reject) => {
@@ -255,8 +264,15 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       });
       let child: ChildProcess;
       try {
+        // Without isolation the writes are still held to the task's (D79), where Landlock works.
+        const shell = deps.shell ?? '/bin/bash';
+        const plain = { file: shell, args: ['-c', command] };
+        const started =
+          landlock === undefined
+            ? plain
+            : landlockArgs(landlock, landlockWritable(scope.profile, deps.home), shell, command);
         child = unisolated
-          ? spawn(deps.shell ?? '/bin/bash', ['-c', command], {
+          ? spawn(started.file, started.args, {
               cwd: workdirOf(scope),
               detached: true,
               shell: false,
@@ -471,6 +487,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
       }
     },
     active: () => live.size,
+    unisolatedWritesEnforced: landlock !== undefined,
   };
 }
 

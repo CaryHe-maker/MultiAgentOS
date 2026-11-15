@@ -107,6 +107,8 @@ Supervisor 上报 `ExecutionFact(STOP_UNCONFIRMED)`；Core 收到后经 `reportS
 
 **可用性探测**：Session 开始时以真实的 profile 运行一次 `/bin/true`（仓库根目录为工作目录）。结果 `SandboxProbe { available: boolean; backend; reason?: 'NO_BWRAP' | 'USERNS_DENIED' | 'PROFILE_FAILED'; hint?: string }` 写入 `SESSION_STARTED` 的 `sandbox`（`state`: `ISOLATED`、`UNISOLATED`、`UNAVAILABLE`，不可用时带 `reason`）与每个 Session 的审计（`SANDBOX_PROBED`）；模型在运行时上下文中看到同一状态。不可用且 `sandbox.unavailable = deny` 时，命令工具不提供给任何 Agent。
 
+**未隔离命令的写入限制（D79）**：`UNISOLATED` 的命令不再直接以 `bash -c` 启动，而是先由一个 Python 小程序（`ctypes`，以 `python3 -I -c` 传入，不安装文件）用 Landlock 把写入限制在：该任务存在的可写根目录、`/tmp`、`/var/tmp`、`/dev`、家目录下的 `.cache` 与 `.npm`，再在同一进程里 `exec` 那个 shell（进程号不变，停止与进程组照旧）；限制对命令启动的所有子进程都有效，读取不受限。Landlock 不需要特权，也不需要用户命名空间，所以在 `bwrap` 跑不起来的容器里也能用（Linux 5.13 起）。`createSandboxRunner` 启动时探测一次（`probeLandlock`，记下解释器的绝对路径），结果在 `TrackedSandboxRunner.unisolatedWritesEnforced`；探测失败（内核不支持、没有 python3）时未隔离命令照旧运行，写入范围不强制；探测成功而某条命令设置限制失败时，这条命令不运行（退出码 126），不会在没有限制的情况下运行。限制只按允许列表：可写根目录为整个仓库（`.`）时，其中受保护的路径不能再单独排除，这与未隔离时一样；仓库本身在 `/tmp` 或 `/var/tmp` 里时，那个临时目录不放开（放开就等于整个仓库可写），这时命令写不了它，可写根目录仍然有效。
+
 ## 7. cancelExecution
 
 ```ts
