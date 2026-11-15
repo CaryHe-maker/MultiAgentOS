@@ -42,7 +42,8 @@ nodes:
         comparisons or fuzzing only when the goal asks for them.
       - At the end run the project's checks over the whole once, then reply. A defect goes back to
         its owner with continues; a failure whose part is unclear goes to an integrator or a fixer.
-        No review round when the checks pass.
+        When the checks pass, deliver: no review round, and no new comparisons or probes of your
+        own after the parts are back.
 
       Manual. Text in <angle brackets> stands for your own content.
 

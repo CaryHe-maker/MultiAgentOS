@@ -2305,7 +2305,15 @@ export class SessionRunner {
         ({} as GraphNodeRecord),
     );
     const followed = ownTask?.spawn?.specialist;
-    if (followed !== undefined && (args as { readonly status?: string }).status === 'done') {
+    // On its final call a task can do nothing but finish: a result sent back then would be lost,
+    // and the caller would get "stopped early" instead of the report. It is taken as it is, and
+    // what it lacks is said in its notes (D69).
+    const final = active.state.final;
+    if (
+      !final &&
+      followed !== undefined &&
+      (args as { readonly status?: string }).status === 'done'
+    ) {
       const left = playbookUnfinished(this.#records, active.missionId, followed);
       if (left.length > 0)
         return this.#sendBack(
@@ -2317,7 +2325,7 @@ export class SessionRunner {
         );
     }
     const missing = unansweredCriteria(args, task.criteria.length);
-    if (missing.length > 0)
+    if (!final && missing.length > 0)
       return this.#sendBack(
         workflowRunId,
         active,
@@ -2326,7 +2334,7 @@ export class SessionRunner {
         `Not accepted: answer every acceptance criterion by its index. Missing: ${missing.join(', ')}.`,
       );
     const canRun = active.state.definitions.tools.some((tool) => tool.executionKind === 'COMMAND');
-    if (canRun && active.unchecked && !active.completionAsked) {
+    if (!final && canRun && active.unchecked && !active.completionAsked) {
       this.#agents.set(active.state.agentRunId, { ...active, completionAsked: true });
       return this.#sendBack(
         workflowRunId,
@@ -2351,7 +2359,11 @@ export class SessionRunner {
       { toolCallId, ref: ending.source.modelOutputRef },
       listed,
     );
-    const outcome = { ...finished, notes: [...finished.notes, ...handed.notes] };
+    const unverified =
+      final && canRun && active.unchecked
+        ? ['not checked: it changed files after its last check and ran out of rounds']
+        : [];
+    const outcome = { ...finished, notes: [...unverified, ...finished.notes, ...handed.notes] };
     await this.#endAgentRun(workflowRunId, active, 'ENDED');
     await this.#endNode(
       workflowRunId,

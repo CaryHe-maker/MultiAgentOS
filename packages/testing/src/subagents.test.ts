@@ -410,6 +410,50 @@ describe('run_subagents', () => {
     expect(ofType(records, 'AGENT_WRAP_UP')).toHaveLength(0);
   });
 
+  it('takes the result of a final call as it is, and says what it lacks (D69)', async () => {
+    const { kernel, runner } = setup({
+      main: [
+        model({
+          toolName: 'run_subagents',
+          args: {
+            tasks: [
+              {
+                name: 'fix',
+                agent: 'worker',
+                goal: 'fix it',
+                writeScope: ['src'],
+                acceptance: ['it builds'],
+              },
+            ],
+          },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'done' } }),
+      ],
+      // Seven rounds of writing use up its rounds; the eighth is its final call.
+      worker: [
+        ...Array.from({ length: 7 }, (_, index) =>
+          model({ toolName: 'write_file', args: { path: `src/a${String(index)}.ts` } }),
+        ),
+        model({ toolName: 'finish_subagent', args: workerResult() }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    // Neither the unchecked change nor the unanswered criterion sends it back: it could not act.
+    expect(
+      ofType(records, 'FEEDBACK').filter(
+        (record) => record.code === 'NOT_VERIFIED' || record.code === 'RESULT_INCOMPLETE',
+      ),
+    ).toEqual([]);
+    const [joined] = resumedCalls(records);
+    expect(joined?.[0]?.status).toBe('DONE');
+    expect(joined?.[0]?.notes).toEqual([
+      'not checked: it changed files after its last check and ran out of rounds',
+      'criterion 0 unanswered: it builds',
+    ]);
+  });
+
   it('accepts a worker only after it checked what it changed, and notes what it did not report', async () => {
     const { kernel, runner } = setup({
       main: [
