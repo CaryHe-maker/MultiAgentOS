@@ -515,6 +515,51 @@ real('stopping and interrupting cancel the work in flight (Orchestration 5.1, 5.
   );
 
   it(
+    'moves a hung command to the background at its timeout while a checkpoint waits for it',
+    async () => {
+      const place = await roots({ 'scan/.keep': '', 'other/.keep': '' });
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn({ name: 'scan', agent: 'worker', goal: 'scan slowly', writeScope: ['scan'] }),
+            {
+              wait: delay(800),
+              then: spawn({
+                name: 'other',
+                agent: 'worker',
+                goal: 'write other',
+                writeScope: ['other'],
+              }),
+            },
+            sleepFor(children()),
+            reply('both ended'),
+          ],
+        },
+        {
+          scan: [
+            tool('run_command', {
+              command: "sh -c 'while :; do :; done' 2>&1 | tail -40",
+              timeoutMs: 3000,
+            }),
+            finish('scan reported'),
+          ],
+          other: [
+            tool('write_file', { path: 'other/a.txt', content: 'a\n' }),
+            finish('other wrote'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      const started = Date.now();
+      await chat.say('scan and write');
+      expect(chat.printed('REPLY')).toContain('both ended');
+      expect(Date.now() - started).toBeLessThan(30_000);
+      expect(seenBy(provider, 'scan')).toContain('moved to the background');
+    },
+    TIMEOUT,
+  );
+
+  it(
     'interrupts a task in the middle of a long command at once: it starts again with the message',
     async () => {
       const place = await roots({ 'scan/.keep': '' });

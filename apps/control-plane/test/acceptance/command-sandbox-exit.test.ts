@@ -347,6 +347,23 @@ real('C: running a command, in the sandbox', () => {
   );
 
   it(
+    'moves a looping command behind a pipe to the background at its timeout',
+    async () => {
+      const place = await roots();
+      const provider = scriptedChat(
+        run("echo before; sh -c 'while :; do :; done' 2>&1 | tail -40", { timeoutMs: 1000 }),
+        reply('done'),
+      );
+      const started = Date.now();
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(Date.now() - started).toBeLessThan(25_000);
+      expect(toolResults(provider.requests.at(-1))[0]).toContain('moved to the background');
+    },
+    TIMEOUT,
+  );
+
+  it(
     'cuts a long output in the middle, and read_output reads the rest by the call id',
     async () => {
       const place = await roots();
