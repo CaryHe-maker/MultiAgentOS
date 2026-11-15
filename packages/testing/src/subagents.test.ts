@@ -453,10 +453,10 @@ describe('run_subagents', () => {
     const [joined] = resumedCalls(records);
     expect(joined?.[0]?.status).toBe('DONE');
     expect(joined?.[0]?.notes).toEqual([
+      // Its check after its last change goes with its result, first (D54, D68).
+      expect.stringMatching(/^checked: the system saw `.+` exit 0 after the last change/u),
       'criterion 0 not_met: it builds',
       'changed but not reported: src/a.ts',
-      // Its check after its last change goes with its result (D54).
-      'the system saw call_1 (run_command) exit 0 after its last change; its output is shown below',
     ]);
   });
 

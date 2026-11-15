@@ -6,10 +6,9 @@ description: Control tool that replaces the todo list of an AgentRun; it ends no
 purpose: CONTROL
 modelName: update_todos
 modelDescription: >-
-  Keep a todo list for a longer task, so no step is forgotten. Each call replaces the whole list:
-  todos is an array of at most 30 items, and each item has exactly two fields, content (text of at
-  most 200 characters) and status (pending, in_progress, completed or cancelled); several items may be
-  in_progress at once. No other field (no id, no priority) is accepted. It may come with other tool calls in the same reply.
+  Keep a todo list for a longer task. Each call replaces the whole list: todos is an array of at
+  most 30 items, each with exactly two fields, content (at most 200 characters) and status (pending,
+  in_progress, completed or cancelled). No other field is accepted. It may go with other tool calls.
 parametersContract:
   kind: contract
   id: workflow.UpdateTodosArgs

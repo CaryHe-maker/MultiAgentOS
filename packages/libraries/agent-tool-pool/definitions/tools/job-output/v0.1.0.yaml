@@ -6,11 +6,9 @@ description: Control tool that reads what a background command of the task print
 purpose: CONTROL
 modelName: job_output
 modelDescription: >-
-  Read what one of your background commands (job_1, job_2, ..., or fix-api/job_1 for one a
-  subtask that delivered left running) printed since you last read it,
-  up to 32 KB at a time, with its state at the end (running, exited(n), stopped). fromStart reads
-  again from the oldest output still kept. It does not wait: to wait for a command to end, call
-  sleep with jobs.
+  Read what one of your background commands printed since you last read it (job_1, or
+  fix-api/job_1 for one a subtask that ended left running), up to 32 KB, with its state at the end.
+  fromStart reads from the oldest output kept. It does not wait: sleep with jobs to wait.
 parametersContract:
   kind: contract
   id: workflow.JobOutputArgs

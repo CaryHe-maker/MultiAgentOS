@@ -2336,7 +2336,9 @@ export class SessionRunner {
         'Not accepted yet: you changed files but have not run a command that checks them since. Run the tests, the build or the linter, then finish again.',
       );
     }
-    const finished = finishedOutcome(args, task.criteria, active.changed);
+    const seenCheck =
+      active.lastCheck === undefined ? undefined : commandOfCall(this.#records, active.lastCheck);
+    const finished = finishedOutcome(args, task.criteria, active.changed, seenCheck);
     // Its result and the tool results it listed are handed over: those that pass, the others are
     // only told of.
     // Its last check goes with it, whether it listed it or not (D54).
@@ -2349,13 +2351,7 @@ export class SessionRunner {
       { toolCallId, ref: ending.source.modelOutputRef },
       listed,
     );
-    const attested =
-      active.lastCheck === undefined
-        ? []
-        : [
-            `the system saw ${active.lastCheck} (run_command) exit 0 after its last change; its output is shown below`,
-          ];
-    const outcome = { ...finished, notes: [...finished.notes, ...attested, ...handed.notes] };
+    const outcome = { ...finished, notes: [...finished.notes, ...handed.notes] };
     await this.#endAgentRun(workflowRunId, active, 'ENDED');
     await this.#endNode(
       workflowRunId,
@@ -4470,4 +4466,20 @@ function unansweredAtCut(
         'Not done: the work went back to a checkpoint before this call finished. Do it again if it is still needed.',
       toolCallId,
     }));
+}
+
+/** The command a run_command call ran, from the Unit it submitted; the call id when not found. */
+function commandOfCall(records: readonly SessionLogRecord[], toolCallId: string): string {
+  for (const record of records)
+    if (
+      record.type === 'UNIT_SUBMITTED' &&
+      record.inputSource.kind === 'TOOL_CALL' &&
+      record.inputSource.toolCallId === toolCallId
+    ) {
+      const { command } = (record.inputSource.workflowFields ?? {}) as {
+        readonly command?: unknown;
+      };
+      if (typeof command === 'string') return command.replace(/\s+/gu, ' ').slice(0, 200);
+    }
+  return toolCallId;
 }

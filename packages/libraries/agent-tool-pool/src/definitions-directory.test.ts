@@ -150,19 +150,16 @@ describe('shipped definitions', () => {
       if (prompt === undefined) throw new Error(`${id} is missing`);
       return prompt.template;
     };
-    const ways = [
-      'Fan out and join',
-      'Explore, then build',
-      'Interface first',
-      'Write by section, review as one',
-      'Long steps in the background',
-      'Correct course',
-      'Alone',
-    ];
-    for (const way of ways) {
+    // A short list of ways, as dsh and other agents keep it (D68): the system keeps the rules.
+    for (const way of ['Fan out and join', 'Explore, then build', 'Alone']) {
       expect(promptOf('main-system')).toContain(`- ${way}:`);
       expect(promptOf('lead-system')).toContain(`- ${way}:`);
     }
+    expect(promptOf('lead-system')).toContain('- Interface first:');
+    // Prompts stay short (D68): the check is the project's own, at the strength the task needs.
+    for (const id of ['main-system', 'lead-system', 'worker-system', 'explorer-system'])
+      expect(promptOf(id).length).toBeLessThan(4500);
+    expect(promptOf('worker-system')).toContain('do not build extra test harnesses');
     // A lead's subtasks cannot start subtasks: the way of nested leads is main's alone.
     expect(promptOf('main-system')).toContain('- Leads for large parts:');
     expect(promptOf('lead-system')).not.toContain('- Leads for large parts:');
@@ -187,21 +184,12 @@ describe('shipped definitions', () => {
     for (const specialist of ['fixer:', 'reviewer:', 'tester:', 'integrator:', 'researcher:'])
       expect(text).toContain(`\n    ${specialist} `);
     expect(text).not.toContain('sub_mission');
-    expect(text).toContain('Shape of a whole large task, in general terms (not a recipe):');
     expect(text).toContain('Counter-example, do not split:');
-    // Two whole examples show hands working at once (D40): one built from a specification, one
-    // change through a codebase that exists, each with specialists and messages between tasks.
-    expect(text).toContain('Whole example 1. Built from a specification');
-    expect(text).toContain('Whole example 2. One change through a large codebase');
-    for (const step of [
-      'agent: "tester"',
-      'agent: "integrator"',
-      'agent: "fixer"',
-      'kind: "inform"',
-    ])
-      expect(text).toContain(step);
     // The goal tells the root what the system is for and how it is judged.
     expect(JSON.stringify(mission?.nodes)).toContain('judged by how soon the goal is delivered');
+    // The manual is short and asks for no more checking than the project's own (D68).
+    expect(text.length).toBeLessThan(5000);
+    expect(text).toContain('do not run them again');
     // The manual carries placeholders, not the content of solved tasks.
     for (const word of ['Whole task', 'toolchain', 'latexmk', 'HH_', 'run.sh', 'flight'])
       expect(text).not.toContain(word);

@@ -6,51 +6,22 @@ description: Control tool that starts SubAgent tasks that run while the caller g
 purpose: CONTROL
 modelName: run_subagents
 modelDescription: >-
-  Start up to 8 subtasks that run in parallel. The call returns at once; the tasks run while you
-  go on, and their results come to you as they finish. To wait for them, call sleep with until
-  children: you are woken as each one ends, so you can use its result while the others work. A
-  task that must wait for another belongs in dependsOn rather than started at once. plan is the
-  plan of the whole work (what is delivered and how it is checked, the approach, the split, who
-  owns which part and which shared file or interface, the constraints): the root task of a long
-  task must give it with its first call, and every task below sees it, so goals need not repeat
-  it; a later plan replaces it. You cannot finish (reply or finish) while a task you started
-  still runs. Each task has a unique name, an agent, a goal that stands on its own (the agent
-  does not see your conversation), and optional dependsOn (names of other tasks of
-  this call; a task starts after them and receives their results), acceptance (what its result
-  must show), inputs (artifacts you hand over), effort and budget (a token share). An explorer
-  thinks at none or low, a worker or lead at low or high (high by default); an effort the agent does not allow
-  is set to the nearest one it does, and the task still runs. Each result you get back is the
-  summary of the task and, when it is short enough (1000 lines, 60000 characters), its report; a
-  longer report, and the tool results the task handed over, are read with read_output by the
-  reference ref_N/toolCallId shown with the result. A worker, lead or specialist must have
-  writeScope (a reviewer's is what it reviews, held still while it reads): the
-  repository paths it may change, which must lie within what you may write and must not overlap
-  the scope of another task that can run at the same time. An explorer has no writeScope. The
-  scope you give a task is lent to it: until it ends only it writes there, you write elsewhere,
-  and your commands see it read-only. commands false lends the scope without commands. role is
-  one line of what the task is responsible for (frontend, backend storage), which every task of
-  the work sees. A worker, explorer or lead starts with your context at this call, so its goal
-  says only what its part is; a specialist starts from its goal. With continues a task
-  starts from the history of an ended task of yours (same agent, any name), your goal being what
-  it is asked now: send a defect back to its owner this way. A task that breaks a rule is not
-  started, and you are told why; the others start. Tasks talk to
-  each other with send_message. It may come with ordinary tool calls in the same reply: the
-  tasks start once those calls are back.
-  The agents: explorer reads and reports; worker changes files in its writeScope; lead runs a
-  large part with subtasks of its own. Specialists, for the root task only, each a lead that
-  works by a method the system checks and hands back one report: fixer (something fails and a
-  command shows it: it reproduces, finds the cause, fixes and runs the check again until it
-  passes; put the command in acceptance); reviewer (an important change read against criteria
-  by someone who did not write it, changing nothing; put the criteria in acceptance and
-  what it reviews in writeScope); tester
-  (acceptance tests written from a specification by tasks that build nothing, run against the
-  build, each failure traced to its rule; name the spec in the goal and how to run the tests in
-  acceptance); integrator (starts the whole system, runs its checks, traces each failure to its
-  part and fixes it there; put the start and check commands in acceptance); researcher
-  (knowledge from outside the repository, such as the web, other projects or the literature,
-  returned as a report with a source for every claim; the questions in the goal, the report's
-  path in writeScope). A specialist's rounds of fixing and checking happen inside it, so they
-  cost your context nothing.
+  Start up to 8 subtasks that run in parallel. Returns at once; each result comes to you
+  when its task ends (sleep with until children to wait). Each task has a unique name, an agent
+  (explorer, worker, lead, or for the root task the specialists fixer, reviewer, tester, integrator,
+  researcher), a goal, and optionally role (one line every task sees), acceptance (what its result
+  must show), dependsOn (names of tasks of this call it waits for and whose results it gets), inputs
+  (artifacts you hand over), effort and budget. A worker, lead or specialist needs writeScope: the
+  repository paths it may change, inside what you may write and not overlapping a task that can run
+  at the same time; until it ends only it writes there and your commands see it read-only. An
+  explorer has no writeScope. A worker, explorer or lead starts with your context, so its goal says
+  only what its part is; a specialist starts from its goal alone. continues starts a task from the
+  history of an ended task of yours (same agent): use it to send a defect back to its owner. plan
+  (what is delivered, how it is checked, the parts and owners, shared files) must come with the root
+  task's first call; every task sees it. A task that breaks a rule is not started and you are told
+  why; the others start. A result shows the summary, the report when short, and the checks the task
+  ran; read a long report or a handed-over result with read_output by its ref_N/toolCallId. You
+  cannot reply or finish while a task you started runs.
 parametersContract:
   kind: contract
   id: workflow.RunSubagentsArgs

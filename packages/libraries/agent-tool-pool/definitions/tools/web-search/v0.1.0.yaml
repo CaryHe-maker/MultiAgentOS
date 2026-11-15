@@ -6,12 +6,10 @@ description: Model-facing web search, served by the web-search unit.
 purpose: UNIT
 modelName: web_search
 modelDescription: >-
-  Search the web and get a list of pages with title, address, date and a short summary. queries
-  is one to five search texts of at most 128 characters each, searched separately and merged;
-  use several to look at a question from different sides. count is how many results one query
-  gives (1 to 20, default 5). timeRange limits the date with after and before, each YYYY or
-  YYYY-MM-DD. The result lists pages only: call web_fetch to read one. Never put a secret or a
-  credential into a query, and do not search for what the repository answers.
+  Search the web: queries is one to five texts of at most 128 characters; count is results per
+  query (1 to 20, default 5); timeRange limits the date (after, before: YYYY or YYYY-MM-DD). Returns
+  pages with title, address, date and summary; read one with web_fetch. Never put a secret into a
+  query.
 parametersContract:
   kind: contract
   id: executor.WebSearchInput

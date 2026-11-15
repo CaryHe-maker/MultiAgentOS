@@ -85,6 +85,7 @@ interface FinishArguments {
   readonly references?: readonly string[];
   readonly changedFiles?: readonly string[];
   readonly status?: WorkerResult['status'];
+  readonly validation?: readonly { readonly command: string; readonly exitCode: number }[];
   readonly acceptance?: readonly {
     readonly index: number;
     readonly verdict: 'met' | 'not_met' | 'unknown';
@@ -110,8 +111,19 @@ export function finishedOutcome(
   args: FinishArguments,
   criteria: readonly string[],
   observedChanges: readonly string[] | undefined,
+  /** The check the system saw pass after the last change: said once, by the system. */
+  seenCheck?: string,
 ): { readonly status: TaskStatus; readonly notes: readonly string[] } {
   const notes: string[] = [];
+  // The checks it ran are shown to the caller, so it does not run them again.
+  if (seenCheck !== undefined)
+    notes.push(
+      `checked: the system saw \`${seenCheck}\` exit 0 after the last change (output below)`,
+    );
+  for (const check of (args.validation ?? [])
+    .filter((each) => each.command !== seenCheck)
+    .slice(0, 4))
+    notes.push(`checked, as it reports: \`${check.command}\` exit ${String(check.exitCode)}`);
   for (const [index, text] of criteria.entries()) {
     const verdict = args.acceptance?.find((answer) => answer.index === index)?.verdict;
     if (verdict !== 'met')
