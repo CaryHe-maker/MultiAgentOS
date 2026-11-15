@@ -82,6 +82,7 @@ phase 2 要让一个任务可以由很多 Agent 有结构地协作完成，例�
 | D60 | 没有沙箱时命令也按任务的写范围并行（2026-11-16，Cary 在 K4b 的界面上看到 worker 的命令都在“排队”）：Kernel 只让写范围互不相交的命令同时运行，而写范围只在 bwrap 沙箱下才交给队列；没有沙箱（测评容器里就是这样，K2 的 388 条、K3c 的 238 条命令全是 `UNISOLATED`）时每条命令都当作写范围未知，独自运行，于是一次运行里所有任务的命令排成一条。无隔离的命令同样带着它所属任务的写范围（只是不强制），改为按它排队，与沙箱下一致；写范围确实未知的命令仍独自运行。J1–K4b 都受此影响（`dsh` 没有这把锁）。改 Kernel 的 run-execution，测试 |
 | D61 | 状态行只在必要时出现（2026-11-16，Cary 决定；experiments K5）：原来每次请求末尾都有“round N of M”与预算状态，K5 里根的 78 轮有 39 轮在思考中数剩余轮数。改为：第一轮告知一次总轮数；用到一半、用到四分之三各提醒一次；最后 5 个工作轮每轮提醒；最后一轮照旧要求交结果；预算只在不是 NORMAL 时显示；上下文快满的警告照旧。其余轮次没有状态行，请求以历史结尾。改 executor-set 的 assemble-executor，测试 |
 | D62 | 子任务数按整次运行计，到上限先问用户（2026-11-16，Cary 决定；experiments K5）：去掉“每个调用方最多 12 个任务、最多调用 4 次”（K5 里根第三次派 5 个修复任务因此被拒并失去 `run_subagents`，5 处修复由根串行完成），保留一次最多 8 个。Kernel 按整次运行计数，缺省 60 个；到了上限不直接拒绝，像追加预算一样问用户（授权问题 `tasks.extend`）：同意就再允许 60 个，拒绝则这次调用以 `TASK_QUOTA_REACHED` 被拒、以后也不再问，工具不收回、不计为错误调用。问的期间只有发起调用的那个任务在等：Kernel 回答 `TASK_QUOTA_ASKED`，Workflow 挂起这次调用，收到 `TaskQuotaDecided` 后重做这次调用。配置 `kernel.tasks`：`perRun`，`extension` 为 `ask`/`extend`/`stop` 与次数上限（缺省 ask、4 次）。改契约（原因码、`tasks.extend` 提问、`TaskQuotaDecided` 事件、Kernel 配置；删 Workflow 配置的 `maxTasks`、`maxSpawnCalls`）、Kernel 的 run-work 与 run-authorization、Workflow 的 validate-spawn 与 session-runner、控制台文字，验收测试 |
+| D63 | 检查点最多等 10 秒（2026-11-16，Cary 决定；experiments K6）：拍检查点要先等正在改文件的操作结束，并挂起之后的改文件操作；`checkpointBarrierMs` 缺省由 600000（10 分钟）改为 10000（10 秒），超过就跳过这次检查点（`SKIPPED`），不报错，运行照常。K6 里一条死循环的命令让根补派任务前的检查点等了 6 分钟以上，期间根与各任务的所有写操作都被挂住。改 Kernel 的 run-work、Orchestration 第 7.3 节，测试 |
 | D46 | 删除 M1 的 `analyze` 路径与只为它存在的机制（2026-11-14，Cary 决定"全删，冻结测试换载体"；落实 D38；M2Design v1.38）：内置模板 `analyze`，Agent planner、code-viewer 与它们的 `finish`、`handoff` 工具，仓库概览 `repository-orient`，报告发布 `report-publish` 与 `AnalysisReport`，交接条目，条件边与 `SKIPPED(NOT_TAKEN)`，从未被模板使用的有界循环与节点迭代号，仓库模板与 `mas run <模板>`（`mas run` 只收目标），执行类别 `TEST`，以及只在测试里调用的统一校验函数 `validateExtension` 与 `spawnedIn`。日志里专家的纲领由 `spawn.submission` 改名为 `spawn.specialist`，去掉总是空的 `params`。两份冻结测试中经 `analyze` 运行的用例改用 `mission` 作为载体，断言不放宽（M2FrozenTests 第 7 节）。旧 Session 的日志不再能读（开发期的数据） |
 | D45 | 额度按实际会花的计算（2026-11-14，Cary 决定；M2Design 7.3 规则 10）：收尾保留、调用余量、最小份额（初始份额与每次补的大小）与每次预留，输入都按 `kernel.budget.reserveShare`（缺省 0.3）计算；上限仍按声明的值，所以初始份额小、补的次数多、能花的总量不变。原来按最坏情况，worker 开账就占 86 万，tester 想并行派 3 个写测试的子任务因额度被拒 |
 | D22 | 编排不写死（2026-11-12）：缺省是负责人自主分解；系统只写死底线（权限、写入范围与借出、额度、深度与唤醒上限、子任务没结束不能交付、checkpoint）；固定工作流降为范式，按固定图执行保留为预编排模式（见 D29；[Phase2Plan](Phase2Plan.md) 第 1、2 节） |
@@ -636,7 +637,7 @@ MODEL 与 READ 不改文件，它们的记录落在切面哪一边都与快照�
 唯一的例外是后台命令（D9）：它们在快照之后的写入不在快照里，checkpoint 记下它们，回溯时先停止再还原。
 
 屏障期间有授权询问挂起的 WRITE 或 EXEC 不算在途（与现在"等待授权不占并发"相同），不会让屏障等用户。
-屏障的等待上限是 `checkpointBarrierMs`（缺省 600000）；超过时放弃这次 checkpoint，记 `CHECKPOINT_SKIPPED`，运行照常。
+屏障的等待上限是 `checkpointBarrierMs`（缺省 10000，即 10 秒；原为 600000，D63）；超过时放弃这次 checkpoint，记 `CHECKPOINT_SKIPPED`，运行照常，不报错。
 
 ### 7.4 索引与 Session 级的列表
 

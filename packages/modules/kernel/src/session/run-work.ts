@@ -1084,7 +1084,9 @@ export class RunWork {
         }
       });
     };
-    const stopWaiting = this.#deps.schedule(this.#deps.checkpointBarrierMs ?? 600_000, () => {
+    // A checkpoint waits a moment for the work in flight, never long (D63): a long or hung command
+    // would hold every write of the run behind it; past the wait the checkpoint is skipped.
+    const stopWaiting = this.#deps.schedule(this.#deps.checkpointBarrierMs ?? 10_000, () => {
       finish(false);
     });
     holdMutating(() => {

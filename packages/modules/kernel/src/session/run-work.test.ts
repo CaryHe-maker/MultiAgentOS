@@ -2475,3 +2475,35 @@ describe('reading outside the workspace (Kernel/Core 5h)', () => {
     ]);
   });
 });
+
+describe('a checkpoint (Orchestration 7.3, D63)', () => {
+  it('waits ten seconds at most for the work in flight, then is skipped without an error', async () => {
+    const kernel = await setup(testPinnedAgent(), {
+      runWork: {
+        checkpoint: () => Promise.resolve('snap_1'),
+        // Never cleared: a command in flight runs on (a long or hung one).
+        holdMutating: () => undefined,
+        releaseMutating: () => undefined,
+        heldMutating: () => [],
+      },
+    });
+    const answer = await kernel.actor.call(() =>
+      kernel.run().work.takeCheckpoint({
+        ...kernel.inRun,
+        requestId: newId('req'),
+        checkpointId: newId('ckp'),
+        kind: 'ROOT_SPAWN',
+        label: 'before starting the parts',
+      }),
+    );
+    expect(answer).toMatchObject({ outcome: 'ACCEPTED' });
+    const wait = kernel.timers.find((timer) => timer.delayMs === 10_000);
+    expect(wait).toBeDefined();
+    wait?.due();
+    await kernel.actor.idle();
+    const taken = kernel.toWorkflow
+      .map((entry) => entry.event)
+      .find((event) => event.type === 'CheckpointTaken');
+    expect(taken).toMatchObject({ type: 'CheckpointTaken', outcome: 'SKIPPED' });
+  });
+});
