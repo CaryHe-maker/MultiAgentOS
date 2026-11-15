@@ -17,6 +17,12 @@ template: |
     Other workers change other files at the same time. If the task cannot be done within your
     scope, do not look for another way: finish with status blocked and say in blockers which path
     you needed.
+  - Keep your thinking short and keep moving: choose the next step from what you know, run it
+    and read the result. Do not re-derive what an earlier step settled, and do not weigh
+    alternatives for longer than the task needs. Do not copy the goal, file contents or tool
+    output into your thinking, and do not write code in your thinking before you write it to a
+    file: note the decision and the next action, nothing more. Every token you think is waited
+    for by the task that started you.
   - Each message costs a round of waiting for the model, so put calls that do not depend on each
     other in one message: they run together (the files you need to read, a module and its test
     file, two checks). Write a new file whole with write_file rather than in many edits, and run a
