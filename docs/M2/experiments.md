@@ -685,6 +685,7 @@ Cary 2026-11-16 定：用当前的 mas（Mission）在 pyregex、survey-med-seg�
 | minipy，替代线 + split（D89–D91） | `f4b6736` | 15.2 | 1.000 | 0.96（高峰时段，低价约 0.48） | 23.2 / 0.932 / 0.23 | 28.7 / 0.909 / 0.79 | `DONE` |
 | pyawk，替代线 + split（D89–D92） | `5528602` | 12.8 | 0.965 | 0.72（高峰时段，低价约 0.37） | 27.5 / 0.986 / 0.21 | 31.1 / 0.986 / 0.60 | `DONE` |
 | survey-med-seg，替代线 + split（D89–D92） | `5528602` | 14.7 | 0.992 | 0.23 | 22.2 / 1.000 / 0.12 | 32.4 / 1.000 / 0.42 | `DONE` |
+| textutils，Mission 基线1 | `c6071ac` | 24.6 | 0.993 | 0.66 | 22.3 / 0.970 / 0.23 | 45.0（dev-mission-3） | `DONE` |
 
 **L1 pyregex**（`ad7af37`，含 D72–D79）：第 3.9 分钟派出 unicode、parser、engine、api 四个 worker 与一个 tester（它又派了三个写测试的子任务）。parser、api、unicode 在第 8.8–17.6 分钟结束；engine 用满 40 轮，第 25.0 分钟以 partial 交回（142 个单元测试全过、性能达标，只剩与 `re` 的两处边界差异）。拖慢的是根任务自己写的验收：给 unicode 的是"全码位与真 re 零差异"，给 engine 的是"check_engine.py 与真 re 零差异"，题目只要求与 Python 3.12 `re` 兼容，没有要求零差异。于是 unicode 两次全码位扫描（124 s、288 s），engine 反复跑对照脚本（每次约 2 分钟，最后一次 212 s 被杀）。engine 交回后，根任务自己修那两处差异，每改一处就重跑整个大对照（每条到 2 分钟上限转后台，前后 5 个后台命令），第 25–43 分钟没有任何并行。第 43 分钟由 Cary 停止，数据与工作区存于 `~/bench/p3mas/results/dv-pyregex-stopped/`；对停止时的工作区跑隐藏测试，208 个过了 202 个（0.9712），与早期 Mission 相同、高于 `dsh`，可见最后 18 分钟在分数上没有明显收益。另：根任务的提示词里缺了 worker 与 lead 都有的"慢的检查只重跑失败的部分"。随后的改动见 D80。
 
@@ -704,6 +705,8 @@ Cary 2026-11-16 定：用当前的 mas（Mission）在 pyregex、survey-med-seg�
 
 **L9 survey-med-seg，替代线 + split**（`5528602`，`MAO_SUBTASK_ACCEPTANCE=off`、`MAO_LEAD_AS_WORKER=on`，与 L8 相同；Cary 用 `--ui` 运行，标签 `dv-medseg-split`）：14.7 分钟，0.992（16 项结构与内容检查全过，132 条参考文献核实 130 条），`DONE`，比 `dsh` 快 7.5 分钟、不到 L4 的一半，分数低 0.008；$0.23（UTC 10:16–10:31，已过高峰；174 次请求，输入 11.2M、命中 94.2%，输出 171k）。根任务前 10.8 分钟独自准备文献（`resolve.py` 72 秒、`fetch_meta.py` 35 秒、`fetch_all.py` 133 秒后被转入后台、一段内联脚本 70 秒，命令共约 8.2 分钟），第 10.8 分钟一次派出 12 个 worker（10 个章节、2 个注释），没有用 `split`，每个 1.5–2.3 分钟，13.1 分钟后根任务独自合稿 1.6 分钟。根任务在 `fetch_all.py` 转入后台以后没有去做别的，而是写了一条 `sleep 45; job_output(){ :; }` 的命令、用 `job_output` 查了 5 次，第 9.0 分钟把它停掉。失败的工具调用 2 次（sec02-unet 交付漏 `summary`，一次 `read_file` 行号范围无效）；任务之间没有消息。根任务在交付说明里写明注释依据题名与领域常识而未逐篇读原文、第 6 章约 4959 汉字偏短。后台命令的使用（全部 26 次 mas 运行统计）：约 5700 条命令中主动设 `runInBackground` 的约 10 次，超时转后台约 18 次，超过 60 秒的前台命令约 81 次；L 系列 7 次运行 1239 条命令里主动放后台只有 L4 的 2 次，split 线 4 次运行为 0。这条配置在 L9 之后定为 Mission 基线1（见 Orchestration D93）。
 
+**L10 textutils，Mission 基线1**（`c6071ac`，基线1 定稿后的第一次运行，不再设任何环境变量；Cary 用 `--ui` 运行，标签 `b1-textutils`）：24.6 分钟，0.993（135 个过了 134 个），`DONE`，是 textutils 上分数最高的一次（`dsh` 22.3 / 0.970，K12 13.3 / 0.985），但比 `dsh` 慢 2.3 分钟，几乎是 K12 的两倍；$0.66（UTC 11:19–11:44，周一，不在高峰；442 次请求，输入 38.3M、命中 97.9%，输出 712k，思考约占 55%）。根任务第 2.4 分钟派出 grep、sort-uniq、cut-tr、wc-head-tail、join-paste-comm、nl-fold-expand 六个 worker，sed（`split: true`，作为 lead）与 tests（专家 tester）；tester 第 5.3 分钟派三个写测试的任务时额度不够（BUDGET_INSUFFICIENT），之后派出 spec-grep-sed、spec-sort-misc 两个。子任务在 9.1–16.8 分钟陆续结束，最晚的 cut-tr 到 19.3 分钟；根任务第 14.4 分钟给四个子任务发缺陷消息（tr 因 `build_set()` 缺 `fill_target` 不能用、`head -n -0` 应输出全部行、`paste -z` 没实现等），最后一个子任务结束后独自修补与检查 5.3 分钟。**cut-tr 在前台等了 9 分钟**：它的对比脚本第 6.5 分钟跑了 120 秒被转入后台，它在同一分钟停掉；第 8.9 分钟先试 `timeoutMs` 超过 600000 被拒，再在前台跑 `timeout 500 python3 diff_cut_tr.py 2>&1 | tail -60`，用了 557 秒，退出码 0，输出为空（管道里 Python 的缓冲输出随超时被杀而丢失），它的命令共 11.7 分钟。wc-head-tail 也在第 6.4 分钟把转入后台的命令当场停掉。**轮次申请**：nl-fold-expand、join-paste-comm、wc-head-tail 在第 7.6、8.8、11.5 分钟申请，都获批（join-paste-comm 最后用了 77 轮）；第 12.0 分钟 sort-uniq 到第 34 轮没有申请——这三次申请把根任务唤醒了三次，用满了连续唤醒上限（D12），D91 判定根任务叫不醒而静默跳过，sort-uniq 在第 40 轮被强制收尾，第一次交付还漏了 `changedFiles`。由此改了 D94（要求决定的请求总能唤醒、不计入上限）与 D95（任一子任务结束使唤醒计数复位；转入后台的命令写明接下来怎样）。失败的工具调用 3 次（nl-fold-expand 给工具多传 `limit`、cut-tr 的 `timeoutMs` 超上限、sort-uniq 交付漏 `changedFiles`），任务之间 10 条消息。没过的一个测试是 `grep -r -h apple d` 的顺序：我们先输出 `d/x.txt`，GNU grep 先输出子目录 `d/sub/y.txt`。
+
 ### Mission 基线1（2026-11-16 定）
 
 Cary 2026-11-16 定：以 L9（`dv-medseg-split`）那次运行的配置为 **Mission 基线1**，其余配置删除（Orchestration D93）。基线1 就是原来的替代线 `no-acceptance-lead-flag`：子任务没有验收条件，完成目标就交付；lead 是 worker 的参数 `split: true`，只有根任务能用；继承上下文总是开着；加上至 D92 为止的全部机制。从此运行不再需要任何环境变量开关，直接用 `mas-live.sh <题> <标签>`。
@@ -715,5 +718,6 @@ Cary 2026-11-16 定：以 L9（`dv-medseg-split`）那次运行的配置为 **Mi
 | minipy | L7 | `f4b6736`（少 D92） | 15.2 | 1.000 | 23.2 / 0.932 |
 | pyawk | L8 | `5528602` | 12.8 | 0.965 | 27.5 / 0.986 |
 | survey-med-seg | L9 | `5528602` | 14.7 | 0.992 | 22.2 / 1.000 |
+| textutils | L10 | `c6071ac` | 24.6 | 0.993 | 22.3 / 0.970 |
 
-pyregex 与 textutils 还没有用基线1 运行。
+pyregex 还没有用基线1 运行。L10 之后又加了 D94、D95。
