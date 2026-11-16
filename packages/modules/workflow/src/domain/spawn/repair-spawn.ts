@@ -1,5 +1,7 @@
 import { SubagentTaskSchema, validate } from '@multiagentos/contracts';
 
+type Schema = Parameters<typeof validate>[0];
+
 /**
  * What a `run_subagents` call becomes before its form is checked (D56): a detail of one task does
  * not cost the caller the whole call. What can be set right is (a role cut to its length, an
@@ -25,8 +27,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /** The first reason the form of a task is refused, said for the model to act on. */
-function formError(task: unknown): string | undefined {
-  const checked = validate(SubagentTaskSchema, task);
+function formError(task: unknown, taskSchema: Schema): string | undefined {
+  const checked = validate(taskSchema, task);
   if (checked.ok) return undefined;
   // "/name must be ..." reads as "name must be ..."; the task as a whole has no path.
   return checked.issues
@@ -34,7 +36,20 @@ function formError(task: unknown): string | undefined {
     .join('; ');
 }
 
-export function repairSpawnArgs(args: unknown): RepairedSpawn {
+/**
+ * The form of one task of `parameters`, the spawn tool's own: a comparison arm has its own (D81
+ * without criteria, D88 with `split`), which a check against the catalog's would refuse.
+ */
+export function taskSchemaOf(parameters: Schema | undefined): Schema {
+  const items = (parameters as { properties?: { tasks?: { items?: unknown } } } | undefined)
+    ?.properties?.tasks?.items;
+  return typeof items === 'object' && items !== null ? items : SubagentTaskSchema;
+}
+
+export function repairSpawnArgs(
+  args: unknown,
+  taskSchema: Schema = SubagentTaskSchema,
+): RepairedSpawn {
   if (!isRecord(args) || !Array.isArray(args['tasks'])) return { args, notes: [], cut: [] };
   const notes: string[] = [];
   const cut: string[] = [];
@@ -70,7 +85,7 @@ export function repairSpawnArgs(args: unknown): RepairedSpawn {
         shortened = true;
         return each.slice(0, CRITERION_CHARS);
       });
-    const error = formError(task);
+    const error = formError(task, taskSchema);
     if (error !== undefined) {
       notes.push(`task ${label} (index ${String(index)}) was not started: ${error}`);
       if (typeof raw['name'] === 'string') out.add(raw['name']);

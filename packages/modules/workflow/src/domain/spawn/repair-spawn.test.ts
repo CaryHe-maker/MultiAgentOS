@@ -1,5 +1,6 @@
+import { RunSubagentsSplitArgsSchema, SubagentTaskSchema } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import { CRITERION_CHARS, GOAL_CHARS, repairSpawnArgs } from './repair-spawn.js';
+import { CRITERION_CHARS, GOAL_CHARS, repairSpawnArgs, taskSchemaOf } from './repair-spawn.js';
 
 const worker = (name: string, extra: object = {}) => ({
   name,
@@ -62,5 +63,22 @@ describe('repairSpawnArgs (D56)', () => {
     const repaired = repairSpawnArgs(args);
     expect(repaired.args).toBe(args);
     expect(repaired.notes).toHaveLength(1);
+  });
+});
+
+describe('the form of a task is the one of the spawn tool (D81, D88)', () => {
+  it('keeps a task with split when the tool has the field, and takes it out when it does not', () => {
+    const tasks = [
+      { name: 'big', agent: 'worker', split: true, goal: 'the large part', writeScope: ['src'] },
+      { name: 'small', agent: 'worker', goal: 'the small part', writeScope: ['docs'] },
+    ];
+    const own = taskSchemaOf(RunSubagentsSplitArgsSchema);
+    expect(repairSpawnArgs({ tasks }, own).notes).toEqual([]);
+    const catalogs = repairSpawnArgs({ tasks });
+    expect(catalogs.notes.join('\n')).toContain('task big (index 0) was not started');
+  });
+
+  it('falls back to the catalog form when the tool says nothing of its tasks', () => {
+    expect(taskSchemaOf(undefined)).toBe(SubagentTaskSchema);
   });
 });

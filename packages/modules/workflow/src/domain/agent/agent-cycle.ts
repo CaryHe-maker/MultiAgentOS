@@ -1,4 +1,4 @@
-import { repairSpawnArgs } from '../spawn/repair-spawn.js';
+import { repairSpawnArgs, taskSchemaOf } from '../spawn/repair-spawn.js';
 import { withCamelNames } from './argument-aliases.js';
 import {
   WRITE_KINDS,
@@ -986,7 +986,7 @@ function soleControlOf(
     if (spawn !== undefined && call.toolName === spawn.toolName) {
       // A detail of one task does not cost the whole call (D56): what can be set right is, and a
       // task that is still not valid is taken out and said why.
-      const repaired = repairSpawnArgs(call.arguments);
+      const repaired = repairSpawnArgs(call.arguments, taskSchemaOf(spawn.parameters));
       return {
         call,
         parameters: spawn.parameters,

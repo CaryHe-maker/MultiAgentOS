@@ -556,12 +556,22 @@ real('the comparison arm where a lead is a worker that may split (D88)', () => {
               validation: [{ command: check, exitCode: 0 }],
             }),
           ],
+          notes: [
+            tool('finish_subagent', {
+              summary: 'nothing to note',
+              status: 'done',
+              changedFiles: [],
+              validation: [],
+            }),
+          ],
         },
       );
       provider.add(
         tool('read_file', { path: 'src/value.txt' }),
+        // Two tasks in one call: a check of the form against the catalog's would take the one
+        // with split out and start the other alone.
         tool('run_subagents', {
-          plan: 'One large part: the value, by a worker that splits it.',
+          plan: 'One large part: the value, by a worker that splits it; notes beside it.',
           tasks: [
             {
               name: 'part',
@@ -571,9 +581,10 @@ real('the comparison arm where a lead is a worker that may split (D88)', () => {
               writeScope: ['src'],
               acceptance: ['the value check passes'],
             },
+            { name: 'notes', agent: 'worker', goal: 'note nothing', writeScope: ['docs'] },
           ],
         }),
-        tool('sleep', { until: [{ kind: 'children' }] }),
+        tool('sleep', { until: [{ kind: 'children', mode: 'all' }] }),
         tool('reply', { text: 'done through a worker that split' }),
       );
       process.env['MAO_LEAD_AS_WORKER'] = 'on';
@@ -599,6 +610,10 @@ real('the comparison arm where a lead is a worker that may split (D88)', () => {
           ?.messages.map((message) => textOf(message))
           .join('\n');
         expect(told).toContain('Your part is yours to split');
+        const said = provider.requests
+          .flatMap((request) => request.messages.map((message) => textOf(message)))
+          .join('\n');
+        expect(said).not.toContain('was not started');
         // It may split its part, but it starts no lead itself: split is the root's alone.
         const partTools = JSON.stringify(
           provider.requests.find((request) =>
