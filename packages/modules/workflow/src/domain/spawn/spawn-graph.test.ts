@@ -13,7 +13,7 @@ const spec = (name: string, dependsOn: string[] = []) => ({
   agentRef: { id: 'explorer', version: 'v1.0.0' },
   goal: `look at ${name}`,
   dependsOn,
-  spawn: { writeScope: [], acceptance: ['say so'], inputs: [], tokens: 1000 },
+  spawn: { writeScope: [], inputs: [], tokens: 1000 },
 });
 
 const revision = spawnRevision(
@@ -58,7 +58,6 @@ describe('what the tasks of a call look like in the log', () => {
       two?.spawn ?? spec('x').spawn,
     );
     expect(scope.name).toBe('two');
-    expect(scope.acceptance).toEqual(['say so']);
     expect(scope.dependencies.map((entry) => entry.name)).toEqual(['one']);
     expect(
       taskScopeOf([extended()], 'wfr_a', projected, one ?? revision.nodes[0]!, spec('x').spawn)
@@ -78,7 +77,6 @@ describe('what the tasks of a call look like in the log', () => {
       writeScope: ['api'],
       // No role given: the start of the goal stands for it (Orchestration 3.7).
       role: 'g',
-      acceptance: [],
       inputs: [],
       effort: 'low',
       tokens: 500,

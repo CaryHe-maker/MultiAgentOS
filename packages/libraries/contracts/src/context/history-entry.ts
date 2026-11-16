@@ -72,13 +72,12 @@ export const ContextHistoryEntrySchema = Type.Union(
       name: text(64),
       agent: text(64),
       goal: text(4000),
-      acceptance: Type.Array(text(300), { maxItems: 10 }),
       writeScope: Type.Array(text(500), { maxItems: 10 }),
       inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
       /** The playbook of the template the task follows, in words (Orchestration 3.9). */
       playbook: Type.Optional(Type.String({ maxLength: 40_000 })),
       /**
-       * The call that started the task, when its goal or criteria are cut above (D56): the task
+       * The call that started the task, when its goal is cut above (D56): the task
        * is shown them whole from that call, by its name in it.
        */
       fullFrom: Type.Optional(

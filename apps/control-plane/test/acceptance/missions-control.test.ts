@@ -1252,7 +1252,6 @@ describe('a task that ended is taken up again with all it knows (continues, Orch
               continues: 'api',
               goal: 'The check found a missing line: add api/v2.txt as well.',
               writeScope: ['api'],
-              acceptance: ['api/v2.txt exists'],
             }),
             sleepFor(children()),
             reply('api is done twice'),
@@ -1289,7 +1288,6 @@ describe('a task that ended is taken up again with all it knows (continues, Orch
         'Your result went to your caller, and it started you again on this task',
       );
       expect(told).toContain('add api/v2.txt as well');
-      expect(told).toContain('api/v2.txt exists');
     },
     TIMEOUT,
   );

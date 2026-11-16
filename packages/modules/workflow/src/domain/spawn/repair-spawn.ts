@@ -1,12 +1,12 @@
-import { SubagentTaskSchema, validate } from '@multiagentos/contracts';
+import { validate } from '@multiagentos/contracts';
 
 type Schema = Parameters<typeof validate>[0];
 
 /**
  * What a `run_subagents` call becomes before its form is checked (D56): a detail of one task does
  * not cost the caller the whole call. What can be set right is (a role cut to its length, an
- * effort that is no effort left out, a field the call no longer has dropped, a goal or a criterion
- * too long for the graph cut there while the call keeps it whole), and a task that is still not
+ * effort that is no effort left out, a field the call no longer has dropped, a goal too long for
+ * the graph cut there while the call keeps it whole), and a task that is still not
  * valid is taken out, with every task that waits for it, and said why. The tasks left are checked
  * and started as any call.
  */
@@ -14,12 +14,11 @@ export interface RepairedSpawn {
   readonly args: unknown;
   /** One line per task taken out, and per correction worth telling. */
   readonly notes: readonly string[];
-  /** The tasks whose goal or criteria were cut: the call holds them whole. */
+  /** The tasks whose goal was cut: the call holds it whole. */
   readonly cut: readonly string[];
 }
 
 export const GOAL_CHARS = 4000;
-export const CRITERION_CHARS = 300;
 const ROLE_CHARS = 80;
 const EFFORTS = new Set(['none', 'low', 'high', 'max']);
 
@@ -37,19 +36,18 @@ function formError(task: unknown, taskSchema: Schema): string | undefined {
 }
 
 /**
- * The form of one task of `parameters`, the spawn tool's own: a comparison arm has its own (D81
- * without criteria, D88 with `split`), which a check against the catalog's would refuse.
+ * The form of one task of `parameters`, the spawn tool's own (D89): the root's has `split` and
+ * the specialists, a lead's has explorers and workers only (D88, D93).
  */
-export function taskSchemaOf(parameters: Schema | undefined): Schema {
-  const items = (parameters as { properties?: { tasks?: { items?: unknown } } } | undefined)
-    ?.properties?.tasks?.items;
-  return typeof items === 'object' && items !== null ? items : SubagentTaskSchema;
+export function taskSchemaOf(parameters: Schema): Schema {
+  const items = (parameters as { properties?: { tasks?: { items?: unknown } } }).properties?.tasks
+    ?.items;
+  if (typeof items !== 'object' || items === null)
+    throw new Error('the spawn tool declares no form of a task');
+  return items;
 }
 
-export function repairSpawnArgs(
-  args: unknown,
-  taskSchema: Schema = SubagentTaskSchema,
-): RepairedSpawn {
+export function repairSpawnArgs(args: unknown, taskSchema: Schema): RepairedSpawn {
   if (!isRecord(args) || !Array.isArray(args['tasks'])) return { args, notes: [], cut: [] };
   const notes: string[] = [];
   const cut: string[] = [];
@@ -65,6 +63,8 @@ export function repairSpawnArgs(
     const task: Record<string, unknown> = { ...raw };
     // Every worker and explorer starts with its caller's context now (D56): the field is gone.
     delete task['context'];
+    // A task has no criteria any more (Mission baseline 1, D93): what it must deliver is its goal.
+    delete task['acceptance'];
     if (typeof task['role'] === 'string' && task['role'].length > ROLE_CHARS)
       task['role'] = `${task['role'].slice(0, ROLE_CHARS - 1)}…`;
     const effort = task['effort'];
@@ -79,12 +79,6 @@ export function repairSpawnArgs(
       task['goal'] = task['goal'].slice(0, GOAL_CHARS);
       shortened = true;
     }
-    if (Array.isArray(task['acceptance']))
-      task['acceptance'] = task['acceptance'].map((each: unknown) => {
-        if (typeof each !== 'string' || each.length <= CRITERION_CHARS) return each;
-        shortened = true;
-        return each.slice(0, CRITERION_CHARS);
-      });
     const error = formError(task, taskSchema);
     if (error !== undefined) {
       notes.push(`task ${label} (index ${String(index)}) was not started: ${error}`);

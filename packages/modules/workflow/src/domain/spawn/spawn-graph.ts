@@ -215,20 +215,17 @@ export function taskScopeOf(
     name: node.name,
     agent: node.agentRef?.id ?? 'unknown',
     goal: node.goal ?? '',
-    acceptance: spawn.acceptance,
     writeScope: spawn.writeScope,
     inputs: spawn.inputs,
     dependencies,
-    ...(spawn.specialist === undefined
-      ? {}
-      : { playbook: renderPlaybook(spawn.specialist, spawn.acceptance.length > 0) }),
+    ...(spawn.specialist === undefined ? {} : { playbook: renderPlaybook(spawn.specialist) }),
     ...(continued === undefined ? {} : { continued }),
     ...(inherited === undefined ? {} : { inherited }),
     ...(spawn.cut === true ? fullFromOf(records, workflowRunId, node) : {}),
   };
 }
 
-/** The call that started a task, which holds its goal and criteria whole (D56). */
+/** The call that started a task, which holds its goal whole (D56). */
 function fullFromOf(
   records: readonly SessionLogRecord[],
   workflowRunId: string,
@@ -316,7 +313,6 @@ export function stepScopeOf(node: GraphNodeRecord): TaskScope | undefined {
     name: node.name,
     agent: node.agentRef.id,
     goal: node.goal,
-    acceptance: [],
     writeScope: [],
     inputs: [],
     dependencies: [],
@@ -336,7 +332,6 @@ export function spawnNodeOf(
     writeScope: [...task.writeRoots],
     role,
     ...(task.commands === false ? { commands: false } : {}),
-    acceptance: [...(task.acceptance ?? [])],
     inputs: [...(task.inputs ?? [])],
     ...(task.effort === undefined ? {} : { effort: task.effort }),
     tokens: share?.tokens ?? 1,

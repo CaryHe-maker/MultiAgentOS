@@ -2,7 +2,7 @@ import {
   normalizeRequestPath,
   writeRootCovers,
   writeRootsOverlap,
-  type RunSubagentsArgs,
+  type SpawnRequest,
   type ThinkingEffort,
 } from '@multiagentos/contracts';
 
@@ -52,7 +52,7 @@ export interface SpawnContext {
   readonly readable: (artifactId: string) => boolean;
 }
 
-export type SpawnTask = RunSubagentsArgs['tasks'][number];
+export type SpawnTask = SpawnRequest['tasks'][number];
 
 export interface SpawnPlan {
   /** In the order the caller wrote them: results are joined in this order. */
@@ -124,7 +124,7 @@ export function nearestEffort(
   )[0];
 }
 
-export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): SpawnValidation {
+export function validateSpawn(args: SpawnRequest, context: SpawnContext): SpawnValidation {
   const { rules } = context;
   const errors: SpawnError[] = [];
   const add = (code: SpawnErrorCode, message: string, task?: string) =>

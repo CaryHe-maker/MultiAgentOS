@@ -130,7 +130,7 @@ const spec = (name: string) => ({
   agentRef: workerRef,
   goal: `do ${name}`,
   dependsOn: [],
-  spawn: { writeScope: [name], acceptance: [], inputs: [], tokens: 1000 },
+  spawn: { writeScope: [name], inputs: [], tokens: 1000 },
 });
 
 describe('the MissionTree read from the graph (Orchestration 3.1, 3.2)', () => {

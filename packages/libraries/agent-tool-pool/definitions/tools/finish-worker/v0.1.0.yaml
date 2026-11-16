@@ -6,12 +6,12 @@ description: Control tool that ends a worker with what it changed and checked.
 purpose: CONTROL
 modelName: finish_subagent
 modelDescription: >-
-  Return your result to the agent that started you, and stop; call it alone. summary (at most
+  Call it when your part is done: it returns your result to the agent that started you, and
+  stops you; call it alone. summary (at most
   2000 characters) is what the reader always sees; report is the full detail. changedFiles lists
   every file you changed. status is done, partial or blocked. validation lists the check commands you
   ran after your last change, each with its exit code: the caller sees them and does not run them
   again. blockers says what stopped you, including a path you needed outside your writeScope.
-  acceptance answers each acceptance criterion by its index (from 0) with met, not_met or unknown.
 parametersContract:
   kind: contract
   id: workflow.WorkerResult

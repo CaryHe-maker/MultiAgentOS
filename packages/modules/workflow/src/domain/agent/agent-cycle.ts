@@ -235,7 +235,7 @@ export type AgentEnding =
       readonly source: ControlSource;
       /** The tasks taken out of the call and what was set right in it (D56). */
       readonly notes?: readonly string[];
-      /** The tasks whose goal or criteria the graph holds cut; the call holds them whole. */
+      /** The tasks whose goal the graph holds cut; the call holds it whole. */
       readonly cut?: readonly string[];
     }
   /** `ask_user` was called validly in form; the runner checks what it points at. */

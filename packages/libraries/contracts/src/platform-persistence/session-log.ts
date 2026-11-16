@@ -44,7 +44,6 @@ export const SpawnNodeSchema = closed({
   role: Type.Optional(text(80)),
   /** False when the caller lent the scope without commands (D17). */
   commands: Type.Optional(Type.Boolean()),
-  acceptance: Type.Array(text(300), { maxItems: 10 }),
   inputs: Type.Array(ArtifactRefSchema, { maxItems: 10 }),
   effort: Type.Optional(ThinkingEffortSchema),
   /** The share of budget reserved for it, after the Kernel clamped the request. */
@@ -53,7 +52,7 @@ export const SpawnNodeSchema = closed({
   /** The ended task it takes up again, with that task's history (`continues`, Orchestration 5.3). */
   continues: Type.Optional(closed({ missionId: IdSchemas.missionScopeId })),
   /**
-   * Its goal or a criterion was longer than the graph holds (D56): the node holds the beginning,
+   * Its goal was longer than the graph holds (D56): the node holds the beginning,
    * the call that started it holds the whole, and the task is shown the whole from there.
    */
   cut: Type.Optional(Type.Boolean()),

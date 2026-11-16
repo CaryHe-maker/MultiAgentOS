@@ -112,6 +112,7 @@ phase 2 要让一个任务可以由很多 Agent 有结构地协作完成，例�
 | D90 | 活动区显示正在运行的那条命令（2026-11-16）：一轮回复里有两条命令时，活动区每个 AgentRun 只留最后一个事件，第二条排队（QUEUED）的事件覆盖了正在运行的第一条，看上去"只有一个任务却在排队"。现在控制台记下每个 AgentRun 正在运行的工具 Unit，它没结束时同一 AgentRun 的排队事件不再覆盖这一行；它结束或这一轮的工具全部回来后照常显示。同一改动里，继承上下文的阶段任务按它阶段指定的 Agent（`inherits.as`）显示，而不是按它借用的调用方的 Agent（`placementOf`；`mas-analyze.py` 同样处理）。改 UserInteraction 的 console、Workflow 的 placement、统计脚本，测试 |
 | D91 | 子任务快用完轮次时由 Workflow 向父任务申请更多轮次（2026-11-16；experiments L6 的 runtime worker 用了 39/40 轮被迫收尾）：一个有父任务的 AgentRun 进入最后 5 个工作轮之前（`ROUNDS_ASK_AHEAD`），agent-cycle 不开始下一轮，交给 runner 一个 `ROUNDS` 结局；runner 以这个任务的名义给父任务发一条普通的 request 消息（`MISSION_MESSAGE`，`byWorkflow` 表示文字由 Workflow 写在记录里，`asksGrant` 表示它要一个决定），父任务像收到任何消息一样被唤醒，按 D25 的规则必须在读到它的那一轮回复；回复用 `send_message` kind reply 加 `grant: true/false`，这类请求没有 `grant` 的回复不发送。等待期间这个任务什么也不运行，活动区显示"申请额度中"（`AWAITING_GRANT`，经 `updateActivity` 告诉 Kernel）。批准则这个 AgentRun 的轮次上限加上它 Agent 自己的上限（worker 40 → 80），拒绝则不变；下一轮的状态区说一次"Your parent granted N more rounds: this is round X of M now"或没有批准。每个 AgentRun 只申请一次，且只在刚结束的一轮里有调用成功、并且已经用过至少 5 轮时申请（模型调用连续失败空转的任务、上限很短的任务不申请：前者在旧的验收测试里会空转到第 54 轮，向不会回答的父任务申请后卡住）；没有父任务（根任务）、父任务已结束、父任务睡着且唤醒次数已到上限时不申请，照常继续；父任务结束没回答（MESSAGE_UNANSWERED）按拒绝处理；等待中被停止或打断，直接按停止或打断结束。额度（token 份额）不随轮次增加，仍由 BUDGET_INSUFFICIENT 的借出机制处理。注意轮次上限按段计算：任务睡过以后新段从 0 轮开始（dv-minipy-split2 里 interpreter 用了 94 轮、builtins-core 58 轮都没有申请）。改 Contracts（MISSION_MESSAGE、MESSAGE 历史条目、SendMessageArgs、StatusFacts、活动阶段、UpdateActivityRequest）、Workflow 的 agent-cycle、session-runner、history-projection，Kernel 的消息渲染与活动，ExecutorSet 的状态区，UserInteraction 的文字，send_message 工具说明，测试 |
 | D92 | 消息按父任务的名字送给父任务，发给已结束的兄弟任务时转给接手它结果的祖先（2026-11-16；dv-minipy-split2 里 5 次 NOT_SENT）：4 次是子任务用父任务的名字（`to: "deliver"`、`to: "runtime"`）指代父任务，`to` 只认 parent、children、siblings 和子任务/兄弟任务的名字，被拒；1 次是 parser 发给已经交付结束的 runtime，被拒。现在按名字查找时，子任务和兄弟任务之后也查父任务，父任务的名字等同于 `parent`；发给已结束的任务时，沿树向上找最近的还在运行的祖先（它接手了那部分的结果），消息送给它，记录写 `meantFor`，收件方看到"meant for task X (it has ended and its result came to you)"，发件方的回执说消息转给了谁。发给自己已结束的子任务仍拒发（结果已经交给发件方自己，提示用 continues 重启它）；回复（reply）仍要求原请求方还在运行。不放宽到树里任意任务：那会绕过中间的 lead。和 steer 发给已结束任务时转给父任务（`redirectedFrom`）是同一个规则。改 Contracts（MISSION_MESSAGE、MESSAGE 历史条目）、Workflow 的 session-runner、history-projection，Kernel 的消息渲染，send_message 工具说明，测试 |
+| D93 | **Mission 基线1**（2026-11-16，Cary 定）：以 L9（`dv-medseg-split`，提交 `5528602`）那次运行的配置为基线，其余配置删除。基线 = 原来的替代线 `no-acceptance-lead-flag`：子任务没有验收条件，完成目标就交付（D81）；lead 是 worker 的参数 `split: true`，只有根任务能用（D88）；继承上下文总是开着（D35、D53、D56、D58）；加上至 D92 为止的全部机制。删除：`definitions-arms/` 下的全部替代定义（no-acceptance、few-shot、lead-flag、no-acceptance-lead-flag，后者的文件成了 `definitions/` 的正式定义）与 `OverlayDefinitionSource`；环境变量 `MAO_SUBTASK_ACCEPTANCE`、`MAO_FEW_SHOT`、`MAO_LEAD_AS_WORKER`、`MAO_INHERIT_CONTEXT` 及 Workflow 的 `inheritContext`；验收条件的整条链路：任务的 `acceptance` 字段、交付结果里的逐条答复（`AcceptanceAnswer`）、没答完就退回（`RESULT_INCOMPLETE`）、结果说明里的 `criterion N …`、任务说明与继承说明里的验收段、专家纲领里"goal 和 acceptance"的说法；契约改为：根任务的 `workflow.RunSubagentsArgs`（agent 为 explorer、worker 与专家，加 `split`）、lead 的派生工具 `lead-run-subagents` 用 `workflow.RunSubagentsNestedArgs`（只能派 explorer 与 worker，没有 `split` 也没有专家，所以 lead 与专家只由根任务派出；原来运行时对"非根任务派专家"的拒绝随之删除）、`WorkerResult`/`ExplorerResult` 去掉 `acceptance`，Workflow 内部用 `SpawnRequest`（含系统换成的 `lead`）；模型若仍写 `acceptance`，修补步骤（D56）把它当作已没有的字段去掉，不拒绝任务。保留：Turn-chat（与 Mission 共用同一套定义）；tester 的预编排模板 `acceptance`（写验收测试，与验收条件无关）；专家（fixer、reviewer、tester、integrator、researcher）。历史记录（本表此前各行、experiments 各轮）原样保留，其中关于替代线、开关与验收条件的部分以本行为准。改 AgentToolPool 的定义与目录、Contracts、Workflow、Kernel 的任务渲染、控制面组合根、`agentrun.mjs`，测试，文档 |
 | D46 | 删除 M1 的 `analyze` 路径与只为它存在的机制（2026-11-14，Cary 决定"全删，冻结测试换载体"；落实 D38；M2Design v1.38）：内置模板 `analyze`，Agent planner、code-viewer 与它们的 `finish`、`handoff` 工具，仓库概览 `repository-orient`，报告发布 `report-publish` 与 `AnalysisReport`，交接条目，条件边与 `SKIPPED(NOT_TAKEN)`，从未被模板使用的有界循环与节点迭代号，仓库模板与 `mas run <模板>`（`mas run` 只收目标），执行类别 `TEST`，以及只在测试里调用的统一校验函数 `validateExtension` 与 `spawnedIn`。日志里专家的纲领由 `spawn.submission` 改名为 `spawn.specialist`，去掉总是空的 `params`。两份冻结测试中经 `analyze` 运行的用例改用 `mission` 作为载体，断言不放宽（M2FrozenTests 第 7 节）。旧 Session 的日志不再能读（开发期的数据） |
 | D45 | 额度按实际会花的计算（2026-11-14，Cary 决定；M2Design 7.3 规则 10）：收尾保留、调用余量、最小份额（初始份额与每次补的大小）与每次预留，输入都按 `kernel.budget.reserveShare`（缺省 0.3）计算；上限仍按声明的值，所以初始份额小、补的次数多、能花的总量不变。原来按最坏情况，worker 开账就占 86 万，tester 想并行派 3 个写测试的子任务因额度被拒 |
 | D22 | 编排不写死（2026-11-12）：缺省是负责人自主分解；系统只写死底线（权限、写入范围与借出、额度、深度与唤醒上限、子任务没结束不能交付、checkpoint）；固定工作流降为范式，按固定图执行保留为预编排模式（见 D29；[Phase2Plan](Phase2Plan.md) 第 1、2 节） |
@@ -267,7 +268,7 @@ M2ReleasePlan RP3-ORCH-1"预置工作流供 Turn-chat 调用"的落实方式（�
 |---|---|---|
 | 能力上限 | 子任务的 MissionScope 上限不超过父任务的；每段 AgentRun 的上限不超过它的 MissionScope | Kernel |
 | 写入范围 | 子任务的 `writeScope` 落在父任务的范围内；同时运行的任务写入占用两两不相交（按任务，而不是按 AgentRun） | Workflow 校验，Kernel 强制 |
-| 派生 | 任务的深度至多 `maxMissionDepth`（缺省 2：根任务 0、组长 1、工人 2，共三层，D13）；`agent.spawn` 只在 `depth < maxMissionDepth` 时出现在能力上限中 | Kernel |
+| 派生 | 任务的深度至多 `maxMissionDepth`（缺省 2：根任务 0、组长 1、工人 2，共三层，D13）；`agent.spawn` 只在 `depth < maxMissionDepth` 时出现在能力上限中 ；lead 只由根任务派出（带 `split: true` 的 worker 或专家），lead 的派生工具只能派 explorer 与 worker（D88、D93） | Kernel |
 | 额度 | 子任务的账本来自父任务一段的委派，结束时剩余返还父任务的 MissionScope（第 8.3 节） | Kernel |
 | 取消 | 任务被中止或失败时，它的整棵子树一并结束，后台命令一并停止 | Kernel 执行，Workflow 记录 |
 
@@ -295,7 +296,7 @@ M2ReleasePlan RP3-ORCH-1"预置工作流供 Turn-chat 调用"的落实方式（�
 "子任务没结束不能交付"、停止、中断、消息、checkpoint、回溯与续跑全部沿用子任务的规则。节点的 `spawn.specialist` 记下模板与纲领
 （派出那一刻的副本），日志本身说明它必须做什么。
 
-**专家怎样工作。** 它的前后文是：任务说明（目标、验收标准、写入范围，模板需要的命令、标准、规格位置都写在目标与验收里）、
+**专家怎样工作。** 它的前后文是：任务说明（目标、写入范围，模板需要的命令、标准、规格位置都写在目标里）、
 行动纲领（各阶段与规则，`renderPlaybook`）、推荐方案的例子（D32），以及公开的计划书（D24）。它**不能改纲领的结构**：
 系统检查它的每一次 `run_subagents` 是否是下一个有子任务的阶段、Agent 与数量是否相符、上一阶段的子任务是否都已结束
 （`repeat` 是有上限的循环，`optional` 可跳过），不符合就退回并说明下一阶段可以是什么，不算一次错误的派生调用；
@@ -327,16 +328,13 @@ M2ReleasePlan RP3-ORCH-1"预置工作流供 Turn-chat 调用"的落实方式（�
 - 图上，继承的任务节点的 `agentRef` 是 root 的 Agent，`spawn.inherits` 记下它继承的任务、发出调用的 AgentRun 和阶段声明的 Agent
   （`as`）；纲领检查按 `as` 判断这次调用属于哪个阶段。
 - 上下文投影：root 在派生记录之前的视图原样作为前缀（与 root 自己发给模型的前缀逐条相同），随后是派生那一轮里各个调用的答复，
-  其中派生调用的答复就是子任务的任务说明（"从这里起你是另一个任务……"：不再按纲领行动、不派子任务、只能写哪些路径、目标与验收），
+  其中派生调用的答复就是子任务的任务说明（"从这里起你是另一个任务……"：不再按纲领行动、不派子任务、只能写哪些路径、目标），
   再往后是子任务自己的历史。子任务自己的压缩记录作用在整段上。
 - Kernel：登记 AgentRun 时 `offeredCapabilities`（提供哪些工具）与 `requestedCapabilities`（能力上限）分开。继承的任务按 root
   的能力提供工具，上限是阶段声明的 Agent 的能力与借出的写入范围；`run_subagents` 由 Workflow 以 `NOT_A_LEAD` 拒绝。
 - 思考强度：继承的任务用 root 那个 AgentRun 的思考强度，任务里写的 `effort` 不生效。模型提供方按思考强度分别缓存，
   强度不同时前缀逐字相同也不会命中（2026-11-14 第一轮实验：子任务写了 `low`，root 是 `high`，第一次请求命中为 0）。
-- 开关：环境变量 `MAO_INHERIT_CONTEXT=off` 关闭继承，只用于对照实验。
-- 开关：环境变量 `MAO_SUBTASK_ACCEPTANCE=off` 换用没有验收条件的整套替代定义（D81），只用于对照实验。
-- 开关：环境变量 `MAO_FEW_SHOT=on` 换用带原来完整例子的根任务手册（D83），只用于对照实验；与上一个开关不能同时打开。
-- 开关：环境变量 `MAO_LEAD_AS_WORKER=on` 把 lead 换成 worker 的参数 `split: true`（D88），只用于对照实验；可以与 `MAO_SUBTASK_ACCEPTANCE=off` 同时打开，不能与 `MAO_FEW_SHOT=on` 同时打开。
+- 继承总是开着，没有开关（Mission 基线1，D93）；原来的对照开关与替代定义都已删除。
 
 之后：`fan-out`（扇出与汇合，需要按列表分发）、`sections`（分节撰写与统一审校）。
 
@@ -474,7 +472,7 @@ send_message({
 | 任务看得到 | 任务看不到 |
 |---|---|
 | 系统提示词与工具；项目说明（根目录 `AGENTS.md`）；运行环境 | 父任务的对话历史 |
-| 任务说明：名字、Agent、`goal`、`acceptance`、`writeScope`、`inputs`（产物引用） | 父任务读过的文件与工具结果（除非作为 `inputs` 或附件给出） |
+| 任务说明：名字、Agent、`goal`、`writeScope`、`inputs`（产物引用） | 父任务读过的文件与工具结果（除非作为 `inputs` 或附件给出） |
 | 依赖任务的结果；开工时的任务树快照（裁剪到可见范围） | 兄弟与子孙的工作过程 |
 | 自己全部段的历史；发给它的消息、通知；子任务交回的结果（摘要 + 引用） | 可见范围之外的任务（下文） |
 
@@ -487,7 +485,7 @@ send_message({
 |---|---|---|
 | **计划书**（公开层，D24） | root 在第一次派生之前写的计划：交付物、整体方案、分工、接口归属、全局约束。所有任务都能看到 | 全局目标与结构只有一份，不该由每个父任务各转述一遍 |
 | **通信工具**（点对点层，D25） | 任务之间传递信息、索要信息：摘要 + 附件列表，接收方按需读取 | 部门层（上级交代的细节）与横向层（平级之间对齐）都通过它传递 |
-| 派生合同（已有） | 目标、意图、验收、写入范围、额度：由 Kernel 校验并只能收窄 | **权限不是信息**：消息不带权限，写入范围与额度必须走派生，由 Kernel 执行 |
+| 派生合同（已有） | 目标、意图、写入范围、额度：由 Kernel 校验并只能收窄 | **权限不是信息**：消息不带权限，写入范围与额度必须走派生，由 Kernel 执行 |
 | 通讯录（已有，裁剪） | 开工时的任务树快照：父任务、兄弟、直接子任务的名字、角色、状态 | 不知道一个任务存在，就无法联系它；内容靠通信去问 |
 | 仓库文件（已有） | 会多次修改的共享事实（如接口约定 `api/API.md`）放在负责方写入范围内的文件里，改后发通知附指针 | 消息是一次性的，来回传会乱版本；写入范围就是所有权，不需要另造公告板 |
 
@@ -876,7 +874,7 @@ M2Design 第 3.3 节的处理顺序保留，第 6 步"唤醒"改为：
 | Agent | 变化 |
 |---|---|
 | `main` | 可以当 Turn-chat 的根任务（`reply`）或模板的根任务（`complete_step`） |
-| `lead`（新增） | 组长：读、检索、在 `writeScope` 内写与编辑、命令（不联网）、派生（受深度限制）、消息。用于"前端组""后端组"这类自己再分工的子任务 |
+| `lead`（新增） | 组长：读、检索、在 `writeScope` 内写与编辑、命令（不联网）、派生（受深度限制）、消息。用于"前端组""后端组"这类自己再分工的子任务。模型不直接选 `lead`（Mission 基线1，D88、D93）：根任务给一个 worker 写 `split: true`，系统按 lead 运行它；专家也是 lead。lead 的派生工具（`lead-run-subagents`）只能派 explorer 与 worker，所以只有根任务能派出 lead 与专家 |
 | `worker`、`explorer` | 不变；增加 `sleep`、`send_message`、后台命令（explorer 没有命令能力，因此没有后台命令） |
 
 具体的提示词与派生准则在 RP2-PA-1 中按评测迭代。
@@ -885,7 +883,7 @@ M2Design 第 3.3 节的处理顺序保留，第 6 步"唤醒"改为：
 
 - 任务的投影 = 它所有段的历史（按日志顺序）+ 投递给它的通知 + 唤醒说明。根任务的投影跨 WorkflowRun（同一个 missionId）；
 - 每段开头一行运行时说明："你是任务 frontend 的第 2 段；上一段以休眠结束，原因见末尾"，让模型知道自己是被唤醒的；
-- **谱系**：子任务的第一段投影开头放精炼的谱系——父任务的目标、自己的目标与验收标准、兄弟任务的名字、目标摘要与写入范围
+- **谱系**：子任务的第一段投影开头放精炼的谱系——父任务的目标、自己的目标、兄弟任务的名字、目标摘要与写入范围
   （每项限长）。这是 MissionTree 对多 Agent 协作的直接用处：每个 Agent 知道自己在整体中的位置与边界。
   谱系出自父任务写的派生参数，同样是材料，不是指令。
 

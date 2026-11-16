@@ -92,7 +92,7 @@ actions:
       version: v0.1.0
   spawn:
     toolRef:
-      id: run-subagents
+      id: lead-run-subagents
       version: v0.1.0
 spawnable:
   defaultShare: 2400000

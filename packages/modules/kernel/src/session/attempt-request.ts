@@ -437,11 +437,11 @@ export class AttemptRequestBuilder {
     return this.#json<ModelRawOutput>(ref, ModelRawOutputSchema);
   }
 
-  /** The goal and criteria of a task as the call that started it wrote them (D56). */
+  /** The goal of a task as the call that started it wrote it (D56). */
   async #wholeTask(entry: {
     readonly name: string;
     readonly fullFrom?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
-  }): Promise<{ goal?: string; acceptance?: string[] } | undefined> {
+  }): Promise<{ goal?: string } | undefined> {
     if (entry.fullFrom === undefined) return undefined;
     const raw = await this.#rawOutput(entry.fullFrom.outputRef);
     const call = raw.toolCalls.find((each) => each.toolCallId === entry.fullFrom?.toolCallId);
@@ -449,19 +449,13 @@ export class AttemptRequestBuilder {
     try {
       const args = (parseToolArguments(call.argumentsText) ?? {}) as { tasks?: unknown[] };
       const task = (args.tasks ?? []).find(
-        (each): each is { name: string; goal?: unknown; acceptance?: unknown } =>
+        (each): each is { name: string; goal?: unknown } =>
           typeof each === 'object' &&
           each !== null &&
           (each as { name?: unknown }).name === entry.name,
       );
       if (task === undefined) return undefined;
-      return {
-        ...(typeof task.goal === 'string' ? { goal: task.goal } : {}),
-        ...(Array.isArray(task.acceptance) &&
-        task.acceptance.every((each) => typeof each === 'string')
-          ? { acceptance: task.acceptance }
-          : {}),
-      };
+      return typeof task.goal === 'string' ? { goal: task.goal } : {};
     } catch {
       return undefined;
     }
@@ -566,23 +560,16 @@ ${shown}`,
         };
       }
       case 'TASK': {
-        // A goal or criteria cut in the graph are shown whole, from the call that started the
-        // task (D56): the task does not have to look them up.
+        // A goal cut in the graph is shown whole, from the call that started the task (D56): the
+        // task does not have to look it up.
         const whole = entry.fullFrom === undefined ? undefined : await this.#wholeTask(entry);
         const goal = whole?.goal ?? entry.goal;
-        const acceptance = whole?.acceptance ?? entry.acceptance;
         const lines = [
           `Your task (${entry.name}, ${entry.agent}):`,
           goal,
           ...(entry.writeScope.length === 0
             ? []
             : [`You may change only: ${entry.writeScope.join(', ')}`]),
-          ...(acceptance.length === 0
-            ? []
-            : [
-                'Acceptance criteria, by index:',
-                ...acceptance.map((each, index) => `${String(index)}. ${each}`),
-              ]),
         ];
         if (entry.playbook !== undefined) lines.push(entry.playbook);
         for (const ref of entry.inputs)

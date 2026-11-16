@@ -26,6 +26,8 @@ import {
   type StopSubagentsArgs,
   type WakeCondition,
   type RunSubagentsArgs,
+  type SpawnRequest,
+  type SubagentTask,
   type SpawnNode,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
@@ -81,12 +83,7 @@ import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
 import { placementOf } from '../domain/spawn/placement.js';
 import { readableArtifacts } from '../domain/spawn/readable-artifacts.js';
 import { callOf, spawnNodeOf, stepScopeOf, taskScopeOf } from '../domain/spawn/spawn-graph.js';
-import {
-  finishedOutcome,
-  resultOf,
-  unansweredCriteria,
-  type TaskOutcome,
-} from '../domain/spawn/task-results.js';
+import { finishedOutcome, resultOf, type TaskOutcome } from '../domain/spawn/task-results.js';
 import {
   validateSpawn,
   type SpawnAgentFacts,
@@ -160,11 +157,6 @@ export interface SessionRunnerDeps {
   readonly sandbox?: Extract<SessionLogRecord, { type: 'SESSION_STARTED' }>['sandbox'];
   readonly now?: () => Date;
   readonly newAgentRunId?: () => string;
-  /**
-   * False turns off `context: inherit` of playbook phases (D35): their tasks start fresh, as
-   * before. For comparing the two; inherit when absent.
-   */
-  readonly inheritContext?: boolean;
 }
 
 const MAIN = 'main';
@@ -273,7 +265,7 @@ interface ActiveAgent {
   readonly agentId: string;
   readonly nodeEnding?: NodeEnding;
   /** The task this AgentRun was started for, when it is a SubAgent. */
-  readonly task?: { readonly name: string; readonly criteria: readonly string[] };
+  readonly task?: { readonly name: string };
   /** What the Kernel reported this AgentRun changed (M2Design 3.7). */
   readonly changed: readonly string[];
   /** Files changed after the last successful command: a worker should check its work. */
@@ -337,20 +329,16 @@ function commandTimeOf(
 }
 
 /**
- * The comparison arm where a lead is a worker with `split: true` (Orchestration D88): such a task
- * of the root runs as a lead, with its prompt, its tools for subtasks and its share. Only the root
- * starts a lead: below it the field is not offered, and one that comes anyway starts a worker.
- * Elsewhere no task has the field, and the call is left as it is.
+ * A worker with `split: true` (D88) runs as a lead, with its prompt, its tools for subtasks and
+ * its share. Only the root's spawn tool has the field (a lead's has not), so only the root starts
+ * a lead.
  */
-function splitAsLead(args: RunSubagentsArgs, isRoot: boolean): RunSubagentsArgs {
-  if (!args.tasks.some((task) => 'split' in task)) return args;
+function splitAsLead(args: RunSubagentsArgs): SpawnRequest {
   return {
     ...args,
     tasks: args.tasks.map((task) => {
       const { split, ...rest } = task as typeof task & { readonly split?: boolean };
-      return isRoot && split === true && rest.agent === 'worker'
-        ? { ...rest, agent: 'lead' }
-        : rest;
+      return split === true && rest.agent === 'worker' ? { ...rest, agent: 'lead' as const } : rest;
     }),
   };
 }
@@ -1970,9 +1958,7 @@ export class SessionRunner {
       changed: [],
       unchecked: false,
       completionAsked: false,
-      ...(taskNode?.spawn === undefined
-        ? {}
-        : { task: { name: taskNode.name, criteria: taskNode.spawn.acceptance } }),
+      ...(taskNode?.spawn === undefined ? {} : { task: { name: taskNode.name } }),
     });
     await this.#apply(workflowRunId, transition);
   }
@@ -2440,15 +2426,6 @@ export class SessionRunner {
           `Not accepted as done: these phases of your playbook have not run: ${left.join(', ')}. Go on with them, or finish with status partial or blocked and say why.`,
         );
     }
-    const missing = unansweredCriteria(args, task.criteria.length);
-    if (!final && missing.length > 0)
-      return this.#sendBack(
-        workflowRunId,
-        active,
-        toolCallId,
-        'RESULT_INCOMPLETE',
-        `Not accepted: answer every acceptance criterion by its index. Missing: ${missing.join(', ')}.`,
-      );
     const canRun = active.state.definitions.tools.some((tool) => tool.executionKind === 'COMMAND');
     if (!final && canRun && active.unchecked && !active.completionAsked) {
       this.#agents.set(active.state.agentRunId, { ...active, completionAsked: true });
@@ -2462,7 +2439,7 @@ export class SessionRunner {
     }
     const seenCheck =
       active.lastCheck === undefined ? undefined : commandOfCall(this.#records, active.lastCheck);
-    const finished = finishedOutcome(args, task.criteria, active.changed, seenCheck);
+    const finished = finishedOutcome(args, active.changed, seenCheck);
     // Its result and the tool results it listed are handed over: those that pass, the others are
     // only told of.
     // Its last check goes with it, whether it listed it or not (D54).
@@ -2806,27 +2783,18 @@ export class SessionRunner {
         ),
       );
     const isRoot = projectMissions(this.#records).get(active.missionId)?.parentId === undefined;
-    const requested = splitAsLead(ending.arguments as RunSubagentsArgs, isRoot);
+    const requested = splitAsLead(ending.arguments as RunSubagentsArgs);
     // A specialist (fixer, reviewer, ...) is a lead that follows the playbook of the template that
-    // names it (Orchestration 3.9, D39). Only the root task starts one: the specialist and its
-    // tasks take the two levels below it.
+    // names it (Orchestration 3.9, D39). Only the root's spawn tool offers one (D93): the
+    // specialist and its tasks take the two levels below it.
     const specialists = new Map<string, NonNullable<SpawnNode['specialist']>>();
-    const tasks: RunSubagentsArgs['tasks'][number][] = [];
+    const tasks: SubagentTask[] = [];
     for (const task of requested.tasks) {
       const template = this.#specialists.get(task.agent);
       if (template?.playbook === undefined) {
         tasks.push(task);
         continue;
       }
-      if (!isRoot)
-        return this.#answerControl(
-          workflowRunId,
-          active,
-          toolCallId,
-          true,
-          'SPECIALIST_REFUSED',
-          `Not started: only the root task starts a ${task.agent}; start explorers or workers yourself.`,
-        );
       if (task.continues !== undefined)
         return this.#answerControl(
           workflowRunId,
@@ -2852,7 +2820,7 @@ export class SessionRunner {
         budget: { tokens: SPECIALIST_ASK },
       });
     }
-    const args: RunSubagentsArgs = { ...requested, tasks };
+    const args: SpawnRequest = { ...requested, tasks };
     // The root task writes the plan of the work before its first subtasks (D24). Refused here, it
     // does not count as a wrong call of run_subagents: nothing was wrong with the tasks.
     const planned = this.#records.some(
@@ -3003,21 +2971,20 @@ export class SessionRunner {
         'Not started: a tester writes the acceptance tests beside the build, in the same call as the tasks that build. The build has come back, and each result shows the check its task ran after its last change, as the system saw it. Read those; for the whole, run the checks of the plan yourself once, or start an integrator when the whole fails in ways you cannot place.',
       );
     // Who starts with the caller's context (D35, D53): every task of a phase that says so, or a
-    // task that asks for it. The comparison switch turns both off.
+    // task that is a worker, explorer or lead.
     const inherit = new Map<string, { readonly as: string; readonly runAs: string }>();
-    if (this.#deps.inheritContext !== false)
-      for (const task of checked.plan.tasks) {
-        if (phaseInherits !== undefined)
-          inherit.set(task.name, { as: phaseInherits, runAs: active.agentId });
-        // A worker, explorer or lead starts with its caller's context, which holds what the
-        // caller read and its call (D56, D58); a specialist and a task taken up again do not.
-        else if (
-          (task.agent === 'worker' || task.agent === 'explorer' || task.agent === 'lead') &&
-          task.continues === undefined &&
-          !specialists.has(task.name)
-        )
-          inherit.set(task.name, { as: task.agent, runAs: task.agent });
-      }
+    for (const task of checked.plan.tasks) {
+      if (phaseInherits !== undefined)
+        inherit.set(task.name, { as: phaseInherits, runAs: active.agentId });
+      // A worker, explorer or lead starts with its caller's context, which holds what the
+      // caller read and its call (D56, D58); a specialist and a task taken up again do not.
+      else if (
+        (task.agent === 'worker' || task.agent === 'explorer' || task.agent === 'lead') &&
+        task.continues === undefined &&
+        !specialists.has(task.name)
+      )
+        inherit.set(task.name, { as: task.agent, runAs: task.agent });
+    }
     const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
     if (lent.kind === 'BLOCKED') return;
     // Left unanswered: the call is made again when the user has answered (D62).

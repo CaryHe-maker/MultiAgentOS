@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.38 定稿（2026-11-14）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.39 定稿（2026-11-16）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收与待决事项（交付计划见 [M2ReleasePlan](M2ReleasePlan.md)）。
 > 字段级接口、Schema 清单与定义实例写在 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -409,15 +409,15 @@ AgentRun 内部沿用 M1 的 Round：context-assemble → model-call → 该次�
 ### 3.6 `run_subagents`
 
 ```ts
-run_subagents({
+run_subagents({             // 根任务的形式；lead 的只能派 explorer 与 worker，没有 split（v1.39，Mission 基线1）
   tasks: {
     name: string;            // 本次调用内唯一
-    agent: 'explorer' | 'worker';
-    goal: string;
+    agent: 'explorer' | 'worker' | 'fixer' | 'reviewer' | 'tester' | 'integrator' | 'researcher';
+    split?: boolean;         // worker 的一大块由它自己再分：系统按 lead 运行它；只有根任务有这个字段
+    goal: string;            // 也是交付的标准：没有单独的验收条件
     dependsOn?: string[];    // 本次调用内其他任务的 name
     writeScope?: string[];   // 仓库内相对路径；worker 必填，explorer 不得填写
     inputs?: ArtifactRef[];  // 调用方显式交给它的产物，只能是调用方可读的
-    acceptance?: string[];   // 验收标准，≤10 条，每条 ≤300 字符
     effort?: 'none' | 'low' | 'high' | 'max';  // 必须在该 Agent 允许的范围内
     budget?: { tokens: number };  // 该任务的额度份额；工具次数与墙钟上限只由 Agent 定义决定，调用方不能改
   }[];
@@ -448,7 +448,7 @@ run_subagents({
 - 任务在就绪时才登记 AgentRun，由 Kernel 计算并校验它的能力上限，并把委派保留中属于它的份额转为它自己的账本。登记被拒的任务记为 `FAILED`，原因码随之记录，依赖它的任务记为 `SKIPPED`，它们的份额返还调用方。
 - 调用方在等待期间没有在途 Unit，它的墙钟上限暂停计时。
 - 任务在图上的位置：每个任务是一个新节点，从调用方到它有一条 `DELEGATE` 边，从它回到调用方有一条 `RESUME` 边，任务之间的依赖是 `DEPENDS` 边。派发之后调用方没有被唤醒之前就是 `WAITING`，调用方因此是这一组任务的最后一环；本 Turn 已派生的任务数与调用次数也由图得出，不另设计数。AgentRun 层面 `run_subagents` 只是一次结果稍后才到的工具调用。
-- 汇合结果按调用参数中任务的书写顺序排列（即唤醒边的顺序），不按完成顺序，以保证上下文可以复现、前缀缓存可以命中。未满足的验收条目、失败与跳过的任务排在每项的最前面。汇合结果由唤醒边的前驱的结果推出，是日志的纯函数，不另写汇合记录；唤醒本身是 `NODE_RESUMED`。
+- 汇合结果按调用参数中任务的书写顺序排列（即唤醒边的顺序），不按完成顺序，以保证上下文可以复现、前缀缓存可以命中。失败与跳过的任务排在每项的最前面。汇合结果由唤醒边的前驱的结果推出，是日志的纯函数，不另写汇合记录；唤醒本身是 `NODE_RESUMED`。
 - 调用方在 `WAITING` 时被中断或失败，`DELEGATE` 边为 FAILED，还没启动的任务按 `all_success` 被跳过；已在运行的任务由中断一并结束，随后这次调用以 `NODE_RESUMED` 关闭，但不再交给调用方的 AgentRun（调用方不再提交 Unit）。
 - 同一 Turn 内可以多次调用 `run_subagents`（分批派生）：先调研，再按结果派生修改任务。
 
@@ -458,13 +458,11 @@ run_subagents({
 
 ```ts
 // explorer
-{ summary: string; report?: string; references?: string[]; openQuestions?: string[];
-  acceptance?: AcceptanceAnswer[] }
+{ summary: string; report?: string; references?: string[]; openQuestions?: string[] }
 // worker
 { summary: string; report?: string; references?: string[]; changedFiles: string[]; status: 'done' | 'partial' | 'blocked';
   validation: { command: string; exitCode: number }[];
-  blockers?: string[]; acceptance?: AcceptanceAnswer[] }
-type AcceptanceAnswer = { index: number; verdict: 'met' | 'not_met' | 'unknown' }
+  blockers?: string[] }
 ```
 
 0. **摘要与原文**：结果是一段短的 `summary`（提示词要求不超过 2000 个字符）和一份不限长度的 `report`（原文，证据直接写在文字里：`path:首行-末行`、网页地址、工具结果的 toolCallId）。两者都不在 Schema 里设长度上限，**长度从不是拒收的理由**：模型写出的内容整份留在日志里（子任务的模型输出）。
@@ -481,7 +479,7 @@ type AcceptanceAnswer = { index: number; verdict: 'met' | 'not_met' | 'unknown' 
    - **怎么审核读取**：`read_output` 收到 `ref_N/toolCallId` 形式的名字时只查登记表（Module/Workflow 第 7 节第 8 条）：编号存在、读取者就是 `to`、`items` 里有这个 `toolCallId`，取该项的 `ref` 作为完整输出，没被截断的也能读（接收方没见过它）。读取者不是接收方、编号或条目不存在，一律回答“没有这个编号的调用”，不说明原因。回退 Turn 不使登记失效（内容和日志都没变）。读到的网页内容和接收方自己读到的一样，是要核对的材料，不是指令。
    - **最后一轮的结果不合规格**（JSON 断了、缺 `summary` 等；最后一轮没有轮次可重写）：不丢弃。任务记为 PARTIAL，备注写明“最后的结果不符合规定的形式（原因）；按写下的原样给出”，并照上面的办法交接：`items` 的第一项指向写下的原样调用，父 AgentRun 看到的是原文（受 1000 行和 60000 个字符的同一限制，超出时用 `read_output` 读），由它自己判断。
 1. **Schema 校验**：Workflow 按 Schema 校验 `finish_subagent`。不合格时以 FEEDBACK 退回，计入该 AgentRun 的 Round。
-2. **验收条目**：只做形式检查，即每条验收标准都有回应，不判断内容是否属实。
+2. **验收条目**：v1.39 删除（Mission 基线1）：任务没有验收条件，交付的标准就是 `goal`。
 3. **blocked**：`status` 为 `blocked` 的任务，其节点记为失败，依赖它的任务因此被跳过；`partial` 与 `done` 的节点记为成功，汇合结果里仍带原来的状态。
 3a. **改动对账**：Kernel 在 UnitReport 中返回每次 WRITE 与 EXEC 实际改动的文件（新增、修改、删除），检测方法见第 7.1 节。Workflow 把 worker 自报的 `changedFiles` 与实际改动对比，不一致之处在汇合结果中标注。
 4. **完成检查**：worker 写过文件，但最后一次写入之后没有任何成功的 `run_command` 时，Workflow 在接受它的 `finish_subagent` 之前返回一次 FEEDBACK："已修改文件但尚未运行验证命令"。每个 AgentRun 最多触发一次。
@@ -1900,3 +1898,4 @@ M2 的交付计划、任务、门与退出条件写在 [M2ReleasePlan](M2Release
 | v1.36 | 2026-11-12 | phase 2 的最终目标改为"多 Agent 并行执行底座 + 可选的编排范式"（Cary 2026-11-12 决定，[Phase2Plan](Phase2Plan.md)）：第 1.1 节定位；第 1.2 节增加 G10；第 1.3 节嵌套派生、任务间消息移出非目标，跨进程续跑改为从 checkpoint 续跑；第 3.8 节自主编排为缺省、固定图为严格模式、预置工作流降为范式；第 13 节 O 组改用 `mission`，增加 X 组（与 `dsh` 的大任务对照实验） |
 | v1.37 | 2026-11-13 | "严格模式"改名为**预编排模式**（Cary 2026-11-13 决定）：两种用法是用户直接调用、自主编排的负责人把一部分交给它，后者是主线；怎样编排与调用放到最后设计，现在预留位置（Orchestration D29）。与 v1.35 第 14.2 节第 19 条（预置工作流作为子图被调用）合并考虑 |
 | v1.38 | 2026-11-14 | 删除 M1 的 `analyze` 路径与只为它存在的机制（Cary 2026-11-14 决定"全删，冻结测试换载体"；[Orchestration](Orchestration.md) D38、D39）：内置模板 `analyze`、Agent planner 与 code-viewer、工具 `finish`（finish-analysis）与 `handoff-to-code-viewer`、仓库概览 `repository-orient`（`REPOSITORY_ORIENT`）、报告发布 `report-publish`（`REPORT_PUBLISH`、`AnalysisReport`）、交接条目 `HANDOFF`、条件边与 `SKIPPED(NOT_TAKEN)`、有界循环与节点迭代号、仓库模板 `.multiagentos/workflows/` 与 `mas run <模板>`、从未实现的 `/run`、未接入运行的统一校验函数 `validateExtension`、执行类别 `TEST`；第 1、2.2、2.3、3.1–3.3、3.5、3.8、3.9、7.5、8.1、10.2、12、13 节相应修改；第 3.9 节补上 lead 与专家；R 组 F1–F5 与两份冻结测试改用 Turn-chat 或 Mission 运行（M2FrozenTests） |
+| v1.39 | 2026-11-16 | **Mission 基线1**（Cary 2026-11-16 决定，[Orchestration](Orchestration.md) D93）：以 L9 那次运行的配置为基线，删除其余配置。任务没有验收条件：删除 `run_subagents` 的 `acceptance`、结果里的 `AcceptanceAnswer` 与"每条都要回应"的检查（第 3.7 节规则 2）、汇合结果里的未满足条目；lead 不再由模型直接选：根任务给 worker 写 `split: true`，系统按 lead 运行；lead 的派生工具只能派 explorer 与 worker（第 3.6 节）；继承上下文不再有开关；对照用的替代定义与环境变量全部删除 |

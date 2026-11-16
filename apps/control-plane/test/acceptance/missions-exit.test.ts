@@ -253,9 +253,11 @@ real('a lead starts tasks of its own (D13, Orchestration 3.6)', () => {
       const provider = scriptedAgents(
         {
           main: [
+            // A worker with split runs as a lead (D88): only the root may ask for one.
             spawn({
               name: 'backend',
-              agent: 'lead',
+              agent: 'worker',
+              split: true,
               goal: 'build the server',
               writeScope: ['server'],
             }),
@@ -289,46 +291,6 @@ real('a lead starts tasks of its own (D13, Orchestration 3.6)', () => {
       const backend = seenBy(provider, 'backend');
       expect(backend).toContain('Result of task store (worker): DONE');
       expect(seen(provider)).toContain('Result of task backend (lead): DONE');
-    },
-    TIMEOUT,
-  );
-
-  it(
-    'does not give a task at the deepest level the tool to start more',
-    async () => {
-      const place = await roots({ 'server/a.txt': 'a\n' });
-      const provider = scriptedAgents(
-        {
-          main: [
-            spawn({ name: 'outer', agent: 'lead', goal: 'outer', writeScope: ['server'] }),
-            sleepFor(children()),
-            reply('done'),
-          ],
-        },
-        {
-          outer: [
-            spawn({
-              name: 'inner',
-              agent: 'lead',
-              goal: 'inner',
-              writeScope: ['server/in'],
-              budget: { tokens: 300_000 },
-            }),
-            sleepFor(children()),
-            finishLead('outer done', []),
-          ],
-          inner: [finishLead('inner done', [])],
-        },
-      );
-      const chat = await chatOn(place, provider);
-      await chat.say('nest');
-      expect(chat.printed('REPLY')).toContain('done');
-      const innerRequest = provider.requests.find((request) =>
-        request.messages.some((m) => isTaskText(textOf(m), 'inner')),
-      );
-      const innerTools = (innerRequest?.tools ?? []).map((each) => each.function.name);
-      expect(innerTools).toContain('finish_subagent');
-      expect(innerTools).not.toContain('run_subagents');
     },
     TIMEOUT,
   );

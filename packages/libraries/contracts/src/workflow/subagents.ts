@@ -1,4 +1,4 @@
-import { Type, type Static } from 'typebox';
+import { Type, type Static, type TObject } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { closed, count, text } from '../platform-common/schema-helpers.js';
 
@@ -46,6 +46,10 @@ export type SpecialistAgent = (typeof SPECIALIST_AGENTS)[number];
 
 const subagentTaskFields = {
   name: NameSchema,
+  /**
+   * The Agent the task runs as. A model never names `lead` (Mission baseline 1, D88, D93): the root
+   * asks for a worker with `split`, and the system runs it as a lead; a specialist is a lead too.
+   */
   agent: Type.Enum(['explorer', 'worker', 'lead', ...SPECIALIST_AGENTS]),
   goal: text(4000),
   /** One line on what this task is responsible for, which the tree shows (Orchestration 3.7). */
@@ -55,7 +59,6 @@ const subagentTaskFields = {
   /** The write permission lent with the scope includes commands unless this is false (D17). */
   commands: Type.Optional(Type.Boolean()),
   inputs: Type.Optional(Type.Array(ArtifactRefSchema, { maxItems: 10 })),
-  acceptance: Type.Optional(Type.Array(text(300), { maxItems: 10 })),
   effort: Type.Optional(Type.Enum(['none', 'low', 'high', 'max'])),
   /** Only the token share is the caller's to ask for; the other limits are the Agent's own. */
   budget: Type.Optional(closed({ tokens: count(1) })),
@@ -66,94 +69,58 @@ const subagentTaskFields = {
    */
   continues: Type.Optional(NameSchema),
 };
-export const SubagentTaskSchema = closed(subagentTaskFields);
-export type SubagentTask = Static<typeof SubagentTaskSchema>;
+/** A task as the system holds it, after a worker with `split` became a lead. */
+export type SubagentTask = Static<TObject<typeof subagentTaskFields>>;
 
-/** Parameters of `run_subagents`. The number of tasks is limited by configuration, not here. */
+/** The Agents a model may name: never `lead` (D88). */
+const modelAgent = { agent: Type.Enum(['explorer', 'worker', ...SPECIALIST_AGENTS]) };
+/**
+ * The plan of the work (Orchestration 5.3, D24): what is delivered, the approach, how it is split,
+ * who owns which part and which interface, the constraints. The root task writes it before its
+ * first subtasks; every task below sees it. A later one replaces it.
+ */
+const planField = () => Type.Optional(text(8000));
+
+/**
+ * Parameters of `run_subagents` of the root task. The number of tasks is limited by
+ * configuration, not here. `split: true` on a worker with a large part lets it start subtasks of
+ * its own inside its writeScope: the system runs it as a lead (D88).
+ */
 export const RunSubagentsArgsSchema = closed(
   {
-    tasks: Type.Array(SubagentTaskSchema, { minItems: 1, maxItems: 12 }),
-    /**
-     * The plan of the work (Orchestration 5.3, D24): what is delivered, the approach, how it is
-     * split, who owns which part and which interface, the constraints. The root task writes it
-     * before its first subtasks; every task below sees it. A later one replaces it.
-     */
-    plan: Type.Optional(text(8000)),
+    tasks: Type.Array(
+      closed({ ...subagentTaskFields, ...modelAgent, split: Type.Optional(Type.Boolean()) }),
+      { minItems: 1, maxItems: 12 },
+    ),
+    plan: planField(),
   },
   'workflow.RunSubagentsArgs.v1',
 );
 export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;
 
 /**
- * The comparison arm without criteria (Orchestration D81): `run_subagents` without `acceptance`,
- * so no agent sees the field at all. Read as `RunSubagentsArgs`, whose `acceptance` is optional.
+ * A `run_subagents` call as the system holds it once read: a worker with `split` became a lead,
+ * and a specialist runs as one. What the checks of a call and the graph work on.
  */
-const leanTaskFields = Object.fromEntries(
-  Object.entries(subagentTaskFields).filter(([key]) => key !== 'acceptance'),
-) as Omit<typeof subagentTaskFields, 'acceptance'>;
-export const RunSubagentsLeanArgsSchema = closed(
-  {
-    tasks: Type.Array(closed(leanTaskFields), { minItems: 1, maxItems: 12 }),
-    plan: Type.Optional(text(8000)),
-  },
-  'workflow.RunSubagentsLeanArgs.v1',
-);
+export interface SpawnRequest {
+  readonly tasks: readonly SubagentTask[];
+  readonly plan?: string;
+}
 
 /**
- * The comparison arm where a lead is a worker that may split (Orchestration D88): no `lead` among
- * the agents, and `split: true` on a worker for a large part it splits into subtasks of its own.
- * The system runs such a worker as a lead. With and without criteria (D81).
+ * Parameters of `run_subagents` of a lead: explorers and workers only. Only the root starts a lead
+ * or a specialist (D88, D93), so neither `split` nor a specialist is offered here.
  */
-const splitFields = {
-  agent: Type.Enum(['explorer', 'worker', ...SPECIALIST_AGENTS]),
-  /** A worker with a large part may start subtasks of its own inside its writeScope. */
-  split: Type.Optional(Type.Boolean()),
-};
-export const RunSubagentsSplitArgsSchema = closed(
+export const RunSubagentsNestedArgsSchema = closed(
   {
-    tasks: Type.Array(closed({ ...subagentTaskFields, ...splitFields }), {
+    tasks: Type.Array(closed({ ...subagentTaskFields, agent: Type.Enum(['explorer', 'worker']) }), {
       minItems: 1,
       maxItems: 12,
     }),
-    plan: Type.Optional(text(8000)),
+    plan: planField(),
   },
-  'workflow.RunSubagentsSplitArgs.v1',
+  'workflow.RunSubagentsNestedArgs.v1',
 );
-export const RunSubagentsLeanSplitArgsSchema = closed(
-  {
-    tasks: Type.Array(closed({ ...leanTaskFields, ...splitFields }), { minItems: 1, maxItems: 12 }),
-    plan: Type.Optional(text(8000)),
-  },
-  'workflow.RunSubagentsLeanSplitArgs.v1',
-);
-/**
- * The same arm for a task below the root: only the root starts a lead (D88), so neither `lead`
- * nor `split` is there. With and without criteria (D81).
- */
-const noLeadAgent = { agent: Type.Enum(['explorer', 'worker', ...SPECIALIST_AGENTS]) };
-export const RunSubagentsNoLeadArgsSchema = closed(
-  {
-    tasks: Type.Array(closed({ ...subagentTaskFields, ...noLeadAgent }), {
-      minItems: 1,
-      maxItems: 12,
-    }),
-    plan: Type.Optional(text(8000)),
-  },
-  'workflow.RunSubagentsNoLeadArgs.v1',
-);
-export const RunSubagentsLeanNoLeadArgsSchema = closed(
-  {
-    tasks: Type.Array(closed({ ...leanTaskFields, ...noLeadAgent }), { minItems: 1, maxItems: 12 }),
-    plan: Type.Optional(text(8000)),
-  },
-  'workflow.RunSubagentsLeanNoLeadArgs.v1',
-);
-
-export const AcceptanceAnswerSchema = closed({
-  index: count(0),
-  verdict: Type.Enum(['met', 'not_met', 'unknown']),
-});
-export type AcceptanceAnswer = Static<typeof AcceptanceAnswerSchema>;
 
 /** Parameters of `finish_subagent` of an explorer. */
 export const ExplorerResultSchema = closed(
@@ -162,22 +129,10 @@ export const ExplorerResultSchema = closed(
     report: Type.Optional(longText()),
     references: referencesField(),
     openQuestions: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
-    acceptance: Type.Optional(Type.Array(AcceptanceAnswerSchema, { maxItems: 10 })),
   },
   'workflow.ExplorerResult.v1',
 );
 export type ExplorerResult = Static<typeof ExplorerResultSchema>;
-
-/** `finish_subagent` of an explorer in the comparison arm without criteria (D81). */
-export const ExplorerLeanResultSchema = closed(
-  {
-    summary: longText(),
-    report: Type.Optional(longText()),
-    references: referencesField(),
-    openQuestions: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
-  },
-  'workflow.ExplorerLeanResult.v1',
-);
 
 /** Parameters of `finish_subagent` of a worker. */
 export const WorkerResultSchema = closed(
@@ -191,27 +146,10 @@ export const WorkerResultSchema = closed(
       maxItems: 20,
     }),
     blockers: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
-    acceptance: Type.Optional(Type.Array(AcceptanceAnswerSchema, { maxItems: 10 })),
   },
   'workflow.WorkerResult.v1',
 );
 export type WorkerResult = Static<typeof WorkerResultSchema>;
-
-/** `finish_subagent` of a worker in the comparison arm without criteria (D81). */
-export const WorkerLeanResultSchema = closed(
-  {
-    summary: longText(),
-    report: Type.Optional(longText()),
-    references: referencesField(),
-    changedFiles: Type.Array(text(500), { maxItems: 200 }),
-    status: Type.Enum(['done', 'partial', 'blocked']),
-    validation: Type.Array(closed({ command: text(1000), exitCode: Type.Integer() }), {
-      maxItems: 20,
-    }),
-    blockers: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
-  },
-  'workflow.WorkerLeanResult.v1',
-);
 
 /** The part of the result of `finish_subagent` that the caller reads, whichever kind of Agent wrote it. */
 export interface SubagentReport {

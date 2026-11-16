@@ -1,4 +1,4 @@
-import type { RunSubagentsArgs } from '@multiagentos/contracts';
+import type { SpawnRequest } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { nearestEffort, validateSpawn, type SpawnContext } from './validate-spawn.js';
 
@@ -26,7 +26,7 @@ const worker = (name: string, writeScope: string[], extra: object = {}) => ({
   writeScope,
   ...extra,
 });
-const codes = (args: RunSubagentsArgs, ctx = context()) => {
+const codes = (args: SpawnRequest, ctx = context()) => {
   const result = validateSpawn(args, ctx);
   return result.ok ? [] : result.errors.map((error) => error.code);
 };
@@ -115,7 +115,7 @@ describe('validateSpawn', () => {
   });
 
   it('sets an effort the Agent does not allow to the nearest it does, and starts the task', () => {
-    const efforts = (args: RunSubagentsArgs) => {
+    const efforts = (args: SpawnRequest) => {
       const result = validateSpawn(args, context());
       expect(result.ok).toBe(true);
       return result.ok ? result.plan.tasks.map((task) => task.effort) : [];

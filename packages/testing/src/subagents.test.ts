@@ -422,7 +422,6 @@ describe('run_subagents', () => {
                 agent: 'worker',
                 goal: 'fix it',
                 writeScope: ['src'],
-                acceptance: ['it builds'],
               },
             ],
           },
@@ -440,17 +439,14 @@ describe('run_subagents', () => {
     });
     await begin(kernel);
     const { records } = runner;
-    // Neither the unchecked change nor the unanswered criterion sends it back: it could not act.
-    expect(
-      ofType(records, 'FEEDBACK').filter(
-        (record) => record.code === 'NOT_VERIFIED' || record.code === 'RESULT_INCOMPLETE',
-      ),
-    ).toEqual([]);
+    // The unchecked change does not send it back: it could not act.
+    expect(ofType(records, 'FEEDBACK').filter((record) => record.code === 'NOT_VERIFIED')).toEqual(
+      [],
+    );
     const [joined] = resumedCalls(records);
     expect(joined?.[0]?.status).toBe('DONE');
     expect(joined?.[0]?.notes).toEqual([
       'not checked: it changed files after its last check and ran out of rounds',
-      'criterion 0 unanswered: it builds',
     ]);
   });
 
@@ -466,7 +462,6 @@ describe('run_subagents', () => {
                 agent: 'worker',
                 goal: 'fix it',
                 writeScope: ['src'],
-                acceptance: ['it builds'],
               },
             ],
           },
@@ -478,12 +473,12 @@ describe('run_subagents', () => {
         model({ toolName: 'write_file', args: { path: 'src/a.ts' } }),
         model({
           toolName: 'finish_subagent',
-          args: workerResult({ acceptance: [{ index: 0, verdict: 'met' }] }),
+          args: workerResult(),
         }),
         model({ toolName: 'run_command', args: {} }),
         model({
           toolName: 'finish_subagent',
-          args: workerResult({ changedFiles: [], acceptance: [{ index: 0, verdict: 'not_met' }] }),
+          args: workerResult({ changedFiles: [] }),
         }),
       ],
     });
@@ -499,44 +494,8 @@ describe('run_subagents', () => {
     expect(joined?.[0]?.notes).toEqual([
       // Its check after its last change goes with its result, first (D54, D68).
       expect.stringMatching(/^checked: the system saw `.+` exit 0 after the last change/u),
-      'criterion 0 not_met: it builds',
       'changed but not reported: src/a.ts',
     ]);
-  });
-
-  it('sends back a result that leaves a criterion unanswered', async () => {
-    const { kernel, runner } = setup({
-      main: [
-        model({
-          toolName: 'run_subagents',
-          args: {
-            tasks: [{ name: 'look', agent: 'explorer', goal: 'x', acceptance: ['a', 'b'] }],
-          },
-        }),
-        sleepForChildren(),
-        model({ toolName: 'reply', args: { text: 'ok' } }),
-      ],
-      explorer: [
-        model({
-          toolName: 'finish_subagent',
-          args: { ...explorerResult, acceptance: [{ index: 0, verdict: 'met' }] },
-        }),
-        model({
-          toolName: 'finish_subagent',
-          args: {
-            ...explorerResult,
-            acceptance: [
-              { index: 0, verdict: 'met' },
-              { index: 1, verdict: 'unknown' },
-            ],
-          },
-        }),
-      ],
-    });
-    await begin(kernel);
-    const { records } = runner;
-    expect(ofType(records, 'FEEDBACK').map((record) => record.code)).toContain('RESULT_INCOMPLETE');
-    expect(resumedCalls(records)[0]?.[0]?.notes).toEqual(['criterion 1 unknown: b']);
   });
 });
 

@@ -116,7 +116,6 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
                   agent: 'fixer',
                   goal: 'src/value.txt must say fixed; the check fails now',
                   writeScope: ['src'],
-                  acceptance: [`${check} succeeds`],
                 },
               ],
               plan: 'One part: make the value check pass, handed to a fixer.',
@@ -139,7 +138,6 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
                   agent: 'worker',
                   goal: 'write fixed into src/value.txt',
                   writeScope: ['src'],
-                  acceptance: [`${check} succeeds`],
                   // Not taken: a task that inherits thinks as hard as the root it comes from.
                   effort: 'low',
                 },
@@ -152,7 +150,6 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
               status: 'done',
               changedFiles: ['src/value.txt'],
               validation: [{ command: check, exitCode: 0 }],
-              acceptance: [{ index: 0, verdict: 'met' }],
             }),
           ],
         },
@@ -165,7 +162,6 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
               status: 'done',
               changedFiles: ['src/value.txt'],
               validation: [],
-              acceptance: [{ index: 0, verdict: 'met' }],
             }),
           ],
         },
@@ -182,9 +178,8 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
       // The specialist read its playbook and its example with its task.
       expect(said).toContain('You run a pre-orchestrated part of the work: template fix-verify');
       expect(said).toContain('An example of a good plan with this playbook');
-      // What the playbook needs comes from the goal and acceptance main wrote (D39).
-      expect(said).toContain('What you need from your task, in its goal and acceptance');
-      expect(said).toContain(`${check} succeeds`);
+      // What the playbook needs comes from the goal main wrote (D39).
+      expect(said).toContain('What you need from your task, in its goal (when');
       // The root of the long task read the table of decisions and the manual of the system with
       // its goal (Orchestration D37).
       expect(said).toContain('Decisions, by what you see.');
@@ -254,70 +249,9 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
     },
     TIMEOUT,
   );
-
-  it(
-    'starts the tasks of a phase fresh when inherited contexts are turned off',
-    async () => {
-      const provider = scriptedAgents({
-        main: [
-          tool('run_subagents', {
-            tasks: [
-              {
-                name: 'fix-value',
-                agent: 'fixer',
-                goal: 'src/value.txt must say fixed; the check fails now',
-                writeScope: ['src'],
-                acceptance: [`${check} succeeds`],
-              },
-            ],
-            plan: 'One part: make the value check pass, handed to a fixer.',
-          }),
-          tool('sleep', { until: [{ kind: 'children' }] }),
-          tool('reply', { text: 'fixed' }),
-        ],
-        lead: [
-          tool('run_command', { command: check }),
-          tool('run_subagents', {
-            tasks: [{ name: 'fixer', agent: 'worker', goal: 'write fixed', writeScope: ['src'] }],
-          }),
-          tool('sleep', { until: [{ kind: 'children' }] }),
-          tool('finish_subagent', {
-            summary: 'fixed',
-            status: 'done',
-            changedFiles: ['src/value.txt'],
-            validation: [],
-          }),
-        ],
-        worker: [
-          tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
-          tool('finish_subagent', {
-            summary: 'wrote fixed',
-            status: 'done',
-            changedFiles: ['src/value.txt'],
-            validation: [],
-          }),
-        ],
-      });
-      process.env['MAO_INHERIT_CONTEXT'] = 'off';
-      try {
-        const run = await missionOn('make the value check pass', provider, {
-          'src/value.txt': 'broken\n',
-        });
-        expect(run.code).toBe(0);
-        const said = provider.requests
-          .flatMap((request) => request.messages.map((message) => textOf(message)))
-          .join('\n');
-        expect(said).toContain('Your task (fixer,');
-        expect(said).not.toContain('you are a different task');
-      } finally {
-        delete process.env['MAO_INHERIT_CONTEXT'];
-      }
-    },
-    TIMEOUT,
-  );
 });
 
-real('the comparison arm without criteria (D81)', () => {
+real('no criteria anywhere (Mission baseline 1, D93)', () => {
   it(
     'shows no agent a criterion, in its prompt, its tools or the manual, and still gets the work done',
     async () => {
@@ -353,20 +287,15 @@ real('the comparison arm without criteria (D81)', () => {
           ],
         },
       );
-      process.env['MAO_SUBTASK_ACCEPTANCE'] = 'off';
-      try {
-        const run = await missionOn('make the value check pass', provider, {
-          'src/value.txt': 'broken\n',
-        });
-        expect(run.code).toBe(0);
-        expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
-        // Every request, of the root and of the worker: its messages and its tools.
-        for (const request of provider.requests) {
-          const shown = `${request.messages.map((message) => textOf(message)).join('\n')}\n${JSON.stringify(request.tools ?? [])}`;
-          expect(shown).not.toMatch(/acceptance(?! tests)|criteri/iu);
-        }
-      } finally {
-        delete process.env['MAO_SUBTASK_ACCEPTANCE'];
+      const run = await missionOn('make the value check pass', provider, {
+        'src/value.txt': 'broken\n',
+      });
+      expect(run.code).toBe(0);
+      expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
+      // Every request, of the root and of the worker: its messages and its tools.
+      for (const request of provider.requests) {
+        const shown = `${request.messages.map((message) => textOf(message)).join('\n')}\n${JSON.stringify(request.tools ?? [])}`;
+        expect(shown).not.toMatch(/acceptance(?! tests)|criteri/iu);
       }
     },
     TIMEOUT,
@@ -495,7 +424,6 @@ real('a tester after the build (D55)', () => {
                 agent: 'tester',
                 goal: 'acceptance tests of the value',
                 writeScope: ['tests'],
-                acceptance: [`run with: ${check}`],
               },
             ],
           }),
@@ -532,7 +460,7 @@ real('a tester after the build (D55)', () => {
   );
 });
 
-real('the comparison arm where a lead is a worker that may split (D88)', () => {
+real('a worker that may split runs as a lead, and only the root starts one (D88)', () => {
   it(
     'runs a worker with split: true as a lead, which splits its part and gets it done',
     async () => {
@@ -591,7 +519,6 @@ real('the comparison arm where a lead is a worker that may split (D88)', () => {
               split: true,
               goal: 'the value part',
               writeScope: ['src'],
-              acceptance: ['the value check passes'],
             },
             { name: 'notes', agent: 'worker', goal: 'note nothing', writeScope: ['docs'] },
           ],
@@ -599,50 +526,45 @@ real('the comparison arm where a lead is a worker that may split (D88)', () => {
         tool('sleep', { until: [{ kind: 'children', mode: 'all' }] }),
         tool('reply', { text: 'done through a worker that split' }),
       );
-      process.env['MAO_LEAD_AS_WORKER'] = 'on';
-      try {
-        const run = await missionOn('make the value check pass', provider, {
-          'src/value.txt': 'broken-before-the-fix\n',
-        });
-        expect(run.code).toBe(0);
-        expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
-        const log = await logOf(run.dataDir);
-        const part = log
-          .filter((record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN')
-          .flatMap((record) => record['nodes'] as Record<string, unknown>[])
-          .find((node) => node['name'] === 'part');
-        // It runs as a lead: the lead's Agent, and the context of one that may split.
-        expect((part?.['agentRef'] as Record<string, unknown>)['id']).toBe('lead');
-        const told = provider.requests
-          .find((request) =>
-            request.messages.some((message) =>
-              textOf(message).includes('you are a different task: "part"'),
-            ),
-          )
-          ?.messages.map((message) => textOf(message))
-          .join('\n');
-        expect(told).toContain('Your part is yours to split');
-        const said = provider.requests
-          .flatMap((request) => request.messages.map((message) => textOf(message)))
-          .join('\n');
-        expect(said).not.toContain('was not started');
-        // It may split its part, but it starts no lead itself: split is the root's alone.
-        const partTools = JSON.stringify(
-          provider.requests.find((request) =>
-            request.messages.some((message) =>
-              textOf(message).includes('you are a different task: "part"'),
-            ),
-          )?.tools ?? [],
-        );
-        expect(partTools).toContain('run_subagents');
-        expect(partTools).not.toContain('"split"');
-        // The root was offered workers that may split, never a lead.
-        const offered = JSON.stringify(provider.requests[0]?.tools ?? []);
-        expect(offered).toContain('split');
-        expect(offered).not.toMatch(/\blead\b/u);
-      } finally {
-        delete process.env['MAO_LEAD_AS_WORKER'];
-      }
+      const run = await missionOn('make the value check pass', provider, {
+        'src/value.txt': 'broken-before-the-fix\n',
+      });
+      expect(run.code).toBe(0);
+      expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
+      const log = await logOf(run.dataDir);
+      const part = log
+        .filter((record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN')
+        .flatMap((record) => record['nodes'] as Record<string, unknown>[])
+        .find((node) => node['name'] === 'part');
+      // It runs as a lead: the lead's Agent, and the context of one that may split.
+      expect((part?.['agentRef'] as Record<string, unknown>)['id']).toBe('lead');
+      const told = provider.requests
+        .find((request) =>
+          request.messages.some((message) =>
+            textOf(message).includes('you are a different task: "part"'),
+          ),
+        )
+        ?.messages.map((message) => textOf(message))
+        .join('\n');
+      expect(told).toContain('Your part is yours to split');
+      const said = provider.requests
+        .flatMap((request) => request.messages.map((message) => textOf(message)))
+        .join('\n');
+      expect(said).not.toContain('was not started');
+      // It may split its part, but it starts no lead itself: split is the root's alone.
+      const partTools = JSON.stringify(
+        provider.requests.find((request) =>
+          request.messages.some((message) =>
+            textOf(message).includes('you are a different task: "part"'),
+          ),
+        )?.tools ?? [],
+      );
+      expect(partTools).toContain('run_subagents');
+      expect(partTools).not.toContain('"split"');
+      // The root was offered workers that may split, never a lead.
+      const offered = JSON.stringify(provider.requests[0]?.tools ?? []);
+      expect(offered).toContain('split');
+      expect(offered).not.toMatch(/\blead\b/u);
     },
     TIMEOUT,
   );
@@ -690,7 +612,15 @@ real('a lead that starts with the context of the root (D58)', () => {
         tool('read_file', { path: 'src/value.txt' }),
         tool('run_subagents', {
           plan: 'One part: the value, by a lead that splits it.',
-          tasks: [{ name: 'part', agent: 'lead', goal: 'the value part', writeScope: ['src'] }],
+          tasks: [
+            {
+              name: 'part',
+              agent: 'worker',
+              split: true,
+              goal: 'the value part',
+              writeScope: ['src'],
+            },
+          ],
         }),
         tool('sleep', { until: [{ kind: 'children' }] }),
         tool('reply', { text: 'done through a lead' }),

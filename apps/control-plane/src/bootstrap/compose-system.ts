@@ -2,10 +2,8 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
-  DEFINITION_ARM_DIRECTORIES,
   DefinitionCatalog,
   FileDefinitionSource,
-  OverlayDefinitionSource,
 } from '@multiagentos/agent-tool-pool';
 import { GlobalArtifactStore } from '@multiagentos/artifacts';
 import {
@@ -191,37 +189,6 @@ function builtIns(catalog: DefinitionCatalog) {
 }
 
 /**
- * The comparison arm a run uses, from the environment, for experiments only: without criteria
- * (Orchestration D81), with the original whole examples (D83), a lead as a worker that may split
- * (D88), or the first and the last together. The examples show criteria and leads, so they go
- * with neither of the others.
- */
-function comparisonArm(): keyof typeof DEFINITION_ARM_DIRECTORIES | undefined {
-  const noAcceptance = process.env['MAO_SUBTASK_ACCEPTANCE'] === 'off';
-  const fewShot = process.env['MAO_FEW_SHOT'] === 'on';
-  const leadFlag = process.env['MAO_LEAD_AS_WORKER'] === 'on';
-  if (fewShot && (noAcceptance || leadFlag))
-    throw new Error(
-      'MAO_FEW_SHOT=on shows criteria and leads in its examples; run it without MAO_SUBTASK_ACCEPTANCE=off and MAO_LEAD_AS_WORKER=on',
-    );
-  if (noAcceptance && leadFlag) return 'no-acceptance-lead-flag';
-  if (noAcceptance) return 'no-acceptance';
-  if (leadFlag) return 'lead-flag';
-  return fewShot ? 'few-shot' : undefined;
-}
-
-/** The catalog, with the files of a comparison arm in place of its own (D81). */
-function definitionSourceOf(arm: keyof typeof DEFINITION_ARM_DIRECTORIES | undefined) {
-  const catalog = new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY);
-  return arm === undefined
-    ? catalog
-    : new OverlayDefinitionSource(
-        catalog,
-        new FileDefinitionSource(DEFINITION_ARM_DIRECTORIES[arm]),
-      );
-}
-
-/**
  * The only place that knows several concrete implementations. It builds every module, gives
  * each communication subject its own Fabric client and Port stubs, registers the modules with
  * ModuleHost and hands the host to the Supervisor. Nothing is started here.
@@ -231,7 +198,8 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   const now = options.now ?? (() => new Date());
   const registry = createProtocolRegistry();
   const catalog =
-    options.catalog ?? (await DefinitionCatalog.load(definitionSourceOf(comparisonArm())));
+    options.catalog ??
+    (await DefinitionCatalog.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)));
   const builtin = builtIns(catalog);
   // The instruction of the summary request of a compaction: without the Prompt nothing is compacted.
   const compactionDefinition = catalog.latest('PROMPT', 'compaction-system');
@@ -359,8 +327,6 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       config: config.workflow,
       now,
       git: inGitWorkTree(options.repositoryRoot),
-      // For comparing runs with and without inherited contexts (Orchestration 3.9, D35).
-      ...(process.env['MAO_INHERIT_CONTEXT'] === 'off' ? { inheritContext: false } : {}),
     });
     serveWorkflowInbox(workflowFabric, workflow.runner);
 

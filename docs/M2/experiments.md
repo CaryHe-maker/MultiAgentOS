@@ -703,3 +703,17 @@ Cary 2026-11-16 定：用当前的 mas（Mission）在 pyregex、survey-med-seg�
 **L8 pyawk，替代线 + split**（`5528602`，`MAO_SUBTASK_ACCEPTANCE=off`、`MAO_LEAD_AS_WORKER=on`，比 L7 多 D92；Cary 用 `--ui` 运行，标签 `dv-pyawk-split`）：12.8 分钟，0.965（141 个过了 136 个），`DONE`，是 pyawk 上最快的一次：比 L5 快 6.7 分钟、比 `dsh` 快 14.7 分钟，但比 L5 少过 2 个、比 `dsh` 少过 3 个。账面 $0.72 在高峰时段（UTC 09:48–10:01，周一），按低价约 $0.37（210 次请求，输入 18.7M、命中 96.9%，输出 385k，思考约占 55%）。根任务第一次 run_subagents 里 frontend、backend 等都漏了 writeScope 被整份退回，第 3.5 分钟第二次派出 frontend、support、docs 三个 worker，backend（`split: true`，作为 lead）与 tester；backend 第 7.3 分钟派一个 explorer（sweep）调研，其余自己写解释器；tester 按 playbook 第 8.3 分钟派出 core-records、expr-builtins、printf-io-cli 三个写测试的阶段任务；任务之间只有 2 条消息，最后一个子任务结束后根任务独自 1.0 分钟。没有任务用到第 34 轮，D91 的轮次申请没有发生；也没有 NOT_SENT，D92 没有被用到。控制台中途反复显示"重试中"：backend 第 7.97–8.44 分钟想查 gawk 手册里 `substr` 起始位置小于 1 的行为，`web_fetch` gnu.org 4 次（PAGE_UNAVAILABLE）、`web_search` 4 次（PROVIDER_UNREACHABLE，间隔 1、2、4 秒）都失败，因为题目在离线环境里跑；共约半分钟，日志里没有模型调用失败。失败的工具调用 3 次：上面那次漏 writeScope、docs 的 `sleep` 漏 `until`、sweep 调用了它没有的工具。没过的 5 个测试都是与 `gawk --posix` 的边界行为不一致，规格只说"与 gawk 5.2 --posix 相同"，离线时既查不到文档也没有 gawk 可比：十六进制字符串 `"0x10"` 转数字得 0（应为 16）；`substr` 起始位置小于 1 时截取不对（backend 想查的正是这一点）；`tolower` 把非 ASCII 字母也转了小写；两题报 `function 'row' not defined` 一类错误：程序里写的是 `row = row (j > 1 ? " " : "") m[j, i]`，变量名后隔一个空格再接括号，在 awk 里是字符串连接，只有名字紧接 `(` 才是函数调用，词法分析没有区分这两种。前两类 L5 与 `dsh` 也都没过；后两类（substr、名字后带空格的括号）是这次新错的，`dsh` 与 L5 都过了。统计脚本 `mas-watch.py` 原来把 tester 的三个阶段任务显示成 lead，已按 D90 的规则改为按继承身份显示。只有一次运行，结论待更多任务确认。
 
 **L9 survey-med-seg，替代线 + split**（`5528602`，`MAO_SUBTASK_ACCEPTANCE=off`、`MAO_LEAD_AS_WORKER=on`，与 L8 相同；Cary 用 `--ui` 运行，标签 `dv-medseg-split`）：14.7 分钟，0.992（16 项结构与内容检查全过，132 条参考文献核实 130 条），`DONE`，比 `dsh` 快 7.5 分钟、不到 L4 的一半，分数低 0.008；$0.23（UTC 10:16–10:31，已过高峰；174 次请求，输入 11.2M、命中 94.2%，输出 171k）。根任务前 10.8 分钟独自准备文献（`resolve.py` 72 秒、`fetch_meta.py` 35 秒、`fetch_all.py` 133 秒后被转入后台、一段内联脚本 70 秒，命令共约 8.2 分钟），第 10.8 分钟一次派出 12 个 worker（10 个章节、2 个注释），没有用 `split`，每个 1.5–2.3 分钟，13.1 分钟后根任务独自合稿 1.6 分钟。根任务在 `fetch_all.py` 转入后台以后没有去做别的，而是写了一条 `sleep 45; job_output(){ :; }` 的命令、用 `job_output` 查了 5 次，第 9.0 分钟把它停掉。失败的工具调用 2 次（sec02-unet 交付漏 `summary`，一次 `read_file` 行号范围无效）；任务之间没有消息。根任务在交付说明里写明注释依据题名与领域常识而未逐篇读原文、第 6 章约 4959 汉字偏短。后台命令的使用（全部 26 次 mas 运行统计）：约 5700 条命令中主动设 `runInBackground` 的约 10 次，超时转后台约 18 次，超过 60 秒的前台命令约 81 次；L 系列 7 次运行 1239 条命令里主动放后台只有 L4 的 2 次，split 线 4 次运行为 0。这条配置在 L9 之后定为 Mission 基线1（见 Orchestration D93）。
+
+### Mission 基线1（2026-11-16 定）
+
+Cary 2026-11-16 定：以 L9（`dv-medseg-split`）那次运行的配置为 **Mission 基线1**，其余配置删除（Orchestration D93）。基线1 就是原来的替代线 `no-acceptance-lead-flag`：子任务没有验收条件，完成目标就交付；lead 是 worker 的参数 `split: true`，只有根任务能用；继承上下文总是开着；加上至 D92 为止的全部机制。从此运行不再需要任何环境变量开关，直接用 `mas-live.sh <题> <标签>`。
+
+基线1 在开发集主体题上的参照结果（每题一次）：
+
+| 题 | 运行 | 提交 | 用时（分钟） | 得分 | `dsh`（分钟 / 得分） |
+|---|---|---|---|---|---|
+| minipy | L7 | `f4b6736`（少 D92） | 15.2 | 1.000 | 23.2 / 0.932 |
+| pyawk | L8 | `5528602` | 12.8 | 0.965 | 27.5 / 0.986 |
+| survey-med-seg | L9 | `5528602` | 14.7 | 0.992 | 22.2 / 1.000 |
+
+pyregex 与 textutils 还没有用基线1 运行。

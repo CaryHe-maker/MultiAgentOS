@@ -529,7 +529,7 @@ export const PlaybookSchema = Type.Object(
     /** One line for the caller: what the template is for and when to use it. */
     summary: TextSchema(400),
     /**
-     * What the root needs to find in the goal and acceptance its caller wrote (D39), such as the
+     * What the root needs to find in the goal its caller wrote (D39), such as the
      * command that shows a failure. The caller passes no fields of its own; the root reads these
      * with its task and works out the rest.
      */

@@ -29,7 +29,6 @@ export interface TaskScope {
   readonly name: string;
   readonly agent: string;
   readonly goal: string;
-  readonly acceptance: readonly string[];
   readonly writeScope: readonly string[];
   readonly inputs: readonly ArtifactRef[];
   readonly dependencies: readonly Extract<ContextHistoryEntry, { kind: 'SUBAGENT_RESULT' }>[];
@@ -40,7 +39,7 @@ export interface TaskScope {
   readonly withPrompt?: boolean;
   /** The playbook of a specialist, in words (Orchestration 3.9). */
   readonly playbook?: string;
-  /** The call that started it, when its goal or criteria are cut here (D56). */
+  /** The call that started it, when its goal is cut here (D56). */
   readonly fullFrom?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
   /**
    * The ended tasks this one takes up again (`continues`, Orchestration 5.3): their segments are
@@ -171,8 +170,6 @@ function continuedText(task: TaskScope): string {
   const lines = [
     `Your result went to your caller, and it started you again on this task, with all your work above. What you are asked now: ${task.goal}`,
   ];
-  if (task.acceptance.length > 0)
-    lines.push('Acceptance:', ...task.acceptance.map((each, index) => `${String(index)}. ${each}`));
   if (task.writeScope.length > 0) lines.push(`You may write: ${task.writeScope.join(', ')}`);
   lines.push('Finish again with your finishing call when it is done.');
   return lines.join('\n');
@@ -199,12 +196,8 @@ function inheritedText(task: TaskScope): string {
     `Your goal: ${task.goal}`,
     ...(task.fullFrom === undefined
       ? []
-      : [
-          '(Your goal and criteria are cut here; they stand whole in the call above, under your name.)',
-        ]),
+      : ['(Your goal is cut here; it stands whole in the call above, under your name.)']),
   ];
-  if (task.acceptance.length > 0)
-    lines.push('Acceptance:', ...task.acceptance.map((each, index) => `${String(index)}. ${each}`));
   lines.push(
     'When it is done, finish with your finishing call: your result goes to the task that started you.',
   );
@@ -444,7 +437,6 @@ function projectOwn(
               name: header.name,
               agent: header.agent,
               goal: header.goal,
-              acceptance: [...header.acceptance],
               writeScope: [...header.writeScope],
               inputs: [...header.inputs],
               ...(header.playbook === undefined ? {} : { playbook: header.playbook }),

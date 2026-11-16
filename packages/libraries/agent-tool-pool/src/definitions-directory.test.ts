@@ -51,6 +51,7 @@ describe('shipped definitions', () => {
       'TOOL:job-kill@v0.1.0',
       'TOOL:job-list@v0.1.0',
       'TOOL:job-output@v0.1.0',
+      'TOOL:lead-run-subagents@v0.1.0',
       'TOOL:list-external-files@v0.1.0',
       'TOOL:list-files@v0.1.0',
       'TOOL:read-external-file@v0.1.0',
@@ -160,9 +161,9 @@ describe('shipped definitions', () => {
     for (const id of ['main-system', 'lead-system', 'worker-system', 'explorer-system'])
       expect(promptOf(id).length).toBeLessThan(4500);
     expect(promptOf('worker-system')).toContain('do not build extra test harnesses');
-    // A lead's subtasks cannot start subtasks: the way of nested leads is main's alone.
-    expect(promptOf('main-system')).toContain('- Leads for large parts:');
-    expect(promptOf('lead-system')).not.toContain('- Leads for large parts:');
+    // Only the root starts a lead, as a worker with split (D88, D93): the way is main's alone.
+    expect(promptOf('main-system')).toContain('- Workers with split: true for large parts:');
+    expect(promptOf('lead-system')).not.toContain('split: true');
     const mission = catalog.latest('TEMPLATE', 'mission');
     expect(JSON.stringify(mission?.nodes)).toContain('table of decisions');
     // The root of a long task decides by a table and reads a manual of the system, not solved

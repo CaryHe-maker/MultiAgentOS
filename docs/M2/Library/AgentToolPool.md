@@ -44,10 +44,11 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `write-file`、`edit-file`、`read-output` | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
 | TOOL | `update-todos` | `purpose = CONTROL`，参数为 `workflow.UpdateTodosArgs`；由 main 的 `actions.todos` 引用 |
 | AGENT | `explorer`、`worker` | 可被 `run_subagents` 派生：explorer 只读（`repo.read`，强度 `none`、`low`），缺省份额 600,000，20 轮、60 个工具 Unit、10 分钟；worker 增加 `workspace.write` 与 `command.exec`（不联网），强度 `low`–`max`，缺省份额 1,200,000，30 轮、120 个工具 Unit、20 分钟，另有 `update_todos`。结束工具各自的 `finish_subagent`（参数 `workflow.ExplorerResult`、`WorkerResult`，`FINISH_SUBAGENT`），降级时 `RETURN_PARTIAL`；没有发布 Unit。额度参数使最小份额低于缺省份额（单次输入上限 explorer 128,000、worker 256,000，Orchestration D42；最小份额按 `reserveShare` 估算，M2Design 第 7.3 节规则 10） |
-| TOOL | `run-subagents`、`finish-explorer`、`finish-worker` | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个。`run_subagents` 立即返回（Orchestration D14），任务的 `agent` 可以是 `explorer`、`worker` 或 `lead` |
+| TOOL | `run-subagents`、`finish-explorer`、`finish-worker` | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个。`run_subagents` 立即返回（Orchestration D14），任务的 `agent` 可以是 `explorer`、`worker` 或五个专家之一，worker 可带 `split: true`（系统按 lead 运行；Orchestration D88、D93）；只有 main 带这个工具，main 总是根任务 |
+| TOOL | `lead-run-subagents` | `purpose = CONTROL`；模型看到的名字同样是 `run_subagents`；参数为 `workflow.RunSubagentsNestedArgs`：只能派 `explorer` 与 `worker`，没有 `split`，所以只有根任务能派出 lead 与专家（D93）；由 lead 的 `actions.spawn` 引用 |
 | TOOL | `ask-user` | `purpose = CONTROL`，参数为 `workflow.AskUserArgs`；由 main 与 worker 的 `actions.askUser` 引用，explorer 没有；与 `run_subagents` 同样只能单独出现 |
 | PROMPT | `explorer-system`、`worker-system` | SubAgent 的系统提示词；main 的提示词增加 `run_subagents` 的用法与派生准则（M2Design 第 3.9 节） |
-| AGENT | `lead` | 组长（[Orchestration](../Orchestration.md) 第 9.4 节）：worker 的能力加上 `agent.spawn`，可被派生，也能派生自己的子任务（受任务深度限制，最深一层的 lead 不带 `run_subagents`）；结束工具 `finish-worker`；缺省份额 2,400,000，40 轮、160 个工具 Unit、60 分钟 |
+| AGENT | `lead` | 组长（[Orchestration](../Orchestration.md) 第 9.4 节）：worker 的能力加上 `agent.spawn`，不由模型直接选：根任务派一个带 `split: true` 的 worker、或派一个专家时，系统按 lead 运行它；它用 `lead-run-subagents` 派生自己的 explorer 与 worker（受任务深度限制，最深一层不带 `run_subagents`）；结束工具 `finish-worker`；缺省份额 2,400,000，40 轮、160 个工具 Unit、60 分钟 |
 | PROMPT | `lead-system` | lead 的系统提示词：先写方案与接口约定，再按不相交的写入范围派生，休眠等子任务，用消息通知兄弟任务，最后统一验证 |
 | TOOL | `sleep` | `purpose = CONTROL`，参数为 `workflow.SleepArgs`；由 main、lead、worker、explorer 的 `actions.sleep` 引用：结束当前段，任务休眠到条件满足（Orchestration 第 4 节）；只能单独出现 |
 | TOOL | `view-tasks` | `purpose = CONTROL`，参数为 `workflow.ViewTasksArgs`；main、lead、worker、explorer 的 `actions.viewTasks`：此刻的任务树（Orchestration 第 3.7 节） |
@@ -66,7 +67,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 ## 3a. `run_subagents` 的校验
 
-- Agent 的 `capabilities` 含 `agent.spawn` 当且仅当声明了 `actions.spawn`，后者须是参数为 `RunSubagentsArgs`（或替代线的 `RunSubagentsLeanArgs`、`RunSubagentsSplitArgs`、`RunSubagentsLeanSplitArgs`，Orchestration D81、D88）的 CONTROL 工具；
+- Agent 的 `capabilities` 含 `agent.spawn` 当且仅当声明了 `actions.spawn`，后者须是参数为 `RunSubagentsArgs`（根任务的，有 `split`）或 `RunSubagentsNestedArgs`（lead 的，没有 `split`；Orchestration D88、D93）的 CONTROL 工具；
 - 结束动作含 `FINISH_SUBAGENT` 当且仅当声明了 `spawnable`；这样的 Agent 不得含 `agent.spawn`，结束动作只有 `FINISH_SUBAGENT`，`onDegraded` 为 `RETURN_PARTIAL`（此时不需要发布 Unit），`defaultShare` 不低于 `agentMinShare(budget)`（`finalInputBudget + finalMaxOutputTokens + 2 × (perCallInputLimit + maxOutputTokens)`，与 Kernel/Monitor 的最小份额是同一个函数）；
 - `pinAgent` 把 `actions.spawn` 的工具一并固定，工具名冲突检查也包括它。
 
@@ -77,7 +78,7 @@ M1 的校验规则全部保留（M1 AgentToolPool 第 5 节）。`v1` 增加：
 | 对象 | 规则 |
 |---|---|
 | Agent `v1` | `thinking.allowedEfforts` 包含 `defaultEffort`；模型不支持思考时只能为 `['none']`；每一档在模型的 `effortMapping` 中都有映射 |
-| Agent `v1` | `actions.end` 的每个 `toolRef` 指向 `purpose = CONTROL` 的工具，且互不相同；参数契约按 `then`：`PUBLISH_REPLY` 为 `workflow.ReplyArgs`，`FINISH_SUBAGENT` 为 `workflow.ExplorerResult` 或 `WorkerResult`（替代线为 `ExplorerLeanResult`、`WorkerLeanResult`，Orchestration D81） |
+| Agent `v1` | `actions.end` 的每个 `toolRef` 指向 `purpose = CONTROL` 的工具，且互不相同；参数契约按 `then`：`PUBLISH_REPLY` 为 `workflow.ReplyArgs`，`FINISH_SUBAGENT` 为 `workflow.ExplorerResult` 或 `WorkerResult`（两者都没有 `acceptance`，Orchestration D93） |
 | Agent `v1` | `unitRefs` 中 `CONTEXT_ASSEMBLE`、`MODEL` 各恰好一个；有 `PUBLISH_REPLY` 或 `onDegraded = PUBLISH_NOTICE` 时恰好一个 `MESSAGE_PUBLISH`，否则没有 |
 | Agent `v1` | 额度参数为正安全整数；`maxToolUnits` 在 1..1000 |
 | Unit `v1` | 声明 `repo.read` 当且仅当执行类型读取仓库（`REPOSITORY_SEARCH`、`FILE_READ`、`REPOSITORY_LIST`）：Kernel 只按声明的能力判断是否需要 Lease，这条规则保证声明与执行类型一致；`MESSAGE_PUBLISH` 不得声明受保护能力、不得带工具；`failurePolicy` 不得列出 `USER_DECLINED`、`QUOTA_EXHAUSTED`：它们的处理是 Workflow 的固定规则（Module/Workflow 第 7 节） |

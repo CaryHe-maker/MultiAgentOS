@@ -32,7 +32,7 @@ playbook:
       instructions: >-
         Start one worker with your writeScope (or the part of it the fix needs). Its goal names
         the failure (the failing test, the error and where), the cause you found or suspect, what
-        must not change, and its acceptance: the check passes. Sleep until it ends, then run the
+        must not change, and that it is done when the check passes. Sleep until it ends, then run the
         check yourself. If it still fails and rounds are left, start the next fix with what this
         round learned (what was tried, the new output); never repeat a fix that did not work.
     - name: report
@@ -53,8 +53,8 @@ playbook:
     goal "lang/compiler/loops.py compiles a for loop with one slot for the loop variable, so
     closures made in the body share it. Emit OPEN_SLOT at the top of the body and copy the
     variable into it, as lang/bytecode.md section 3 says; do not change the VM or the
-    bytecode format.", acceptance ["python3 tests/conformance/run.py func/closure_in_loop
-    passes", "the unit tests of lang/compiler pass"]. Slept until it ended. Check: passed.
+    bytecode format. Done when python3 tests/conformance/run.py func/closure_in_loop passes and
+    the unit tests of lang/compiler pass." Slept until it ended. Check: passed.
     report: finish_subagent status done; summary "the compiler gave a loop one slot for its
     variable, so closures shared it; it now opens a slot per iteration as bytecode.md says;
     closure_in_loop passes"; changed lang/compiler/loops.py.

@@ -116,8 +116,8 @@ describe('the playbook of a specialist (Orchestration 3.9)', () => {
   it('is read by its root in words, with what it needs from its task and its example', () => {
     const text = renderPlaybook(specialist);
     expect(text).toContain('template demo (explore, build, check)');
-    // The caller gives no fields of its own: the root looks for these in its goal and acceptance.
-    expect(text).toContain('What you need from your task, in its goal and acceptance');
+    // The caller gives no fields of its own: the root looks for these in its goal.
+    expect(text).toContain('What you need from your task, in its goal (when');
     expect(text).toContain('- check: the check');
     expect(text).toContain(
       '2. build (one run_subagents call of 1 worker task(s); it may run up to 2 times in all)',

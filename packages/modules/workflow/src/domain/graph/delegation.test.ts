@@ -120,7 +120,7 @@ describe('a call in the log', () => {
     agentRef: { id: 'explorer', version: 'v1.0.0' },
     goal: `look at ${name}`,
     dependsOn,
-    spawn: { writeScope: [], acceptance: [], inputs: [], tokens: 1000 },
+    spawn: { writeScope: [], inputs: [], tokens: 1000 },
   });
 
   it('builds the revision of a call with DELEGATE edges only, in the written order (D14)', () => {

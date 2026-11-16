@@ -70,8 +70,6 @@ export interface WorkflowDeps {
    * not, git_inspect is not offered, since every call of it could only fail.
    */
   readonly git?: boolean;
-  /** False turns off `context: inherit` of playbook phases (D35), for comparing the two. */
-  readonly inheritContext?: boolean;
 }
 
 /** The composition root serves the runner's three handlers at `inbox.workflow`. */
@@ -104,7 +102,6 @@ export function createWorkflow(deps: WorkflowDeps): WorkflowModule {
       ...(deps.git === undefined ? {} : { git: deps.git }),
     }),
     now,
-    ...(deps.inheritContext === undefined ? {} : { inheritContext: deps.inheritContext }),
   });
   let running = false;
   return {

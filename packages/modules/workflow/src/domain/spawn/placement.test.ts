@@ -5,7 +5,6 @@ import { placementOf } from './placement.js';
 const agent = { label: 'worker', effort: 'high' as const, writeRoots: ['.'] };
 const spawn = {
   writeScope: ['api'],
-  acceptance: [],
   inputs: [],
   tokens: 1000,
 };

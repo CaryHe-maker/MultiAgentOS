@@ -60,11 +60,7 @@ export function entryBytes(entry: ContextHistoryEntry): number {
     case 'NOTE':
       return textSize(entry.text) + ENTRY_OVERHEAD_BYTES;
     case 'TASK':
-      return (
-        textSize(entry.goal) +
-        entry.acceptance.reduce((total, line) => total + textSize(line), 0) +
-        ENTRY_OVERHEAD_BYTES
-      );
+      return textSize(entry.goal) + ENTRY_OVERHEAD_BYTES;
     case 'SUBAGENT_RESULT':
       return (
         sizeOf(entry.outputRef) +

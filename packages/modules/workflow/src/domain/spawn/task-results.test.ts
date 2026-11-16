@@ -1,6 +1,6 @@
 import type { SessionLogRecord } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import { finishedOutcome, outcomeOf, resultOf, unansweredCriteria } from './task-results.js';
+import { finishedOutcome, outcomeOf, resultOf } from './task-results.js';
 
 const ended = (extra: object): SessionLogRecord =>
   ({
@@ -13,31 +13,20 @@ const ended = (extra: object): SessionLogRecord =>
   }) as SessionLogRecord;
 
 describe('finishedOutcome', () => {
-  it('puts unmet criteria first and keeps the status the worker gave', () => {
+  it('keeps the status the worker gave, and the checks it reports', () => {
     const outcome = finishedOutcome(
-      {
-        status: 'partial',
-        acceptance: [
-          { index: 0, verdict: 'met' },
-          { index: 1, verdict: 'not_met' },
-        ],
-      },
-      ['builds', 'tests pass', 'documented'],
+      { status: 'partial', validation: [{ command: 'make test', exitCode: 1 }] },
       undefined,
     );
     expect(outcome.status).toBe('PARTIAL');
-    expect(outcome.notes).toEqual([
-      'criterion 1 not_met: tests pass',
-      'criterion 2 unanswered: documented',
-    ]);
+    expect(outcome.notes).toEqual(['checked, as it reports: `make test` exit 1']);
   });
 
   it('marks what a worker says it changed against what was seen', () => {
-    const outcome = finishedOutcome(
-      { status: 'done', changedFiles: ['src/a.ts', './src/b.ts'] },
-      [],
-      ['src/b.ts', 'src/c.ts'],
-    );
+    const outcome = finishedOutcome({ status: 'done', changedFiles: ['src/a.ts', './src/b.ts'] }, [
+      'src/b.ts',
+      'src/c.ts',
+    ]);
     expect(outcome.status).toBe('DONE');
     expect(outcome.notes).toEqual([
       'reported as changed but no change was seen: src/a.ts',
@@ -46,16 +35,8 @@ describe('finishedOutcome', () => {
   });
 
   it('reads blocked as BLOCKED, and an explorer as DONE', () => {
-    expect(finishedOutcome({ status: 'blocked' }, [], undefined).status).toBe('BLOCKED');
-    expect(finishedOutcome({}, [], undefined).status).toBe('DONE');
-  });
-});
-
-describe('unansweredCriteria', () => {
-  it('lists the indices nobody answered', () => {
-    expect(unansweredCriteria({ acceptance: [{ index: 1, verdict: 'unknown' }] }, 3)).toEqual([
-      0, 2,
-    ]);
+    expect(finishedOutcome({ status: 'blocked' }, undefined).status).toBe('BLOCKED');
+    expect(finishedOutcome({}, undefined).status).toBe('DONE');
   });
 });
 

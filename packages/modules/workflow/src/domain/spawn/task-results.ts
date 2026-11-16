@@ -86,30 +86,17 @@ interface FinishArguments {
   readonly changedFiles?: readonly string[];
   readonly status?: WorkerResult['status'];
   readonly validation?: readonly { readonly command: string; readonly exitCode: number }[];
-  readonly acceptance?: readonly {
-    readonly index: number;
-    readonly verdict: 'met' | 'not_met' | 'unknown';
-  }[];
-}
-
-/** The criteria that have no answer: a form check only (M2Design 3.7, rule 2). */
-export function unansweredCriteria(args: FinishArguments, criteria: number): readonly number[] {
-  const answered = new Set((args.acceptance ?? []).map((answer) => answer.index));
-  return Array.from({ length: criteria }, (_, index) => index).filter(
-    (index) => !answered.has(index),
-  );
 }
 
 const normalized = (paths: readonly string[]): Set<string> =>
   new Set(paths.map((path) => normalizeRequestPath(path) ?? path));
 
 /**
- * The status and notes of a task that finished by itself. Unmet criteria and differences between
- * what the worker says it changed and what the Kernel saw come first (M2Design 3.6).
+ * The status and notes of a task that finished by itself. Differences between what the worker
+ * says it changed and what the Kernel saw come first (M2Design 3.6).
  */
 export function finishedOutcome(
   args: FinishArguments,
-  criteria: readonly string[],
   observedChanges: readonly string[] | undefined,
   /** The check the system saw pass after the last change: said once, by the system. */
   seenCheck?: string,
@@ -124,11 +111,6 @@ export function finishedOutcome(
     .filter((each) => each.command !== seenCheck)
     .slice(0, 4))
     notes.push(`checked, as it reports: \`${check.command}\` exit ${String(check.exitCode)}`);
-  for (const [index, text] of criteria.entries()) {
-    const verdict = args.acceptance?.find((answer) => answer.index === index)?.verdict;
-    if (verdict !== 'met')
-      notes.push(`criterion ${String(index)} ${verdict ?? 'unanswered'}: ${text}`);
-  }
   if (args.changedFiles !== undefined && observedChanges !== undefined) {
     const claimed = normalized(args.changedFiles);
     const seen = normalized(observedChanges);

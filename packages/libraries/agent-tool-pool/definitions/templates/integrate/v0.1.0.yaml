@@ -41,8 +41,8 @@ playbook:
       instructions: >-
         Start one worker for each part that has failures, with that part as its writeScope
         (inside yours). Its goal names each failure (the test, the output, the log line), the
-        cause you traced, what must not change (the shared interfaces), and its acceptance: these
-        tests pass and the part's own unit tests still pass. Sleep until they have all ended;
+        cause you traced, what must not change (the shared interfaces), and that it is done when
+        these tests pass and the part's own unit tests still pass. Sleep until they have all ended;
         start the system again and run the whole check. While rounds and failures are left, the
         next round starts from what this one learned; never repeat a fix that did not work.
     - name: report
