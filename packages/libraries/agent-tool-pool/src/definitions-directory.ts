@@ -14,4 +14,6 @@ export const DEFAULT_DEFINITIONS_DIRECTORY = fileURLToPath(
  */
 export const DEFINITION_ARM_DIRECTORIES = {
   'no-acceptance': fileURLToPath(new URL('../definitions-arms/no-acceptance', import.meta.url)),
+  /** The root's manual with the original whole examples (Orchestration D83). */
+  'few-shot': fileURLToPath(new URL('../definitions-arms/few-shot', import.meta.url)),
 } as const;

@@ -55,3 +55,31 @@ describe('the comparison arm without criteria (Orchestration D81)', () => {
     }
   });
 });
+
+describe('the comparison arm with the original whole examples (Orchestration D83)', () => {
+  const load = async (arm?: 'few-shot') =>
+    await DefinitionCatalog.load(
+      arm === undefined
+        ? new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)
+        : new OverlayDefinitionSource(
+            new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+            new FileDefinitionSource(DEFINITION_ARM_DIRECTORIES[arm]),
+          ),
+    );
+  /** The text of every node of the Mission template, without what the catalog adds (its digest). */
+  const nodesOf = async (arm?: 'few-shot') => {
+    const mission = (await load(arm)).latest('TEMPLATE', 'mission');
+    return JSON.stringify(mission?.nodes);
+  };
+
+  it('is the manual of the catalog with the examples added, and nothing else changed', async () => {
+    const base = await nodesOf();
+    const arm = await nodesOf('few-shot');
+    const examples = arm.slice(
+      arm.indexOf('Whole examples of how'),
+      arm.indexOf('Counter-example'),
+    );
+    expect(examples).toContain('agent: \\"lead\\"');
+    expect(arm.replace(examples, '')).toBe(base);
+  });
+});

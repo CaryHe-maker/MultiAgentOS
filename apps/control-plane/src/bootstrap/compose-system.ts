@@ -190,6 +190,32 @@ function builtIns(catalog: DefinitionCatalog) {
 }
 
 /**
+ * The comparison arm a run uses, from the environment, for experiments only: without criteria
+ * (Orchestration D81) or with the original whole examples (D83). Both replace the root's manual,
+ * so they cannot run together.
+ */
+function comparisonArm(): keyof typeof DEFINITION_ARM_DIRECTORIES | undefined {
+  const noAcceptance = process.env['MAO_SUBTASK_ACCEPTANCE'] === 'off';
+  const fewShot = process.env['MAO_FEW_SHOT'] === 'on';
+  if (noAcceptance && fewShot)
+    throw new Error(
+      'MAO_SUBTASK_ACCEPTANCE=off and MAO_FEW_SHOT=on replace the same manual; run one arm at a time',
+    );
+  return noAcceptance ? 'no-acceptance' : fewShot ? 'few-shot' : undefined;
+}
+
+/** The catalog, with the files of a comparison arm in place of its own (D81). */
+function definitionSourceOf(arm: keyof typeof DEFINITION_ARM_DIRECTORIES | undefined) {
+  const catalog = new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY);
+  return arm === undefined
+    ? catalog
+    : new OverlayDefinitionSource(
+        catalog,
+        new FileDefinitionSource(DEFINITION_ARM_DIRECTORIES[arm]),
+      );
+}
+
+/**
  * The only place that knows several concrete implementations. It builds every module, gives
  * each communication subject its own Fabric client and Port stubs, registers the modules with
  * ModuleHost and hands the host to the Supervisor. Nothing is started here.
@@ -199,16 +225,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   const now = options.now ?? (() => new Date());
   const registry = createProtocolRegistry();
   const catalog =
-    options.catalog ??
-    (await DefinitionCatalog.load(
-      // The comparison arm without criteria (Orchestration D81): its files replace the catalog's.
-      process.env['MAO_SUBTASK_ACCEPTANCE'] === 'off'
-        ? new OverlayDefinitionSource(
-            new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
-            new FileDefinitionSource(DEFINITION_ARM_DIRECTORIES['no-acceptance']),
-          )
-        : new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
-    ));
+    options.catalog ?? (await DefinitionCatalog.load(definitionSourceOf(comparisonArm())));
   const builtin = builtIns(catalog);
   // The instruction of the summary request of a compaction: without the Prompt nothing is compacted.
   const compactionDefinition = catalog.latest('PROMPT', 'compaction-system');
