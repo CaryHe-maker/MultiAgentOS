@@ -269,6 +269,15 @@ describe('the status that ends a request (D61)', () => {
     expect(await statusOf(40, { final: true, partsBack: true })).not.toContain('All your subtasks');
   });
 
+  it('tells how much of its time a task waited on its commands (D82)', async () => {
+    expect(await statusOf(12, { commandMinutes: { commands: 9, total: 14 } })).toContain(
+      'Your commands have taken 9 of your 14 minutes so far.',
+    );
+    expect(
+      await statusOf(40, { final: true, commandMinutes: { commands: 9, total: 14 } }),
+    ).not.toContain('Your commands have taken');
+  });
+
   it('tells the last subtask still running that its caller waits only on it (D72)', async () => {
     expect(await statusOf(12, { lastRunning: true })).toContain(
       'You are the only subtask still running',

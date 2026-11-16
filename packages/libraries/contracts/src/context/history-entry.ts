@@ -193,6 +193,11 @@ export const StatusFactsSchema = closed({
   partsBack: Type.Optional(Type.Literal(true)),
   /** How many whole minutes ago the last of those subtasks ended, from one minute on (D80). */
   partsBackMinutes: Type.Optional(count(1)),
+  /**
+   * Whole minutes the task waited on its own commands, and whole minutes it has run (D82): said
+   * once the commands took five minutes and two fifths of the time.
+   */
+  commandMinutes: Type.Optional(closed({ commands: count(1), total: count(1) })),
   /** The task's siblings have all ended: its caller now waits only on it (D72). */
   lastRunning: Type.Optional(Type.Literal(true)),
   /** The task has started no subtask yet (D73); said once, to a task that can start them. */

@@ -5264,6 +5264,24 @@
               "type": "integer",
               "minimum": 1
             },
+            "commandMinutes": {
+              "type": "object",
+              "required": [
+                "commands",
+                "total"
+              ],
+              "properties": {
+                "commands": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
             "lastRunning": {
               "type": "boolean",
               "const": true
@@ -13701,6 +13719,24 @@
                             "partsBackMinutes": {
                               "type": "integer",
                               "minimum": 1
+                            },
+                            "commandMinutes": {
+                              "type": "object",
+                              "required": [
+                                "commands",
+                                "total"
+                              ],
+                              "properties": {
+                                "commands": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                },
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "additionalProperties": false
                             },
                             "lastRunning": {
                               "type": "boolean",
@@ -23531,6 +23567,24 @@
               "type": "integer",
               "minimum": 1
             },
+            "commandMinutes": {
+              "type": "object",
+              "required": [
+                "commands",
+                "total"
+              ],
+              "properties": {
+                "commands": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
             "lastRunning": {
               "type": "boolean",
               "const": true
@@ -27705,6 +27759,24 @@
                     "partsBackMinutes": {
                       "type": "integer",
                       "minimum": 1
+                    },
+                    "commandMinutes": {
+                      "type": "object",
+                      "required": [
+                        "commands",
+                        "total"
+                      ],
+                      "properties": {
+                        "commands": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "additionalProperties": false
                     },
                     "lastRunning": {
                       "type": "boolean",
@@ -39394,6 +39466,24 @@
                       "type": "integer",
                       "minimum": 1
                     },
+                    "commandMinutes": {
+                      "type": "object",
+                      "required": [
+                        "commands",
+                        "total"
+                      ],
+                      "properties": {
+                        "commands": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "total": {
+                          "type": "integer",
+                          "minimum": 1
+                        }
+                      },
+                      "additionalProperties": false
+                    },
                     "lastRunning": {
                       "type": "boolean",
                       "const": true
@@ -41401,6 +41491,24 @@
                 "partsBackMinutes": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "commandMinutes": {
+                  "type": "object",
+                  "required": [
+                    "commands",
+                    "total"
+                  ],
+                  "properties": {
+                    "commands": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "additionalProperties": false
                 },
                 "lastRunning": {
                   "type": "boolean",
@@ -56567,6 +56675,39 @@
       "additionalProperties": false,
       "$id": "workflow.AskUserArgs.v1"
     },
+    "workflow.ExplorerLeanResult.v1": {
+      "type": "object",
+      "required": [
+        "summary"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "report": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "openQuestions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 10
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.ExplorerLeanResult.v1"
+    },
     "workflow.ExplorerResult.v1": {
       "type": "object",
       "required": [
@@ -56828,6 +56969,142 @@
       },
       "additionalProperties": false,
       "$id": "workflow.RunSubagentsArgs.v1"
+    },
+    "workflow.RunSubagentsLeanArgs.v1": {
+      "type": "object",
+      "required": [
+        "tasks"
+      ],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "agent",
+              "goal"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              },
+              "agent": {
+                "enum": [
+                  "explorer",
+                  "worker",
+                  "lead",
+                  "fixer",
+                  "reviewer",
+                  "tester",
+                  "integrator",
+                  "researcher"
+                ]
+              },
+              "goal": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "dependsOn": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                },
+                "maxItems": 11
+              },
+              "writeScope": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "maxItems": 10
+              },
+              "commands": {
+                "type": "boolean"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "maxItems": 10
+              },
+              "effort": {
+                "enum": [
+                  "none",
+                  "low",
+                  "high",
+                  "max"
+                ]
+              },
+              "budget": {
+                "type": "object",
+                "required": [
+                  "tokens"
+                ],
+                "properties": {
+                  "tokens": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "continues": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 12
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.RunSubagentsLeanArgs.v1"
     },
     "workflow.SendMessageArgs.v1": {
       "type": "object",
@@ -57095,6 +57372,80 @@
       "properties": {},
       "additionalProperties": false,
       "$id": "workflow.ViewTasksArgs.v1"
+    },
+    "workflow.WorkerLeanResult.v1": {
+      "type": "object",
+      "required": [
+        "summary",
+        "changedFiles",
+        "status",
+        "validation"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "report": {
+          "type": "string",
+          "minLength": 1
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "changedFiles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 200
+        },
+        "status": {
+          "enum": [
+            "done",
+            "partial",
+            "blocked"
+          ]
+        },
+        "validation": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "command",
+              "exitCode"
+            ],
+            "properties": {
+              "command": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "exitCode": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 20
+        },
+        "blockers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 10
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.WorkerLeanResult.v1"
     },
     "workflow.WorkerResult.v1": {
       "type": "object",

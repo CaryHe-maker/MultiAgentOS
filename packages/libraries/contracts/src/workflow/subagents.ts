@@ -44,7 +44,7 @@ export const SPECIALIST_AGENTS = [
 ] as const;
 export type SpecialistAgent = (typeof SPECIALIST_AGENTS)[number];
 
-export const SubagentTaskSchema = closed({
+const subagentTaskFields = {
   name: NameSchema,
   agent: Type.Enum(['explorer', 'worker', 'lead', ...SPECIALIST_AGENTS]),
   goal: text(4000),
@@ -65,7 +65,8 @@ export const SubagentTaskSchema = closed({
    * asked now. Work goes back to the task that knows the code, at the price of a cached prefix.
    */
   continues: Type.Optional(NameSchema),
-});
+};
+export const SubagentTaskSchema = closed(subagentTaskFields);
 export type SubagentTask = Static<typeof SubagentTaskSchema>;
 
 /** Parameters of `run_subagents`. The number of tasks is limited by configuration, not here. */
@@ -82,6 +83,19 @@ export const RunSubagentsArgsSchema = closed(
   'workflow.RunSubagentsArgs.v1',
 );
 export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;
+
+/**
+ * The comparison arm without criteria (Orchestration D81): `run_subagents` without `acceptance`,
+ * so no agent sees the field at all. Read as `RunSubagentsArgs`, whose `acceptance` is optional.
+ */
+const { acceptance: _criteria, ...leanTaskFields } = subagentTaskFields;
+export const RunSubagentsLeanArgsSchema = closed(
+  {
+    tasks: Type.Array(closed(leanTaskFields), { minItems: 1, maxItems: 12 }),
+    plan: Type.Optional(text(8000)),
+  },
+  'workflow.RunSubagentsLeanArgs.v1',
+);
 
 export const AcceptanceAnswerSchema = closed({
   index: count(0),
@@ -102,6 +116,17 @@ export const ExplorerResultSchema = closed(
 );
 export type ExplorerResult = Static<typeof ExplorerResultSchema>;
 
+/** `finish_subagent` of an explorer in the comparison arm without criteria (D81). */
+export const ExplorerLeanResultSchema = closed(
+  {
+    summary: longText(),
+    report: Type.Optional(longText()),
+    references: referencesField(),
+    openQuestions: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
+  },
+  'workflow.ExplorerLeanResult.v1',
+);
+
 /** Parameters of `finish_subagent` of a worker. */
 export const WorkerResultSchema = closed(
   {
@@ -119,6 +144,22 @@ export const WorkerResultSchema = closed(
   'workflow.WorkerResult.v1',
 );
 export type WorkerResult = Static<typeof WorkerResultSchema>;
+
+/** `finish_subagent` of a worker in the comparison arm without criteria (D81). */
+export const WorkerLeanResultSchema = closed(
+  {
+    summary: longText(),
+    report: Type.Optional(longText()),
+    references: referencesField(),
+    changedFiles: Type.Array(text(500), { maxItems: 200 }),
+    status: Type.Enum(['done', 'partial', 'blocked']),
+    validation: Type.Array(closed({ command: text(1000), exitCode: Type.Integer() }), {
+      maxItems: 20,
+    }),
+    blockers: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
+  },
+  'workflow.WorkerLeanResult.v1',
+);
 
 /** The part of the result of `finish_subagent` that the caller reads, whichever kind of Agent wrote it. */
 export interface SubagentReport {

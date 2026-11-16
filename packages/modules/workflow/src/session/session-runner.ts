@@ -288,6 +288,47 @@ function changedNote(changed: readonly string[]): string[] {
   ];
 }
 
+/** Below these the time of the commands is not worth a line in the status (D82). */
+const COMMAND_MINUTES_SHOWN = 5;
+const COMMAND_SHARE_SHOWN = 0.4;
+
+/**
+ * The minutes a task waited on its own commands (from submission to answer: a command moved to
+ * the background stops counting there) and the minutes since it started, when the commands took
+ * enough of them to be said (D82).
+ */
+function commandTimeOf(
+  records: readonly SessionLogRecord[],
+  missionId: string,
+  now: number,
+): { readonly commands: number; readonly total: number } | undefined {
+  const runs = new Set<string>();
+  let started: number | undefined;
+  const submitted = new Map<string, number>();
+  let waited = 0;
+  for (const record of records) {
+    if (record.type === 'AGENT_RUN_REGISTERED' && record.missionId === missionId) {
+      runs.add(record.agentRunId);
+      started ??= Date.parse(record.at);
+    } else if (
+      record.type === 'UNIT_SUBMITTED' &&
+      runs.has(record.agentRunId) &&
+      record.unitRef.id === 'run-command'
+    )
+      submitted.set(record.requestId, Date.parse(record.at));
+    else if (record.type === 'UNIT_COMPLETED') {
+      const at = submitted.get(record.requestId);
+      if (at !== undefined) waited += Date.parse(record.at) - at;
+    }
+  }
+  if (started === undefined) return undefined;
+  const commands = Math.floor(waited / 60_000);
+  const total = Math.floor((now - started) / 60_000);
+  return commands >= COMMAND_MINUTES_SHOWN && commands >= total * COMMAND_SHARE_SHOWN
+    ? { commands, total: Math.max(total, commands) }
+    : undefined;
+}
+
 export class SessionRunner {
   readonly #deps: SessionRunnerDeps;
   readonly #spawnable: ReadonlyMap<string, SpawnAgentFacts>;
@@ -1633,6 +1674,10 @@ export class SessionRunner {
             )
           : Number.NaN;
         const partsBackMinutes = Math.floor((now - lastEnded) / 60_000);
+        const commandMinutes =
+          scope.missionId === undefined
+            ? undefined
+            : commandTimeOf(this.#records, scope.missionId, now);
         // A task whose siblings have all ended holds up its caller alone (D72).
         const parentId =
           scope.missionId === undefined ? undefined : missions?.get(scope.missionId)?.parentId;
@@ -1654,6 +1699,7 @@ export class SessionRunner {
             ...(partsBack ? { partsBack: true as const } : {}),
             ...(partsBack && partsBackMinutes >= 1 ? { partsBackMinutes } : {}),
             ...(lastRunning ? { lastRunning: true as const } : {}),
+            ...(commandMinutes === undefined ? {} : { commandMinutes }),
             ...(missions !== undefined && children.length === 0
               ? { noSubtasksYet: true as const }
               : {}),

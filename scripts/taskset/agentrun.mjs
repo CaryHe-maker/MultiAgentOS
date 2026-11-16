@@ -221,6 +221,10 @@ try {
         ...Object.keys(process.env)
           .filter((n) => n.startsWith('MAS_'))
           .flatMap((n) => ['-e', n]),
+        // The comparison switches the product reads (Orchestration D35, D81), when set.
+        ...['MAO_INHERIT_CONTEXT', 'MAO_SUBTASK_ACCEPTANCE']
+          .filter((n) => process.env[n] !== undefined)
+          .flatMap((n) => ['-e', n]),
         ...(offline ? ['-e', `MAS_API_BASE=http://benchproxy-oai:8098/r/${runId}`] : []),
         cname,
         '/opt/node/bin/node',

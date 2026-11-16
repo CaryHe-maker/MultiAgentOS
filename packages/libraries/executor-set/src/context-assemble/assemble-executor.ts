@@ -103,6 +103,7 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     finalRetry,
     partsBack,
     partsBackMinutes,
+    commandMinutes,
     lastRunning,
     noSubtasksYet,
     jobs = [],
@@ -113,6 +114,11 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
   if (partsBack === true && !final)
     lines.push(
       `All your subtasks have ended${partsBackMinutes === undefined ? '' : `, the last one ${String(partsBackMinutes)} min ago`}. What usually remains is one check of the whole and what only you can do, then delivery.`,
+    );
+  // How much of its time went to waiting on commands: a model sees each one, never the sum (D82).
+  if (commandMinutes !== undefined && !final)
+    lines.push(
+      `Your commands have taken ${String(commandMinutes.commands)} of your ${String(commandMinutes.total)} minutes so far.`,
     );
   if (lastRunning === true && !final)
     lines.push(

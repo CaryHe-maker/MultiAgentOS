@@ -305,6 +305,62 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
   );
 });
 
+real('the comparison arm without criteria (D81)', () => {
+  it(
+    'shows no agent a criterion, in its prompt, its tools or the manual, and still gets the work done',
+    async () => {
+      const provider = scriptedAgents(
+        {
+          main: [
+            tool('run_subagents', {
+              plan: 'One part: the value, by one worker.',
+              tasks: [
+                {
+                  name: 'fixer',
+                  agent: 'worker',
+                  goal: 'write fixed into src/value.txt; done when the value check passes',
+                  writeScope: ['src'],
+                },
+              ],
+            }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            tool('reply', { text: 'fixed' }),
+          ],
+        },
+        {
+          fixer: [
+            tool('read_file', { path: 'src/value.txt' }),
+            tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
+            tool('run_command', { command: check }),
+            tool('finish_subagent', {
+              summary: 'wrote fixed',
+              status: 'done',
+              changedFiles: ['src/value.txt'],
+              validation: [{ command: check, exitCode: 0 }],
+            }),
+          ],
+        },
+      );
+      process.env['MAO_SUBTASK_ACCEPTANCE'] = 'off';
+      try {
+        const run = await missionOn('make the value check pass', provider, {
+          'src/value.txt': 'broken\n',
+        });
+        expect(run.code).toBe(0);
+        expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
+        // Every request, of the root and of the worker: its messages and its tools.
+        for (const request of provider.requests) {
+          const shown = `${request.messages.map((message) => textOf(message)).join('\n')}\n${JSON.stringify(request.tools ?? [])}`;
+          expect(shown).not.toMatch(/acceptance(?! tests)|criteri/iu);
+        }
+      } finally {
+        delete process.env['MAO_SUBTASK_ACCEPTANCE'];
+      }
+    },
+    TIMEOUT,
+  );
+});
+
 real('a call of run_subagents with a task that breaks a rule (D53, D56)', () => {
   it(
     'starts the valid task with the context of the root, and tells which tasks did not start and why',

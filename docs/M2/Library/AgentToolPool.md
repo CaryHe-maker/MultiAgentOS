@@ -66,7 +66,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 ## 3a. `run_subagents` 的校验
 
-- Agent 的 `capabilities` 含 `agent.spawn` 当且仅当声明了 `actions.spawn`，后者须是参数为 `RunSubagentsArgs` 的 CONTROL 工具；
+- Agent 的 `capabilities` 含 `agent.spawn` 当且仅当声明了 `actions.spawn`，后者须是参数为 `RunSubagentsArgs`（或替代线的 `RunSubagentsLeanArgs`，Orchestration D81）的 CONTROL 工具；
 - 结束动作含 `FINISH_SUBAGENT` 当且仅当声明了 `spawnable`；这样的 Agent 不得含 `agent.spawn`，结束动作只有 `FINISH_SUBAGENT`，`onDegraded` 为 `RETURN_PARTIAL`（此时不需要发布 Unit），`defaultShare` 不低于 `agentMinShare(budget)`（`finalInputBudget + finalMaxOutputTokens + 2 × (perCallInputLimit + maxOutputTokens)`，与 Kernel/Monitor 的最小份额是同一个函数）；
 - `pinAgent` 把 `actions.spawn` 的工具一并固定，工具名冲突检查也包括它。
 
@@ -77,7 +77,7 @@ M1 的校验规则全部保留（M1 AgentToolPool 第 5 节）。`v1` 增加：
 | 对象 | 规则 |
 |---|---|
 | Agent `v1` | `thinking.allowedEfforts` 包含 `defaultEffort`；模型不支持思考时只能为 `['none']`；每一档在模型的 `effortMapping` 中都有映射 |
-| Agent `v1` | `actions.end` 的每个 `toolRef` 指向 `purpose = CONTROL` 的工具，且互不相同；参数契约按 `then`：`PUBLISH_REPLY` 为 `workflow.ReplyArgs`，`FINISH_SUBAGENT` 为 `workflow.ExplorerResult` 或 `WorkerResult` |
+| Agent `v1` | `actions.end` 的每个 `toolRef` 指向 `purpose = CONTROL` 的工具，且互不相同；参数契约按 `then`：`PUBLISH_REPLY` 为 `workflow.ReplyArgs`，`FINISH_SUBAGENT` 为 `workflow.ExplorerResult` 或 `WorkerResult`（替代线为 `ExplorerLeanResult`、`WorkerLeanResult`，Orchestration D81） |
 | Agent `v1` | `unitRefs` 中 `CONTEXT_ASSEMBLE`、`MODEL` 各恰好一个；有 `PUBLISH_REPLY` 或 `onDegraded = PUBLISH_NOTICE` 时恰好一个 `MESSAGE_PUBLISH`，否则没有 |
 | Agent `v1` | 额度参数为正安全整数；`maxToolUnits` 在 1..1000 |
 | Unit `v1` | 声明 `repo.read` 当且仅当执行类型读取仓库（`REPOSITORY_SEARCH`、`FILE_READ`、`REPOSITORY_LIST`）：Kernel 只按声明的能力判断是否需要 Lease，这条规则保证声明与执行类型一致；`MESSAGE_PUBLISH` 不得声明受保护能力、不得带工具；`failurePolicy` 不得列出 `USER_DECLINED`、`QUOTA_EXHAUSTED`：它们的处理是 Workflow 的固定规则（Module/Workflow 第 7 节） |

@@ -164,10 +164,21 @@ const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
   COMMAND: 'executor.RunCommandArgs.v1',
 };
 /** The arguments of each end action, as the model writes them. */
+/** What a spawn tool may take: the arm without criteria has its own (Orchestration D81). */
+const SPAWN_CONTRACTS: readonly string[] = [
+  'workflow.RunSubagentsArgs.v1',
+  'workflow.RunSubagentsLeanArgs.v1',
+];
 const END_CONTRACTS: Readonly<Record<'PUBLISH_REPLY' | 'FINISH_SUBAGENT', readonly string[]>> = {
   PUBLISH_REPLY: ['workflow.ReplyArgs.v1'],
   // Each spawnable Agent declares the result it returns (M2Design 3.7).
-  FINISH_SUBAGENT: ['workflow.ExplorerResult.v1', 'workflow.WorkerResult.v1'],
+  FINISH_SUBAGENT: [
+    'workflow.ExplorerResult.v1',
+    'workflow.WorkerResult.v1',
+    // The comparison arm without criteria (Orchestration D81).
+    'workflow.ExplorerLeanResult.v1',
+    'workflow.WorkerLeanResult.v1',
+  ],
 };
 /** Kernel's refusals mean the same for every Unit, so no definition may change them. */
 const FIXED_CODES = [
@@ -650,8 +661,7 @@ function checkSpawn(
     const tool = get('TOOL', body.actions.spawn.toolRef);
     if (
       tool !== undefined &&
-      (tool.purpose !== 'CONTROL' ||
-        contractOf(tool.parametersContract) !== 'workflow.RunSubagentsArgs.v1')
+      (tool.purpose !== 'CONTROL' || !SPAWN_CONTRACTS.includes(contractOf(tool.parametersContract)))
     )
       report(origin, 'AGENT_INVALID', 'the spawn tool must be CONTROL with RunSubagentsArgs');
   }

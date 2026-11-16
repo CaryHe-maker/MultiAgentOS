@@ -2,8 +2,10 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
+  DEFINITION_ARM_DIRECTORIES,
   DefinitionCatalog,
   FileDefinitionSource,
+  OverlayDefinitionSource,
 } from '@multiagentos/agent-tool-pool';
 import { GlobalArtifactStore } from '@multiagentos/artifacts';
 import {
@@ -198,7 +200,15 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   const registry = createProtocolRegistry();
   const catalog =
     options.catalog ??
-    (await DefinitionCatalog.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)));
+    (await DefinitionCatalog.load(
+      // The comparison arm without criteria (Orchestration D81): its files replace the catalog's.
+      process.env['MAO_SUBTASK_ACCEPTANCE'] === 'off'
+        ? new OverlayDefinitionSource(
+            new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+            new FileDefinitionSource(DEFINITION_ARM_DIRECTORIES['no-acceptance']),
+          )
+        : new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    ));
   const builtin = builtIns(catalog);
   // The instruction of the summary request of a compaction: without the Prompt nothing is compacted.
   const compactionDefinition = catalog.latest('PROMPT', 'compaction-system');

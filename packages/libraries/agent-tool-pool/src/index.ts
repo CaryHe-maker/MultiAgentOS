@@ -12,7 +12,11 @@ export {
   type CatalogIssueCode,
 } from './domain/catalog-issue.js';
 export { isPeakTime, modelCallCost, type CallCost } from './domain/model-cost.js';
-export { DEFAULT_DEFINITIONS_DIRECTORY } from './definitions-directory.js';
+export {
+  DEFAULT_DEFINITIONS_DIRECTORY,
+  DEFINITION_ARM_DIRECTORIES,
+} from './definitions-directory.js';
+export { OverlayDefinitionSource } from './adapters/file/overlay-definition-source.js';
 export type {
   DefinitionSource,
   SealPatch,

@@ -126,6 +126,10 @@ const EXPECTED = {
     'JobKillArgs',
     'ExplorerResult',
     'WorkerResult',
+    // The comparison arm without criteria (Orchestration D81).
+    'RunSubagentsLeanArgs',
+    'ExplorerLeanResult',
+    'WorkerLeanResult',
   ],
   catalog: [
     'AgentDefinition',

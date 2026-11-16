@@ -219,7 +219,9 @@ export function taskScopeOf(
     writeScope: spawn.writeScope,
     inputs: spawn.inputs,
     dependencies,
-    ...(spawn.specialist === undefined ? {} : { playbook: renderPlaybook(spawn.specialist) }),
+    ...(spawn.specialist === undefined
+      ? {}
+      : { playbook: renderPlaybook(spawn.specialist, spawn.acceptance.length > 0) }),
     ...(continued === undefined ? {} : { continued }),
     ...(inherited === undefined ? {} : { inherited }),
     ...(spawn.cut === true ? fullFromOf(records, workflowRunId, node) : {}),

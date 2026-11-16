@@ -8,7 +8,11 @@ type Specialist = NonNullable<SpawnNode['specialist']>;
  * The playbook of a specialist in words (Orchestration 3.9, D32, D39): what it reads with its
  * task. Pure, so the same log always gives the same text.
  */
-export function renderPlaybook(specialist: Specialist): string {
+export function renderPlaybook(
+  specialist: Specialist,
+  /** Whether its task came with criteria: a task of the arm without them never does (D81). */
+  withCriteria = true,
+): string {
   const { template, playbook } = specialist;
   const phaseLine = (phase: PlaybookPhase, index: number): string => {
     const tasks =
@@ -36,7 +40,7 @@ export function renderPlaybook(specialist: Specialist): string {
     ...(playbook.params.length === 0
       ? []
       : [
-          'What you need from your task, in its goal and acceptance (when one is not there, work it out from the repository; when it cannot be found, finish blocked and say what is missing):',
+          `What you need from your task, in its goal${withCriteria ? ' and acceptance' : ''} (when one is not there, work it out from the repository; when it cannot be found, finish blocked and say what is missing):`,
           ...playbook.params.map((param) => `- ${param.name}: ${param.description}`),
         ]),
     'Phases, in order:',
