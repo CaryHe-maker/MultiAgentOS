@@ -261,6 +261,39 @@ describe('the status that ends a request (D61)', () => {
     expect(await statusOf(7, { jobs: [] })).toBeUndefined();
   });
 
+  it('tells a task that can split, while its background command runs, that other parts can start (D86)', async () => {
+    const statusWith = async (tools: string[], final = false) => {
+      const outcome = await createAssembleExecutor().execute(
+        {
+          final,
+          tokenBudget: 100_000,
+          instructions: 'You are main.',
+          toolSpecs: tools.map((name) => ({
+            name,
+            description: name,
+            parameters: { type: 'object', properties: {} },
+            purpose: name === 'reply' ? ('CONTROL' as const) : ('UNIT' as const),
+          })),
+          history: [{ seq: 1, category: 'NORMAL', kind: 'HUMAN', text: 'go' }],
+          status: {
+            round: 7,
+            maxRounds: 120,
+            budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
+            final,
+            jobs: [{ name: 'job_1', command: 'python3 tools/resolve.py all', seconds: 300 }],
+          },
+        },
+        environmentFor('CONTEXT_ASSEMBLE', NONE),
+      );
+      const pack = JSON.parse(text(outcome)) as AssembleContextPack;
+      return pack.items.find((item) => item.segment === 'STATUS')?.content ?? '';
+    };
+    const line = 'parts that do not depend on its result can start now';
+    expect(await statusWith(['run_subagents', 'reply'])).toContain(line);
+    expect(await statusWith(['run_command', 'finish_subagent'])).not.toContain(line);
+    expect(await statusWith(['run_subagents', 'reply'], true)).not.toContain(line);
+  });
+
   it('tells a task whose subtasks have all ended to check the whole once and deliver (D70)', async () => {
     expect(await statusOf(12, { partsBack: true })).toContain('All your subtasks have ended.');
     expect(await statusOf(12, { partsBack: true, partsBackMinutes: 9 })).toContain(

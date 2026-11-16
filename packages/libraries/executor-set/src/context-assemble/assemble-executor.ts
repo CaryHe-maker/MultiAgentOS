@@ -139,6 +139,13 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     lines.push(
       `Background command ${job.name} (${job.command}) is still running, ${String(job.seconds)} s in the background${job.from === undefined ? '' : `; your subtask ${job.from} started it and has ended, so it is yours now`}. You can stop it with job_kill if you no longer need it.`,
     );
+  // A task that can start subtasks need not wait on its own command to hand out the rest (D86).
+  if (jobs.length > 0 && !final && toolSpecs.some((spec) => spec.name === 'run_subagents'))
+    lines.push(
+      jobs.length === 1
+        ? 'Your background command is still running; parts that do not depend on its result can start now.'
+        : 'Your background commands are still running; parts that do not depend on their results can start now.',
+    );
   if (final) {
     const finish = toolSpecs.filter((spec) => spec.purpose === 'CONTROL').map((spec) => spec.name);
     const reason = wrapUpReason === undefined ? '' : ` because ${WRAP_UP_TEXT[wrapUpReason]}`;
