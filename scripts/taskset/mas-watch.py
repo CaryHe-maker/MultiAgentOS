@@ -97,7 +97,9 @@ def render(label, log, ended, result_dir):
         if kind == 'GRAPH_EXTENDED':
             for n in r['nodes']:
                 name_of[n['nodeId']] = n['name']
-                agent_of.setdefault(n['name'], (n.get('agentRef') or {}).get('id', ''))
+                # A task that inherits runs as its caller's Agent; it is the one its phase names (D90).
+                inherited = ((n.get('spawn') or {}).get('inherits') or {}).get('as')
+                agent_of.setdefault(n['name'], inherited or (n.get('agentRef') or {}).get('id', ''))
                 if n.get('spawn') and n['spawn'].get('inherits'):
                     inherits[n['name']] = True
         elif kind == 'AGENT_RUN_REGISTERED':
