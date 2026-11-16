@@ -13917,8 +13917,7 @@
                             "source": {
                               "type": "object",
                               "required": [
-                                "modelOutputRef",
-                                "toolCallId"
+                                "modelOutputRef"
                               ],
                               "properties": {
                                 "modelOutputRef": {
@@ -34328,8 +34327,7 @@
             "source": {
               "type": "object",
               "required": [
-                "modelOutputRef",
-                "toolCallId"
+                "modelOutputRef"
               ],
               "properties": {
                 "modelOutputRef": {
@@ -39688,8 +39686,7 @@
                     "source": {
                       "type": "object",
                       "required": [
-                        "modelOutputRef",
-                        "toolCallId"
+                        "modelOutputRef"
                       ],
                       "properties": {
                         "modelOutputRef": {
@@ -41722,8 +41719,7 @@
                 "source": {
                   "type": "object",
                   "required": [
-                    "modelOutputRef",
-                    "toolCallId"
+                    "modelOutputRef"
                   ],
                   "properties": {
                     "modelOutputRef": {

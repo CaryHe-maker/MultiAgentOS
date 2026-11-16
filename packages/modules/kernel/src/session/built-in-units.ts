@@ -22,7 +22,10 @@ const notDispatched = (reasonCode: 'INVALID_INPUT' | 'INVALID_ARTIFACT_REF'): Bu
   reasonCode,
 });
 
-/** Takes the `text` argument of one `reply` call out of the model output it was part of. */
+/**
+ * Takes the `text` argument of one `reply` call out of the model output it was part of, or, with
+ * no call named, the text the model wrote without a tool call (D97).
+ */
 async function replyText(
   input: Extract<MessagePublishInput, { kind: 'REPLY' }>,
   artifacts: SessionArtifacts,
@@ -32,6 +35,10 @@ async function replyText(
   try {
     const output = validate<ModelRawOutput>(ModelRawOutputSchema, JSON.parse(content.text));
     if (!output.ok) return { refused: notDispatched('INVALID_INPUT') };
+    if (input.source.toolCallId === undefined) {
+      const written = output.value.text?.trim() ?? '';
+      return written === '' ? { refused: notDispatched('INVALID_INPUT') } : { text: written };
+    }
     const call = output.value.toolCalls.find((c) => c.toolCallId === input.source.toolCallId);
     if (call === undefined) return { refused: notDispatched('INVALID_INPUT') };
     const args = validate<ReplyArgs>(ReplyArgsSchema, parseToolArguments(call.argumentsText));

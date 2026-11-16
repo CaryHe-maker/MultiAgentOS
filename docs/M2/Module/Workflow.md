@@ -117,7 +117,7 @@ M2Design 第 10.3 节第 4 步：对每个已提交、未完成的 Unit 追加 `
 2. **启动 Unit**：没有 Agent 有启动 Unit，运行开启时不碰仓库（M2Design 第 3.9 节）。
    **项目指令**：本运行第一个读取仓库的工具成功后，在下一次组装之前以 `readProjectFile` 读取 `AGENTS.md`，追加 `PROJECT_FILE_LOADED`；条目排在这一轮的工具结果之后，工具结果与它的调用不被隔开。
    一个文件在投影里只有一个位置：同一路径再次加载且内容不同时，新的取代旧的；遇到 `WORKSPACE_BOUND` 时所有项目指令条目（根目录和子目录的）与已加载的记录一并清掉，投影里追加一条给模型的说明（旧文件夹的文件、路径和项目指令可能不再适用，新文件夹的项目指令会重新读取，此前的改动不能回退），新运行在新文件夹里按上面的办法重新读取。读后才能改的基准与待加载的子目录指令同样只算 `WORKSPACE_BOUND` 之后的。
-3. **控制工具**：main 的结束工具为 `reply`（参数 `{ text }`）；子任务为 `finish_subagent`；`update_todos` 见第 9 条。
+3. **控制工具**：main 的结束工具为 `reply`（参数 `{ text }`）；子任务为 `finish_subagent`；`update_todos` 见第 9 条。main 的回复里没有工具调用而有非空文字、是模型自己正常结束的（`STOP`，不是截断或过滤）、且此刻可以结束（是根任务，没有运行中或等待启动的子任务，没有未答复的请求，自己的后台命令都已结束）时，这段文字就当作 `reply` 发布（D97，结局 `REPLIED`，发布输入不带 `toolCallId`）；不满足时照旧以 `NO_ACTION` 退回。子任务没有这条路径。
 4. **额度**（M2Design 第 7.3 节）：任一 UnitReport 的 `budget.agentRun` 或 `budget.turn` 为 WRAP_UP 时，设置 `wrapUpReason = BUDGET_WRAP_UP`，下一次模型调用就是 final-call；
    为 EXHAUSTED 时不再发起模型调用，按 M1 的规则结束该 AgentRun（main 为降级回复，见第 9.1 节）。
    `QUOTA_EXHAUSTED` 同样进入收尾，`wrapUpReason` 按 `quota` 为 `TOOL_UNIT_LIMIT` 或 `WALL_CLOCK_LIMIT`。这是固定规则，不经过 Unit 的 `failurePolicy`；

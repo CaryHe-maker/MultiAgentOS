@@ -17,7 +17,8 @@ export const MessagePublishInputSchema = Type.Union(
       agentLabel: text(80),
       source: closed({
         modelOutputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
-        toolCallId: ToolCallIdSchema,
+        /** The `reply` call; absent, the reply is the text of the model output itself (D97). */
+        toolCallId: Type.Optional(ToolCallIdSchema),
       }),
       /** Set when the reply came from a final call: the work ended early and the user is told. */
       wrapUpReason: Type.Optional(WrapUpReasonSchema),

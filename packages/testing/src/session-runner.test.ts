@@ -317,8 +317,10 @@ describe('a chat exchange', () => {
   it('keeps the conversation going when main ends degraded', async () => {
     const { kernel, runner } = setup([
       {
+        // Text the model did not end itself is no reply (D97): it is sent back, and with no
+        // further answer in the script main ends degraded.
         output: {
-          finishReason: 'STOP',
+          finishReason: 'OTHER',
           toolCalls: [],
           hasText: true,
           hasReasoning: false,

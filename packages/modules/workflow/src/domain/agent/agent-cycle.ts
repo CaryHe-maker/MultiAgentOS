@@ -257,6 +257,18 @@ export type AgentEnding =
     }
   | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView }
   /**
+   * The answer written as text, without a tool call, by an Agent that ends with `reply`, when it
+   * may end now (D97): it is published as that reply, as the main loops of other agents do.
+   */
+  | {
+      readonly kind: 'REPLIED';
+      readonly tool: EndTool;
+      readonly source: {
+        readonly modelTurnRequestId: string;
+        readonly modelOutputRef: ArtifactRef;
+      };
+    }
+  /**
    * The AgentRun has `ROUNDS_ASK_AHEAD` working rounds left (D91): before the next one starts, the
    * runner asks its parent for more and answers with `answerRounds`. Nothing runs meanwhile.
    */
@@ -307,6 +319,11 @@ export interface AgentContext {
   readonly owedReplies?: (agentRunId: string, answered: ReadonlySet<string>) => string | undefined;
   /** The task has a parent to ask for more rounds when few are left (D91). */
   readonly asksForRounds?: () => boolean;
+  /**
+   * The task may deliver now: no subtask of it runs and no request to it is left unanswered.
+   * Then an answer written as text is its reply (D97).
+   */
+  readonly mayReplyNow?: (agentRunId: string) => boolean;
 }
 
 /** With this many working rounds left, an AgentRun that can asks its parent for more (D91). */
@@ -897,6 +914,7 @@ function handleModel(
   const output = report.output as {
     readonly finishReason: string;
     readonly toolCalls: readonly ModelToolCall[];
+    readonly hasText?: boolean;
   };
   // The turn is logged as the model wrote it; the calls are checked and run with their
   // snake_case names taken over (D57).
@@ -925,6 +943,28 @@ function handleModel(
     },
     turn,
   ];
+  // An answer written as text, where a reply would end the run now, is that reply (D97): the
+  // model ends a turn the way every main loop lets it, instead of writing it a second time.
+  const replyTool = state.definitions.endTools.find((tool) => tool.action === 'PUBLISH_REPLY');
+  if (
+    calls.length === 0 &&
+    // Only a reply the model ended itself: one cut off by the length limit, stopped by a content
+    // filter or ended for a reason not known may stop in the middle of what it says.
+    output.finishReason === 'STOP' &&
+    output.hasText === true &&
+    replyTool !== undefined &&
+    report.outputRef !== undefined &&
+    context.mayReplyNow?.(state.agentRunId) === true
+  )
+    return ended(
+      state,
+      {
+        kind: 'REPLIED',
+        tool: replyTool,
+        source: { modelTurnRequestId: report.requestId, modelOutputRef: report.outputRef },
+      },
+      records,
+    );
   if (calls.length === 0) {
     return invalidReply(
       state,

@@ -284,6 +284,63 @@ describe('ending', () => {
     expect(message).toContain('Call one of the tools you have, or finish with a call of reply');
   });
 
+  describe('an answer written as text (D97)', () => {
+    const textOnly = { ...modelOutput([]), ok: { ...modelOutput([]).ok, hasText: true } };
+    const answer = (from: AgentTransition, ctx: AgentContext) =>
+      receiveAgentReport(from.state, report(from.state, only(from), textOnly), ctx, config);
+
+    it('is the reply of an Agent that ends with one, when it may end now', () => {
+      const done = answer(atModel(), { ...context, mayReplyNow: () => true });
+      expect(done.ending).toMatchObject({
+        kind: 'REPLIED',
+        tool: { toolName: 'reply' },
+        source: { modelOutputRef: modelRef },
+      });
+      expect(done.records.some((r) => r.type === 'FEEDBACK')).toBe(false);
+    });
+
+    it('is sent back while it may not end yet, and from an Agent that finishes otherwise', () => {
+      const waiting = answer(atModel(), { ...context, mayReplyNow: () => false });
+      expect(waiting.ending).toBeUndefined();
+      expect(waiting.records.find((r) => r.type === 'FEEDBACK')).toMatchObject({
+        code: 'NO_ACTION',
+      });
+      const worker = answer(
+        atModel({
+          endTools: [
+            {
+              toolName: 'finish_subagent',
+              parameters: {},
+              allowedInFinal: true,
+              action: 'FINISH_SUBAGENT',
+            } as never,
+          ],
+        }),
+        { ...context, mayReplyNow: () => true },
+      );
+      expect(worker.records.find((r) => r.type === 'FEEDBACK')).toMatchObject({
+        code: 'NO_ACTION',
+      });
+    });
+
+    it('is not taken when the model did not end it itself', () => {
+      for (const finishReason of ['LENGTH', 'CONTENT_FILTER', 'OTHER']) {
+        const from = atModel();
+        const cut = receiveAgentReport(
+          from.state,
+          report(from.state, only(from), {
+            ...textOnly,
+            ok: { ...textOnly.ok, finishReason },
+          }),
+          { ...context, mayReplyNow: () => true },
+          config,
+        );
+        expect(cut.ending).toBeUndefined();
+        expect(cut.records.some((r) => r.type === 'FEEDBACK')).toBe(true);
+      }
+    });
+  });
+
   it('asks again when the reply has no action, and says when it was cut off', () => {
     const none = replied(atModel(), []);
     expect(none.records.find((r) => r.type === 'FEEDBACK')).toMatchObject({ code: 'NO_ACTION' });

@@ -146,6 +146,54 @@ describe('run_subagents returns at once, and the caller sleeps until its tasks e
   );
 });
 
+describe('an answer written as text is the reply when main may end (D97)', () => {
+  it(
+    'sends it back while a subtask runs, and delivers it as the reply once nothing is left',
+    async () => {
+      const place = await roots();
+      const text = (said: string) => ({ calls: [], text: said });
+      const provider = scriptedAgents({
+        main: [
+          spawn({ name: 'slow', agent: 'explorer', goal: 'take your time' }),
+          // Too early: the subtask still runs, so the text is not taken as the reply.
+          text('an answer before the subtask ended'),
+          sleepFor(children()),
+          text('the answer, written as text'),
+        ],
+        explorer: [{ wait: delay(1500), then: finish('done slowly') }],
+      });
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toEqual(['the answer, written as text']);
+      expect(seen(provider)).toContain('Your message contained no tool call');
+    },
+    TIMEOUT,
+  );
+});
+
+real('an answer written as text waits for the background commands of main (D97)', () => {
+  it(
+    'sends it back while its own background command runs, and takes it once the command ended',
+    async () => {
+      const place = await roots();
+      const text = (said: string) => ({ calls: [], text: said });
+      const provider = scriptedAgents({
+        main: [
+          tool('run_command', { command: 'sleep 2', runInBackground: true }),
+          text('an answer before the command ended'),
+          sleepFor({ kind: 'jobs' }),
+          text('the answer after the command'),
+        ],
+      });
+      const chat = await chatOn(place, provider);
+      await chat.say('go');
+      expect(chat.printed('REPLY')).toEqual(['the answer after the command']);
+      expect(seen(provider)).toContain('Your message contained no tool call');
+    },
+    TIMEOUT,
+  );
+});
+
 describe('messages along the tree (Orchestration 5)', () => {
   it(
     'wakes a sibling that waits for a message, shows it as information, and the work goes on',

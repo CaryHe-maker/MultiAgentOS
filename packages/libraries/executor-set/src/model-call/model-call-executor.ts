@@ -372,11 +372,12 @@ function completedCall(
   };
   const output: ModelCallOutput =
     toolCalls.length > 0
-      ? { finishReason: 'TOOL_CALLS', toolCalls, hasText: text.length > 0, hasReasoning }
+      ? { finishReason: 'TOOL_CALLS', toolCalls, hasText: text.trim().length > 0, hasReasoning }
       : {
           finishReason: finishReasonOf(result.finishReason.unified),
           toolCalls: [],
-          hasText: text.length > 0,
+          // Blank text is no text: an answer written as text must say something (D97).
+          hasText: text.trim().length > 0,
           hasReasoning,
         };
   return {

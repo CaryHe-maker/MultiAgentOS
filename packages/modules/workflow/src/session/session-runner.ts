@@ -1647,6 +1647,20 @@ export class SessionRunner {
         scope.missionId === undefined
           ? undefined
           : replyRefusal(owedReplies(this.#records, scope.missionId, { agentRunId }), answered),
+      // An answer written as text ends the run as its reply when nothing is left to wait for (D97).
+      // Only when nothing is left that it could be early for: it is the root, no subtask of it
+      // runs or waits to start, no request to it is unanswered, and none of its background
+      // commands still runs. Otherwise it is sent back as before, and the task goes on.
+      mayReplyNow: (agentRunId) => {
+        if (scope.missionId === undefined) return false;
+        const missions = projectMissions(this.#records);
+        return (
+          missions.get(scope.missionId)?.parentId === undefined &&
+          this.#runningChildren(scope.missionId).length === 0 &&
+          owedReplies(this.#records, scope.missionId, { agentRunId }).length === 0 &&
+          !jobsHeldBy(this.#records, scope.missionId, missions).some((job) => job.running)
+        );
+      },
       // A subtask asks its parent for more rounds (D91); a root has no one to ask.
       asksForRounds: () =>
         scope.missionId !== undefined &&
@@ -2326,6 +2340,42 @@ export class SessionRunner {
     );
   }
 
+  /**
+   * The reply of an Agent that ends with one: from its `reply` call, or the text it wrote without
+   * a tool call when it could end then (D97), which has no call to name.
+   */
+  async #publishReply(
+    workflowRunId: string,
+    active: ActiveAgent,
+    source:
+      ControlSource | { readonly modelTurnRequestId: string; readonly modelOutputRef: ArtifactRef },
+  ): Promise<void> {
+    const { label } = active.state.definitions;
+    const { wrapUpReason } = active.state;
+    const call = 'toolCallId' in source ? source : undefined;
+    return this.#closeWith(
+      workflowRunId,
+      active,
+      {
+        kind: 'REPLY',
+        agentLabel: label,
+        source: {
+          modelOutputRef: source.modelOutputRef,
+          ...(call === undefined ? {} : { toolCallId: call.toolCallId }),
+        },
+        ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
+      },
+      call,
+      // In a template, the reply of the output step is the result of the run (3.5, 10.1).
+      {
+        status: 'SUCCEEDED',
+        runOutput:
+          this.#mode === 'ORCHESTRATION' &&
+          projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.output === true,
+      },
+    );
+  }
+
   /** The one table of what follows each declared end action. */
   async #runEndAction(
     action: EndAction,
@@ -2333,8 +2383,6 @@ export class SessionRunner {
     active: ActiveAgent,
     ending: Extract<AgentEnding, { kind: 'ENDED' }>,
   ): Promise<void> {
-    const { label } = active.state.definitions;
-    const { wrapUpReason } = active.state;
     // A task that started subtasks ends only after they ended (D4, Orchestration 9.3).
     const running = this.#runningChildren(active.missionId);
     if (running.length > 0 && !active.state.final)
@@ -2347,27 +2395,7 @@ export class SessionRunner {
       );
     switch (action) {
       case 'PUBLISH_REPLY':
-        return this.#closeWith(
-          workflowRunId,
-          active,
-          {
-            kind: 'REPLY',
-            agentLabel: label,
-            source: {
-              modelOutputRef: ending.source.modelOutputRef,
-              toolCallId: ending.source.toolCallId,
-            },
-            ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
-          },
-          ending.source,
-          // In a template, the reply of the output step is the result of the run (3.5, 10.1).
-          {
-            status: 'SUCCEEDED',
-            runOutput:
-              this.#mode === 'ORCHESTRATION' &&
-              projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.output === true,
-          },
-        );
+        return this.#publishReply(workflowRunId, active, ending.source);
       case 'FINISH_SUBAGENT':
         return this.#finishSubagent(workflowRunId, active, ending);
     }
@@ -2656,6 +2684,8 @@ export class SessionRunner {
     switch (ending.kind) {
       case 'ENDED':
         return this.#runEndAction(ending.tool.action, workflowRunId, active, ending);
+      case 'REPLIED':
+        return this.#publishReply(workflowRunId, active, ending.source);
       case 'SPAWN':
         return this.#onSpawn(workflowRunId, active, ending);
       case 'ASK':
