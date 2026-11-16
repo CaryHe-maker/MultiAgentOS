@@ -65,6 +65,9 @@ export function repairSpawnArgs(args: unknown, taskSchema: Schema): RepairedSpaw
     delete task['context'];
     // A task has no criteria any more (Mission baseline 1, D93): what it must deliver is its goal.
     delete task['acceptance'];
+    // writeScope is required (D96); left out it is empty, and the check of the call says whether
+    // the task needs one (WRITE_SCOPE_REQUIRED), as it does for `[]`.
+    if (task['writeScope'] === undefined) task['writeScope'] = [];
     if (typeof task['role'] === 'string' && task['role'].length > ROLE_CHARS)
       task['role'] = `${task['role'].slice(0, ROLE_CHARS - 1)}…`;
     const effort = task['effort'];

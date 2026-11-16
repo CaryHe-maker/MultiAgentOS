@@ -56848,7 +56848,8 @@
             "required": [
               "name",
               "agent",
-              "goal"
+              "goal",
+              "writeScope"
             ],
             "properties": {
               "name": {
@@ -56986,7 +56987,8 @@
             "required": [
               "name",
               "agent",
-              "goal"
+              "goal",
+              "writeScope"
             ],
             "properties": {
               "name": {

@@ -64,6 +64,23 @@ describe('repairSpawnArgs (D56)', () => {
     );
   });
 
+  it('takes a writeScope left out as empty, for the check of the call to judge (D96)', () => {
+    const repaired = repairSpawnArgs(
+      {
+        tasks: [
+          { name: 'look', agent: 'explorer', goal: 'look around' },
+          { name: 'build', agent: 'worker', goal: 'build it' },
+        ],
+      },
+      ROOT,
+    );
+    expect(repaired.notes).toEqual([]);
+    expect(tasksOf(repaired.args)).toEqual([
+      expect.objectContaining({ name: 'look', writeScope: [] }),
+      expect.objectContaining({ name: 'build', writeScope: [] }),
+    ]);
+  });
+
   it('keeps a goal too long for the graph as its beginning, and names the task', () => {
     const repaired = repairSpawnArgs(
       {

@@ -8,6 +8,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { probeSandbox } from '@multiagentos/kernel';
+import { completionResponse } from '../support/scripted-model.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   isTaskText,
@@ -205,7 +206,31 @@ describe('messages along the tree (Orchestration 5)', () => {
     'counts the wakes by messages again from the end of a subtask (D95)',
     async () => {
       const place = await roots();
-      const all = sleepFor(children('all'));
+      // Each step waits for main to have gone to sleep, so every message finds it asleep however
+      // loaded the machine is; the pause after lets the sleep be recorded first.
+      const asleep = Array.from({ length: 5 }, () => {
+        let done = (): void => undefined;
+        const served = new Promise<void>((resolve) => {
+          done = resolve;
+        });
+        return { served, done };
+      });
+      const after = (index: number) =>
+        asleep[index]?.served.then(() => new Promise((resolve) => setTimeout(resolve, 600)));
+      // A sleep that says when the provider served it.
+      const sleepNo = (index: number) => ({
+        response: () => {
+          asleep[index]?.done();
+          return completionResponse(
+            { calls: [{ name: 'sleep', arguments: { until: [children('all')] } }] },
+            `sleep-${String(index)}`,
+          );
+        },
+      });
+      let quickEnded = (): void => undefined;
+      const ended = new Promise<void>((resolve) => {
+        quickEnded = resolve;
+      });
       const provider = scriptedAgents(
         // Three messages use up the limit of wakes; quick ends, and the fourth wakes main again.
         {
@@ -214,22 +239,27 @@ describe('messages along the tree (Orchestration 5)', () => {
               { name: 'quick', agent: 'explorer', goal: 'look quickly' },
               { name: 'chatty', agent: 'explorer', goal: 'say four things' },
             ),
-            all,
-            all,
-            all,
-            all,
-            all,
+            ...[0, 1, 2, 3, 4].map(sleepNo),
             reply('heard all four'),
           ],
         },
         {
-          quick: [{ wait: delay(4500), then: finish('quick is done') }],
+          // It ends after the third message woke main, while main sleeps again.
+          quick: [
+            {
+              wait: after(3)?.then(() => quickEnded()) ?? Promise.resolve(),
+              then: finish('quick is done'),
+            },
+          ],
           chatty: [
-            ...['one', 'two', 'three'].map((word) => ({
-              wait: delay(1200),
+            ...['one', 'two', 'three'].map((word, index) => ({
+              wait: after(index) ?? Promise.resolve(),
               then: message('parent', `note ${word}`),
             })),
-            { wait: delay(4000), then: message('parent', 'note four') },
+            {
+              wait: ended.then(() => new Promise((resolve) => setTimeout(resolve, 1500))),
+              then: message('parent', 'note four'),
+            },
             finish('said four things'),
           ],
         },

@@ -9,12 +9,12 @@ modelDescription: >-
   Start up to 8 subtasks that run in parallel. Returns at once; each result comes to you
   when its task ends (sleep with until children to wait). Each task has a unique name, an agent
   (explorer, worker, or one of the specialists fixer, reviewer, tester, integrator,
-  researcher), a goal, and optionally role (one line every task sees), dependsOn (names of tasks of
+  researcher), a goal, a writeScope, and optionally role (one line every task sees), dependsOn (names of tasks of
   this call it waits for and whose results it gets), inputs (artifacts you hand over), effort and
-  budget. A task finishes when its goal is done, so the goal says what done means. A worker or specialist needs writeScope: the
-  repository paths it may change, inside what you may write and not overlapping a task that can run
-  at the same time; until it ends only it writes there and your commands see it read-only. An
-  explorer has no writeScope. split: true lets a worker with a large part start subtasks of
+  budget. A task finishes when its goal is done, so the goal says what done means. writeScope is required in every task: for a
+  worker or specialist the repository paths it may change, inside what you may write and not
+  overlapping a task that can run at the same time (until it ends only it writes there and your
+  commands see it read-only); for an explorer []. split: true lets a worker with a large part start subtasks of
   its own inside its writeScope. A worker or explorer starts with your context, so its goal says
   only what its part is; a specialist starts from its goal alone. continues starts a task from the
   history of an ended task of yours (same agent): use it to send a defect back to its owner. plan

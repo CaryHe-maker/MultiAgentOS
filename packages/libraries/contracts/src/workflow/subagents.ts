@@ -75,6 +75,11 @@ export type SubagentTask = Static<TObject<typeof subagentTaskFields>>;
 /** The Agents a model may name: never `lead` (D88). */
 const modelAgent = { agent: Type.Enum(['explorer', 'worker', ...SPECIALIST_AGENTS]) };
 /**
+ * Required of every task a model writes (D96): the paths a worker or specialist may change, `[]`
+ * for an explorer. Optional, it was left out of the root's first call in 5 of 28 runs.
+ */
+const writeScopeField = { writeScope: Type.Array(text(500), { maxItems: 10 }) };
+/**
  * The plan of the work (Orchestration 5.3, D24): what is delivered, the approach, how it is split,
  * who owns which part and which interface, the constraints. The root task writes it before its
  * first subtasks; every task below sees it. A later one replaces it.
@@ -89,7 +94,12 @@ const planField = () => Type.Optional(text(8000));
 export const RunSubagentsArgsSchema = closed(
   {
     tasks: Type.Array(
-      closed({ ...subagentTaskFields, ...modelAgent, split: Type.Optional(Type.Boolean()) }),
+      closed({
+        ...subagentTaskFields,
+        ...modelAgent,
+        ...writeScopeField,
+        split: Type.Optional(Type.Boolean()),
+      }),
       { minItems: 1, maxItems: 12 },
     ),
     plan: planField(),
@@ -113,10 +123,14 @@ export interface SpawnRequest {
  */
 export const RunSubagentsNestedArgsSchema = closed(
   {
-    tasks: Type.Array(closed({ ...subagentTaskFields, agent: Type.Enum(['explorer', 'worker']) }), {
-      minItems: 1,
-      maxItems: 12,
-    }),
+    tasks: Type.Array(
+      closed({
+        ...subagentTaskFields,
+        ...writeScopeField,
+        agent: Type.Enum(['explorer', 'worker']),
+      }),
+      { minItems: 1, maxItems: 12 },
+    ),
     plan: planField(),
   },
   'workflow.RunSubagentsNestedArgs.v1',

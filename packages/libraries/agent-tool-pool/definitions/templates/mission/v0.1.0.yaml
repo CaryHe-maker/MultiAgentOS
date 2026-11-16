@@ -55,11 +55,11 @@ nodes:
         {plan: "<deliverable, checks, parts and owners, shared files>", tasks: [{name: "<a>",
         agent: "worker", role: "<one line>", goal: "<part a>", writeScope: ["<paths>"],
         dependsOn: ["<task that must end first>"]}]}
-        writeScope is required for a worker; without it the task is not started.
+        writeScope is required in every task: the paths a worker or specialist may change, [] for an explorer.
         Returns at once; a task finishes when its goal is done, and its result arrives later at
         the end of your history, with the checks it ran after its last change.
         Agents:
-          explorer: reads and reports; no writeScope.
+          explorer: reads and reports; writeScope [].
           worker: changes files in its writeScope (required).
           worker with split: true: a large part it splits into subtasks of its own.
           For the root task only, each working by a method the system checks:
