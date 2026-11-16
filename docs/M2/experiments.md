@@ -733,3 +733,19 @@ Cary 2026-11-16 定：以 L9（`dv-medseg-split`）那次运行的配置为 **Mi
 | textutils（重跑） | L13 | `8c1e9a9` | 27.6 | 1.000 | 22.3 / 0.970 |
 
 开发集五道主体题都已用基线1 运行。L10 之后加了 D94、D95，L11 之后加了 D96，L12 之后加了 D97。
+
+### 最终集大任务：Mission 基线1.1（2026-11-17 定，尚未运行）
+
+Cary 2026-11-17 定：把至 D97 为止的系统冻结为 **Mission 基线1.1**（Orchestration D98，git 标签 `mission-baseline-1.1`），在最终集的 5 道大任务上用 Mission 各跑一次；小任务这次不跑。最终集至多运行两次，这是第一次；不看单题细节调参，只看合计。
+
+条件与 `dsh` 的对照运行完全一致（`scripts/taskset/phase3-freeze.mjs` 已核对，题目内容的哈希与封存时一致）：
+
+| 题 | 联网 | 时间上限 | `dsh`（分钟 / 得分 / 美元） |
+|---|---|---|---|
+| designed/pylua | 否（离线） | 9000 秒 | 30.6 / 0.782 / 0.292 |
+| designed/survey-av-fusion | 是 | 9000 秒 | 28.7 / 0.996 / 0.125 |
+| designed/sqlengine | 否（离线） | 9000 秒 | 23.3 / 0.875 / 0.253 |
+| designed/minidb | 是（`dsh` 也是联网跑的，离线规则在它之后才定） | 9000 秒 | 23.1 / 1.000 / 0.166 |
+| designed/pyarchive | 否（离线） | 9000 秒 | 20.9 / 1.000 / 0.238 |
+
+联网与否由各题 `task.toml` 的 `allow_internet` 决定，`dsh` 与 mas 都经同一个 `scripts/taskset/agentrun.mjs` 启动、读同一个字段，离线时容器在内部网络 `benchint` 上，模型请求经用量代理；时间上限同样取自 `task.toml` 的 `[agent] timeout_sec`（9000 秒），评分是同一个 `tests/test.sh`，资源为 2 个 CPU、4096 MB。运行用 `mas-live.sh designed/<题> f1-<题> --ui`，一次一道；开跑前查 DeepSeek 余额（定稿时 $15.36）并避开高峰时段（工作日 UTC 01:00–04:00、06:00–10:00）；综述题的评分要查 arXiv，遇到限流时稍后单独重新评分，不重跑。
