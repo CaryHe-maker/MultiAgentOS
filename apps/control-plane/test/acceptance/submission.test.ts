@@ -689,10 +689,21 @@ real('a subtask that asks its parent for more rounds (D91)', () => {
       );
     },
   });
-  const run = async (grant: boolean) => {
+  /** A wait that starts when the provider serves the turn, not when the script is written. */
+  const delay = (ms: number): Promise<void> =>
+    ({
+      then: (resolve: () => void) => setTimeout(resolve, ms),
+    }) as unknown as Promise<void>;
+  /**
+   * `talkative`: a sibling wakes the root with three messages first, which is its whole limit of
+   * wakes between two words of the user (Orchestration 4.4); the request still wakes it (D94).
+   */
+  const run = async (grant: boolean, talkative = false) => {
     const worker = [
-      // It reads what it will change, as a write needs.
-      tool('read_file', { path: 'src/value.txt' }),
+      // It reads what it will change, as a write needs; after the sibling has spoken.
+      talkative
+        ? { wait: delay(6000), then: tool('read_file', { path: 'src/value.txt' }) }
+        : tool('read_file', { path: 'src/value.txt' }),
       ...Array.from({ length: READS - 1 }, (_, index) =>
         tool('read_file', { path: `notes/n${String(index)}.txt` }),
       ),
@@ -705,15 +716,32 @@ real('a subtask that asks its parent for more rounds (D91)', () => {
         validation: [{ command: check, exitCode: 0 }],
       }),
     ];
-    const provider = scriptedAgents({ main: [] }, { big: worker });
+    const chatty = [
+      ...['one', 'two', 'three'].map((word) => ({
+        wait: delay(1200),
+        then: tool('send_message', { to: 'parent', text: `note ${word}` }),
+      })),
+      tool('sleep', { until: [{ kind: 'siblings' }] }),
+      tool('finish_subagent', { summary: 'said three things', openQuestions: [] }),
+    ];
+    const provider = scriptedAgents(
+      { main: [] },
+      { big: worker, ...(talkative ? { chatty } : {}) },
+    );
+    const all = tool('sleep', { until: [{ kind: 'children', mode: 'all' }] });
     provider.add(
       tool('run_subagents', {
         plan: 'One long part.',
-        tasks: [{ name: 'big', agent: 'worker', goal: 'the long part', writeScope: ['src'] }],
+        tasks: [
+          { name: 'big', agent: 'worker', goal: 'the long part', writeScope: ['src'] },
+          ...(talkative ? [{ name: 'chatty', agent: 'explorer', goal: 'say three things' }] : []),
+        ],
       }),
-      tool('sleep', { until: [{ kind: 'children' }] }),
+      // Woken by each of the three messages, it sleeps again.
+      ...(talkative ? [all, all, all] : []),
+      all,
       answer(provider, grant),
-      tool('sleep', { until: [{ kind: 'children' }] }),
+      all,
       tool('reply', { text: 'done' }),
     );
     const result = await missionOn('do the long part', provider, {
@@ -750,6 +778,30 @@ real('a subtask that asks its parent for more rounds (D91)', () => {
       expect(big.length).toBeLessThan(40);
       expect(result.phases).toContain('申请额度中');
       const log = await logOf(result.dataDir);
+      expect(
+        log.some((record) => record['type'] === 'MISSION_MESSAGE' && record['grant'] === true),
+      ).toBe(true);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'wakes its parent with the request after messages used up its limit of wakes (D94)',
+    async () => {
+      const { result } = await run(true, true);
+      expect(result.code).toBe(0);
+      const log = await logOf(result.dataDir);
+      const root = log.find(
+        (record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] !== 'SPAWN',
+      );
+      expect(root).toBeDefined();
+      const woken = log.filter(
+        (record) =>
+          record['type'] === 'MISSION_WOKEN' &&
+          (record['causes'] as { kind: string }[]).some((cause) => cause.kind === 'MESSAGE'),
+      );
+      // Three wakes by the sibling's messages, then the one by the request.
+      expect(woken.length).toBeGreaterThanOrEqual(4);
       expect(
         log.some((record) => record['type'] === 'MISSION_MESSAGE' && record['grant'] === true),
       ).toBe(true);

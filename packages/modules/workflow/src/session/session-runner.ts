@@ -3702,8 +3702,9 @@ export class SessionRunner {
   /**
    * A task has `ROUNDS_ASK_AHEAD` working rounds left (D91): the Workflow asks its parent for more
    * with a request that asks for a decision, sent, woken on and owed an answer as any request is,
-   * and nothing of the task runs until the reply. With no parent to ask, or one that could not be
-   * woken to answer, the task goes on with the rounds it has.
+   * and nothing of the task runs until the reply. The request wakes its parent past its limit of
+   * wakes and does not count toward it (D94). With no parent to ask, or one that has ended, the
+   * task goes on with the rounds it has.
    */
   async #onRounds(
     workflowRunId: string,
@@ -3720,16 +3721,12 @@ export class SessionRunner {
     for (const record of this.#records)
       if (record.type === 'MODEL_TURN' && record.agentRunId === active.state.agentRunId)
         turn = record;
-    const unreachable =
-      parent !== undefined &&
-      this.#wakeLimitReached(parent.missionId) &&
-      this.#sleeping(workflowRunId).some((each) => each.mission.missionId === parent.missionId);
+    // The request always wakes the parent, whatever its limit of wakes (D94).
     if (
       me === undefined ||
       parent === undefined ||
       parent.ended !== undefined ||
       turn === undefined ||
-      unreachable ||
       this.#openRequests(me.missionId).length >= MAX_OPEN_REQUESTS
     )
       return this.#apply(
@@ -4330,6 +4327,8 @@ export class SessionRunner {
     );
     const endedAt = new Map<string, number>();
     const messages: number[] = [];
+    /** Requests that ask for a decision (D91): they wake the task past its limit (D94). */
+    const decisions: number[] = [];
     for (const record of this.#records) {
       if (
         record.type === 'MISSION_TIMER_DUE' &&
@@ -4350,7 +4349,7 @@ export class SessionRunner {
         record.to.includes(mission.missionId) &&
         record.seq > lastSeen
       )
-        messages.push(record.seq);
+        (record.asksGrant === true ? decisions : messages).push(record.seq);
       if (
         record.type === 'MESSAGE_UNANSWERED' &&
         record.missionId === mission.missionId &&
@@ -4425,8 +4424,11 @@ export class SessionRunner {
     );
     if (told.length > 0 && !this.#wakeLimitReached(mission.missionId))
       causes.push({ kind: 'JOB', seq: Math.max(...told.map((record) => record.seq)) });
-    // A message wakes a sleeping task whatever it waited for, within the limit (D20).
-    if (messages.length > 0 && !this.#wakeLimitReached(mission.missionId))
+    // A message wakes a sleeping task whatever it waited for, within the limit (D20). A request
+    // that asks for a decision always does, and does not count toward the limit (D94): a task
+    // waits on the answer, and each AgentRun asks once, so it cannot loop.
+    if (decisions.length > 0) causes.push({ kind: 'MESSAGE', seq: decisions[0] ?? yielded.seq });
+    else if (messages.length > 0 && !this.#wakeLimitReached(mission.missionId))
       causes.push({ kind: 'MESSAGE', seq: messages[0] ?? yielded.seq });
     return causes;
   }
@@ -4434,13 +4436,19 @@ export class SessionRunner {
   /** Wakes by messages, timers and jobs since the last word of the user (Orchestration 4.4). */
   #wakeLimitReached(missionId: string): boolean {
     let count = 0;
+    // A wake by a request that asks for a decision is not counted (D94).
+    const decisions = new Set<number>();
     for (const record of this.#records) {
       if (record.type === 'HUMAN_ANSWERED') count = 0;
+      if (record.type === 'MISSION_MESSAGE' && record.asksGrant === true) decisions.add(record.seq);
       if (
         record.type === 'MISSION_WOKEN' &&
         record.missionId === missionId &&
         record.causes.some(
-          (cause) => cause.kind === 'MESSAGE' || cause.kind === 'TIMER' || cause.kind === 'JOB',
+          (cause) =>
+            (cause.kind === 'MESSAGE' && (cause.seq === undefined || !decisions.has(cause.seq))) ||
+            cause.kind === 'TIMER' ||
+            cause.kind === 'JOB',
         )
       )
         count += 1;
