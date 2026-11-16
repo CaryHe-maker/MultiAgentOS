@@ -420,6 +420,11 @@ export const SessionLogRecordSchema = Type.Union(
       asksGrant: Type.Optional(Type.Literal(true)),
       /** Of a reply to such a request: what was decided. */
       grant: Type.Optional(Type.Boolean()),
+      /**
+       * The task it was written for, which had ended (D92): the nearest task above it that still
+       * ran took over its part, and reads it in its place.
+       */
+      meantFor: Type.Optional(text(64)),
       source: closed({
         modelTurnRequestId: IdSchemas.requestId,
         outputRef: ArtifactRefSchema,

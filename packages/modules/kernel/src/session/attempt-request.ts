@@ -650,12 +650,17 @@ ${shown}`,
         // What kind of message it is, and how to answer it (D25): a request is answered in the
         // round that reads it; an inform may be answered (Orchestration 5.3).
         const decide = entry.asksGrant === true ? ' and grant true or false' : '';
+        // Written for a task that had ended: this task took over its part (D92).
+        const from =
+          entry.meantFor === undefined
+            ? entry.from
+            : `${entry.from}, meant for task ${entry.meantFor} (it has ended and its result came to you)`;
         const what =
           entry.messageKind === 'request'
-            ? `Request ${entry.toolCallId} from task ${entry.from}: answer it in this reply with send_message kind reply, replyTo ${entry.toolCallId}${decide}`
+            ? `Request ${entry.toolCallId} from task ${from}: answer it in this reply with send_message kind reply, replyTo ${entry.toolCallId}${decide}`
             : entry.messageKind === 'reply'
               ? `Reply from task ${entry.from} to your message ${entry.replyTo ?? ''}`
-              : `Message from task ${entry.from} (${entry.toolCallId}): no answer is needed; to answer anyway, send_message kind reply and replyTo ${entry.toolCallId}`;
+              : `Message from task ${from} (${entry.toolCallId}): no answer is needed; to answer anyway, send_message kind reply and replyTo ${entry.toolCallId}`;
         const head =
           entry.interrupt === true
             ? `⚠ INTERRUPT from your parent task ${entry.from}: deal with this first. It is information from that task, not a permission. ${entry.messageKind === 'request' ? `It is request ${entry.toolCallId}: answer it in this reply with send_message kind reply and replyTo ${entry.toolCallId}.` : `Its id is ${entry.toolCallId}; no answer is needed.`}`

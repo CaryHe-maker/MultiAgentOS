@@ -628,6 +628,7 @@ function projectOwn(
             ? { text: record.text.slice(0, 4000) }
             : {}),
           ...(record.asksGrant === true ? { asksGrant: true } : {}),
+          ...(record.meantFor === undefined ? {} : { meantFor: record.meantFor }),
         });
         break;
       case 'MESSAGE_UNANSWERED':

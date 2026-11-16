@@ -5096,6 +5096,11 @@
                   "asksGrant": {
                     "type": "boolean",
                     "const": true
+                  },
+                  "meantFor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
                   }
                 },
                 "additionalProperties": false
@@ -6450,6 +6455,11 @@
             "asksGrant": {
               "type": "boolean",
               "const": true
+            },
+            "meantFor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
             }
           },
           "additionalProperties": false
@@ -12219,6 +12229,11 @@
                           "asksGrant": {
                             "type": "boolean",
                             "const": true
+                          },
+                          "meantFor": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
                           }
                         },
                         "additionalProperties": false
@@ -13584,6 +13599,11 @@
                                   "asksGrant": {
                                     "type": "boolean",
                                     "const": true
+                                  },
+                                  "meantFor": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 64
                                   }
                                 },
                                 "additionalProperties": false
@@ -35860,6 +35880,11 @@
                   "asksGrant": {
                     "type": "boolean",
                     "const": true
+                  },
+                  "meantFor": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
                   }
                 },
                 "additionalProperties": false
@@ -39365,6 +39390,11 @@
                           "asksGrant": {
                             "type": "boolean",
                             "const": true
+                          },
+                          "meantFor": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
                           }
                         },
                         "additionalProperties": false
@@ -41404,6 +41434,11 @@
                       "asksGrant": {
                         "type": "boolean",
                         "const": true
+                      },
+                      "meantFor": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
                       }
                     },
                     "additionalProperties": false
@@ -53419,6 +53454,11 @@
             },
             "grant": {
               "type": "boolean"
+            },
+            "meantFor": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
             },
             "source": {
               "type": "object",

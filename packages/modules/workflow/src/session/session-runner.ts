@@ -3873,6 +3873,8 @@ export class SessionRunner {
     if (me === undefined) return answer(true, 'Not sent: this task is not in the task tree.');
     const open = (each: MissionView) => each.ended === undefined;
     let targets: readonly MissionView[];
+    /** The task the message was written for, when it had ended and another reads it (D92). */
+    let meantFor: MissionView | undefined;
     // A reply answers a message sent to this task, a request or an inform, and goes back to the
     // task that sent it (D25, Orchestration 5.3).
     const request =
@@ -3916,20 +3918,34 @@ export class SessionRunner {
     } else if (args.to === 'children') targets = childrenOf(missions, me.missionId).filter(open);
     else if (args.to === 'siblings') targets = siblingsOf(missions, me.missionId).filter(open);
     else {
-      const named = [...childrenOf(missions, me.missionId), ...siblingsOf(missions, me.missionId)]
-        .filter((each) => each.name === args.to)
-        .at(-1);
+      // A child or sibling by its name, or the parent by its own (D92): the name of the parent
+      // means the parent, as `parent` does.
+      const parent = me.parentId === undefined ? undefined : missions.get(me.parentId);
+      const named =
+        [...childrenOf(missions, me.missionId), ...siblingsOf(missions, me.missionId)]
+          .filter((each) => each.name === args.to)
+          .at(-1) ?? (parent?.name === args.to ? parent : undefined);
       if (named === undefined)
         return answer(
           true,
-          `Not sent: no child or sibling task is named ${args.to}. to is parent, children, siblings or the name of one of them.`,
+          `Not sent: no parent, child or sibling task is named ${args.to}. to is parent (or its name), children, siblings or the name of one of them.`,
         );
-      if (!open(named))
-        return answer(
-          true,
-          `Not sent: task ${args.to} has already ended; it reads nothing more.${named.parentId === me.missionId ? ` To give it more work with all it knows, start it again: run_subagents with a task that has continues: "${args.to}" and the same agent.` : ''}`,
-        );
-      targets = [named];
+      if (open(named)) targets = [named];
+      else {
+        // A task that ended handed its result up: the nearest task above it that still runs
+        // took over its part, and reads the message in its place (D92).
+        let above = named.parentId === undefined ? undefined : missions.get(named.parentId);
+        while (above !== undefined && !open(above))
+          above = above.parentId === undefined ? undefined : missions.get(above.parentId);
+        // A child of the sender's own handed its result to the sender: nobody else to tell.
+        if (above === undefined || above.missionId === me.missionId)
+          return answer(
+            true,
+            `Not sent: task ${args.to} has already ended; it reads nothing more.${named.parentId === me.missionId ? ` To give it more work with all it knows, start it again: run_subagents with a task that has continues: "${args.to}" and the same agent.` : ''}`,
+          );
+        targets = [above];
+        meantFor = named;
+      }
     }
     if (targets.length === 0)
       return answer(true, 'Not sent: there is no running task to send it to.');
@@ -3969,6 +3985,7 @@ export class SessionRunner {
         ...(kind === 'inform' ? {} : { kind }),
         ...(request === undefined ? {} : { replyTo: request.source.toolCallId }),
         ...(request?.asksGrant === true && args.grant !== undefined ? { grant: args.grant } : {}),
+        ...(meantFor === undefined ? {} : { meantFor: meantFor.name }),
         ...(handed?.kind === 'HANDED' ? { referenceId: handed.referenceId } : {}),
         // What was said goes into the log itself, for replay and audit (D56).
         ...(args.summary === undefined ? {} : { summary: args.summary }),
@@ -3994,7 +4011,7 @@ export class SessionRunner {
               current.state,
               'SENT',
               toolCallId,
-              `${interrupt ? 'Interrupted' : kind === 'request' ? `Request ${toolCallId} sent to` : 'Sent to'} ${targets.map((each) => each.name).join(', ')}.${kind === 'request' ? ' Its reply comes as a message; sleep until message to wait for it.' : ''}${handed?.kind === 'HANDED' && handed.notes.length > 0 ? ` ${handed.notes.join(' ')}` : ''}`,
+              `${interrupt ? 'Interrupted' : kind === 'request' ? `Request ${toolCallId} sent to` : 'Sent to'} ${targets.map((each) => each.name).join(', ')}.${meantFor === undefined ? '' : ` Task ${meantFor.name} has ended and its result went up to ${targets.map((each) => each.name).join(', ')}, so the message went there instead.`}${kind === 'request' ? ' Its reply comes as a message; sleep until message to wait for it.' : ''}${handed?.kind === 'HANDED' && handed.notes.length > 0 ? ` ${handed.notes.join(' ')}` : ''}`,
             ),
           ],
         },

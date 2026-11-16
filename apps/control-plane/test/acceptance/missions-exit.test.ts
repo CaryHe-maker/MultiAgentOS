@@ -194,7 +194,52 @@ describe('messages along the tree (Orchestration 5)', () => {
       const chat = await chatOn(place, provider);
       await chat.say('talk');
       expect(chat.printed('REPLY')).toContain('said nothing');
-      expect(seen(provider)).toContain('Not sent: no child or sibling task is named nobody');
+      expect(seen(provider)).toContain(
+        'Not sent: no parent, child or sibling task is named nobody',
+      );
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'takes the name of the parent for the parent, and sends to a sibling that ended to the task that took over its result (D92)',
+    async () => {
+      const place = await roots();
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'quick', agent: 'explorer', goal: 'look quickly' },
+              { name: 'late', agent: 'explorer', goal: 'look at length' },
+            ),
+            // Its next turn comes once both have ended and late's messages are in: a sleep then has
+            // nothing to wait for, and main replies with what it read.
+            { wait: delay(5000), then: sleepFor(children()) },
+            reply('heard both'),
+          ],
+        },
+        {
+          quick: [finish('quick is done')],
+          // It writes once its sibling has ended: by the name of its parent, and to the sibling.
+          late: [
+            { wait: delay(1500), then: message('main', 'late found a detail') },
+            message('quick', 'quick, the detail is in b.txt'),
+            finish('late is done'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('look');
+      expect(chat.printed('REPLY')).toContain('heard both');
+      const late = seenBy(provider, 'late');
+      expect(late).toContain('Sent to main.');
+      expect(late).toContain(
+        'Task quick has ended and its result went up to main, so the message went there instead.',
+      );
+      const main = seen(provider);
+      expect(main).toContain('late found a detail');
+      expect(main).toContain('meant for task quick (it has ended and its result came to you)');
+      expect(main).toContain('quick, the detail is in b.txt');
     },
     TIMEOUT,
   );

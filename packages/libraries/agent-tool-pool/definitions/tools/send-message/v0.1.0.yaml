@@ -6,8 +6,9 @@ description: Control tool that sends a message to other tasks along the task tre
 purpose: CONTROL
 modelName: send_message
 modelDescription: >-
-  Send a message to other tasks of this work. to is parent, children, siblings, or the name of
-  one child or sibling. kind is inform (default, no answer needed), request (the receiver must
+  Send a message to other tasks of this work. to is parent (or its name), children, siblings, or
+  the name of one child or sibling; a message to a sibling that has ended goes to the task above it
+  that took over its result. kind is inform (default, no answer needed), request (the receiver must
   answer) or reply (answer to a message: replyTo is its id). Answer a request in the reply that reads
   it; one left unanswered is reminded and then refused. A request that asks for a decision (such as
   more rounds for a subtask) is answered with grant true or false. summary is read first; a text over 8000

@@ -155,6 +155,8 @@ export const ContextHistoryEntrySchema = Type.Union(
       text: Type.Optional(text(4000)),
       /** A request that asks for a decision: the reply says grant true or false (D91). */
       asksGrant: Type.Optional(Type.Literal(true)),
+      /** It was written for this task, which had ended; the receiver took over its part (D92). */
+      meantFor: Type.Optional(text(64)),
     }),
     /** The plan of the work written by the root task (Orchestration 5.3), by its call. */
     closed({
