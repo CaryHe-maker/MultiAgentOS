@@ -263,6 +263,9 @@ describe('the status that ends a request (D61)', () => {
 
   it('tells a task whose subtasks have all ended to check the whole once and deliver (D70)', async () => {
     expect(await statusOf(12, { partsBack: true })).toContain('All your subtasks have ended.');
+    expect(await statusOf(12, { partsBack: true, partsBackMinutes: 9 })).toContain(
+      'All your subtasks have ended, the last one 9 min ago.',
+    );
     expect(await statusOf(40, { final: true, partsBack: true })).not.toContain('All your subtasks');
   });
 

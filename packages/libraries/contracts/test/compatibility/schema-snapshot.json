@@ -5260,6 +5260,10 @@
               "type": "boolean",
               "const": true
             },
+            "partsBackMinutes": {
+              "type": "integer",
+              "minimum": 1
+            },
             "lastRunning": {
               "type": "boolean",
               "const": true
@@ -13693,6 +13697,10 @@
                             "partsBack": {
                               "type": "boolean",
                               "const": true
+                            },
+                            "partsBackMinutes": {
+                              "type": "integer",
+                              "minimum": 1
                             },
                             "lastRunning": {
                               "type": "boolean",
@@ -23519,6 +23527,10 @@
               "type": "boolean",
               "const": true
             },
+            "partsBackMinutes": {
+              "type": "integer",
+              "minimum": 1
+            },
             "lastRunning": {
               "type": "boolean",
               "const": true
@@ -27689,6 +27701,10 @@
                     "partsBack": {
                       "type": "boolean",
                       "const": true
+                    },
+                    "partsBackMinutes": {
+                      "type": "integer",
+                      "minimum": 1
                     },
                     "lastRunning": {
                       "type": "boolean",
@@ -39374,6 +39390,10 @@
                       "type": "boolean",
                       "const": true
                     },
+                    "partsBackMinutes": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
                     "lastRunning": {
                       "type": "boolean",
                       "const": true
@@ -41377,6 +41397,10 @@
                 "partsBack": {
                   "type": "boolean",
                   "const": true
+                },
+                "partsBackMinutes": {
+                  "type": "integer",
+                  "minimum": 1
                 },
                 "lastRunning": {
                   "type": "boolean",

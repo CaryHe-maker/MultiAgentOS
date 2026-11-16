@@ -1621,6 +1621,18 @@ export class SessionRunner {
             : [...missions.values()].filter((mission) => mission.parentId === scope.missionId);
         const partsBack =
           children.length > 0 && children.every((child) => child.ended !== undefined);
+        // How long the task has been on its own since then: a model does not feel the time (D80).
+        const childIds = new Set(children.map((child) => child.missionId));
+        const lastEnded = partsBack
+          ? Math.max(
+              ...this.#records.flatMap((record) =>
+                record.type === 'MISSION_ENDED' && childIds.has(record.missionId)
+                  ? [Date.parse(record.at)]
+                  : [],
+              ),
+            )
+          : Number.NaN;
+        const partsBackMinutes = Math.floor((now - lastEnded) / 60_000);
         // A task whose siblings have all ended holds up its caller alone (D72).
         const parentId =
           scope.missionId === undefined ? undefined : missions?.get(scope.missionId)?.parentId;
@@ -1640,6 +1652,7 @@ export class SessionRunner {
             ...status,
             ...(jobs.length === 0 ? {} : { jobs }),
             ...(partsBack ? { partsBack: true as const } : {}),
+            ...(partsBack && partsBackMinutes >= 1 ? { partsBackMinutes } : {}),
             ...(lastRunning ? { lastRunning: true as const } : {}),
             ...(missions !== undefined && children.length === 0
               ? { noSubtasksYet: true as const }

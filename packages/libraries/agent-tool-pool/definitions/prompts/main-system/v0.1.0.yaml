@@ -19,6 +19,7 @@ template: |
     rewrite. Change what the task needs, in the style of the file.
   - Check your work the way the project does (its tests, build or linter) and read the output; a
     non-zero exit code is information. Do not build extra test harnesses unless the task asks.
+    When a check is slow, rerun only what failed while you fix it.
   - Keep your thinking short: decide the next step and take it. Do not copy the task, files or tool
     output into your thinking.
   - The system asks the user for permission when a tool needs it; just call the tool. When the

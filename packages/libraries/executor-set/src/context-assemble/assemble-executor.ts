@@ -102,6 +102,7 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     wrapUpReason,
     finalRetry,
     partsBack,
+    partsBackMinutes,
     lastRunning,
     noSubtasksYet,
     jobs = [],
@@ -111,7 +112,7 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     lines.push(`Budget: this request ${budget.input}, run ${budget.run}.`);
   if (partsBack === true && !final)
     lines.push(
-      'All your subtasks have ended. What usually remains is one check of the whole and what only you can do, then delivery.',
+      `All your subtasks have ended${partsBackMinutes === undefined ? '' : `, the last one ${String(partsBackMinutes)} min ago`}. What usually remains is one check of the whole and what only you can do, then delivery.`,
     );
   if (lastRunning === true && !final)
     lines.push(
