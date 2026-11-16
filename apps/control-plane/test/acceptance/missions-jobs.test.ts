@@ -118,7 +118,7 @@ real('background commands (Orchestration 6)', () => {
       await chat.say('build in the background');
       expect(chat.printed('REPLY')).toContain('the build is done');
       const all = seen(provider);
-      expect(all).toContain('job_1: started in the background');
+      expect(all).toContain('job_1: started in the background. You are told when it ends');
       expect(all).toContain(
         'Background command job_1 (sleep 1; echo built-ok) has ended [exited(0)',
       );
@@ -175,7 +175,9 @@ real('background commands (Orchestration 6)', () => {
       await chat.say('run the slow one');
       expect(chat.printed('REPLY')).toContain('it finished');
       const all = seen(provider);
-      expect(all).toContain('job_1: still running after 1 s: moved to the background');
+      expect(all).toContain(
+        'job_1: still running after 1 s: moved to the background. You are told when it ends, and its result comes with that.',
+      );
       expect(all).toContain('early');
       expect(all).toMatch(/has ended \[exited\(0\)/u);
       expect(await exists(join(place.repository, 'late.txt'))).toBe(true);

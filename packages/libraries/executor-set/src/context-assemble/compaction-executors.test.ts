@@ -253,10 +253,10 @@ describe('the status that ends a request (D61)', () => {
       ],
     });
     expect(status).toContain(
-      'Background command job_1 (npm run dev) is still running, 42 s in the background. You can stop it with job_kill if you no longer need it.',
+      'Background command job_1 (npm run dev) is still running, 42 s in the background. You are told when it ends; wait for it with sleep (until jobs) when you need its result, and stop it with job_kill only if it misbehaves.',
     );
     expect(status).toContain(
-      'Background command coretext/job_1 (wc -l /dev/zero) is still running, 251 s in the background; your subtask coretext started it and has ended, so it is yours now. You can stop it with job_kill',
+      'Background command coretext/job_1 (wc -l /dev/zero) is still running, 251 s in the background; your subtask coretext started it and has ended, so it is yours now. You are told when it ends',
     );
     expect(await statusOf(7, { jobs: [] })).toBeUndefined();
   });

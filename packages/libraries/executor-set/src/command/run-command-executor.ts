@@ -117,9 +117,13 @@ function detachedResult(
     sandboxDenials: countSandboxDenials(result.output),
     job: { jobKey: result.jobKey, promoted: result.promoted },
   };
+  // What comes next is said with it (D95): left alone, a model stopped the job at once and ran the
+  // command again in the foreground with a longer timeout.
+  const next =
+    'You are told when it ends, and its result comes with that. When you need the result, wait for it with sleep (until jobs); until then do what does not depend on it. If it misbehaves, stop it with job_kill.';
   const head = result.promoted
-    ? `still running after ${String(Math.round(timeoutMs / 1000))} s: moved to the background\n`
-    : 'started in the background\n';
+    ? `still running after ${String(Math.round(timeoutMs / 1000))} s: moved to the background. ${next}\n`
+    : `started in the background. ${next}\n`;
   const preview = retainBytes(result.output, Math.max(1, limits.maxBytes - 512), 'TAIL').tail;
   return completed({
     output,

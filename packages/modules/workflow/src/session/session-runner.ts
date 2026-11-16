@@ -4438,8 +4438,13 @@ export class SessionRunner {
     let count = 0;
     // A wake by a request that asks for a decision is not counted (D94).
     const decisions = new Set<number>();
+    const missions = projectMissions(this.#records);
     for (const record of this.#records) {
       if (record.type === 'HUMAN_ANSWERED') count = 0;
+      // A subtask of it that ended is the work going on (D95): what the limit stops is tasks that
+      // wake each other with nothing ending. In a long task the user may say nothing for an hour.
+      if (record.type === 'MISSION_ENDED' && missions.get(record.missionId)?.parentId === missionId)
+        count = 0;
       if (record.type === 'MISSION_MESSAGE' && record.asksGrant === true) decisions.add(record.seq);
       if (
         record.type === 'MISSION_WOKEN' &&

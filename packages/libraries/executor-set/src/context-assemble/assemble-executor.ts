@@ -138,7 +138,7 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
   // What the task holds still runs: it is said at every call, so it can be stopped (D65).
   for (const job of jobs)
     lines.push(
-      `Background command ${job.name} (${job.command}) is still running, ${String(job.seconds)} s in the background${job.from === undefined ? '' : `; your subtask ${job.from} started it and has ended, so it is yours now`}. You can stop it with job_kill if you no longer need it.`,
+      `Background command ${job.name} (${job.command}) is still running, ${String(job.seconds)} s in the background${job.from === undefined ? '' : `; your subtask ${job.from} started it and has ended, so it is yours now`}. You are told when it ends; wait for it with sleep (until jobs) when you need its result, and stop it with job_kill only if it misbehaves.`,
     );
   // A task that can start subtasks need not wait on its own command to hand out the rest (D86).
   if (jobs.length > 0 && !final && toolSpecs.some((spec) => spec.name === 'run_subagents'))

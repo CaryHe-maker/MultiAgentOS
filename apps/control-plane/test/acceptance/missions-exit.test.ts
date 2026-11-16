@@ -4,7 +4,7 @@
  * at once; a task sleeps until what it waits for happens and goes on in a new segment; tasks talk
  * along the tree; a lead starts tasks of its own; nothing waits forever.
  */
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { probeSandbox } from '@multiagentos/kernel';
@@ -197,6 +197,63 @@ describe('messages along the tree (Orchestration 5)', () => {
       expect(seen(provider)).toContain(
         'Not sent: no parent, child or sibling task is named nobody',
       );
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'counts the wakes by messages again from the end of a subtask (D95)',
+    async () => {
+      const place = await roots();
+      const all = sleepFor(children('all'));
+      const provider = scriptedAgents(
+        // Three messages use up the limit of wakes; quick ends, and the fourth wakes main again.
+        {
+          main: [
+            spawn(
+              { name: 'quick', agent: 'explorer', goal: 'look quickly' },
+              { name: 'chatty', agent: 'explorer', goal: 'say four things' },
+            ),
+            all,
+            all,
+            all,
+            all,
+            all,
+            reply('heard all four'),
+          ],
+        },
+        {
+          quick: [{ wait: delay(4500), then: finish('quick is done') }],
+          chatty: [
+            ...['one', 'two', 'three'].map((word) => ({
+              wait: delay(1200),
+              then: message('parent', `note ${word}`),
+            })),
+            { wait: delay(4000), then: message('parent', 'note four') },
+            finish('said four things'),
+          ],
+        },
+      );
+      const chat = await chatOn(place, provider);
+      await chat.say('listen');
+      expect(chat.printed('REPLY')).toContain('heard all four');
+      // Each of the four messages woke main: the end of quick counted the wakes from zero.
+      const [session] = await readdir(join(place.dataDir, 'sessions'));
+      const log = (
+        await readFile(
+          join(place.dataDir, 'sessions', session ?? '', 'workflow', 'log.v1.jsonl'),
+          'utf8',
+        )
+      )
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as { type: string; causes?: { kind: string }[] });
+      const byMessage = log.filter(
+        (record) =>
+          record.type === 'MISSION_WOKEN' &&
+          (record.causes ?? []).some((cause) => cause.kind === 'MESSAGE'),
+      );
+      expect(byMessage).toHaveLength(4);
     },
     TIMEOUT,
   );
