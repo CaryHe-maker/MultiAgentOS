@@ -146,6 +146,11 @@ export interface SessionKernelDeps {
   readonly commands?: {
     readonly analyze: CommandSupport['analyze'];
     readonly sandbox: () => 'AVAILABLE' | 'UNAVAILABLE';
+    /**
+     * Without a sandbox, whether Landlock holds the writes of a command (D79): a line of the
+     * read-only list then reaches nothing it could change and does not queue behind writes (D87).
+     */
+    readonly unisolatedReadOnly?: boolean;
     /** What the probe found, for the audit of every Session. */
     readonly probe?: { readonly available: boolean; readonly reason?: string };
   };
@@ -380,6 +385,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         maxWeb: config.maxConcurrentWeb,
         serial: config.serialExecution,
       },
+      ...(deps.commands?.unisolatedReadOnly === true ? { unisolatedReadOnly: true } : {}),
     });
     executions.set(host.workflowRunId, execution);
     const ledgers = new RunLedgers(

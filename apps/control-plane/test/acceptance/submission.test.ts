@@ -520,6 +520,107 @@ real('a tester after the build (D55)', () => {
   );
 });
 
+real('the comparison arm where a lead is a worker that may split (D88)', () => {
+  it(
+    'runs a worker with split: true as a lead, which splits its part and gets it done',
+    async () => {
+      const provider = scriptedAgents(
+        { main: [] },
+        {
+          part: [
+            tool('run_subagents', {
+              tasks: [
+                {
+                  name: 'w',
+                  agent: 'worker',
+                  goal: 'write fixed into src/value.txt',
+                  writeScope: ['src'],
+                },
+              ],
+            }),
+            tool('sleep', { until: [{ kind: 'children' }] }),
+            tool('finish_subagent', {
+              summary: 'w wrote fixed',
+              status: 'done',
+              changedFiles: [],
+              validation: [{ command: check, exitCode: 0 }],
+            }),
+          ],
+          w: [
+            tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
+            tool('run_command', { command: check }),
+            tool('finish_subagent', {
+              summary: 'wrote fixed',
+              status: 'done',
+              changedFiles: ['src/value.txt'],
+              validation: [{ command: check, exitCode: 0 }],
+            }),
+          ],
+        },
+      );
+      provider.add(
+        tool('read_file', { path: 'src/value.txt' }),
+        tool('run_subagents', {
+          plan: 'One large part: the value, by a worker that splits it.',
+          tasks: [
+            {
+              name: 'part',
+              agent: 'worker',
+              split: true,
+              goal: 'the value part',
+              writeScope: ['src'],
+              acceptance: ['the value check passes'],
+            },
+          ],
+        }),
+        tool('sleep', { until: [{ kind: 'children' }] }),
+        tool('reply', { text: 'done through a worker that split' }),
+      );
+      process.env['MAO_LEAD_AS_WORKER'] = 'on';
+      try {
+        const run = await missionOn('make the value check pass', provider, {
+          'src/value.txt': 'broken-before-the-fix\n',
+        });
+        expect(run.code).toBe(0);
+        expect(await readFile(join(run.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
+        const log = await logOf(run.dataDir);
+        const part = log
+          .filter((record) => record['type'] === 'GRAPH_EXTENDED' && record['source'] === 'SPAWN')
+          .flatMap((record) => record['nodes'] as Record<string, unknown>[])
+          .find((node) => node['name'] === 'part');
+        // It runs as a lead: the lead's Agent, and the context of one that may split.
+        expect((part?.['agentRef'] as Record<string, unknown>)['id']).toBe('lead');
+        const told = provider.requests
+          .find((request) =>
+            request.messages.some((message) =>
+              textOf(message).includes('you are a different task: "part"'),
+            ),
+          )
+          ?.messages.map((message) => textOf(message))
+          .join('\n');
+        expect(told).toContain('Your part is yours to split');
+        // It may split its part, but it starts no lead itself: split is the root's alone.
+        const partTools = JSON.stringify(
+          provider.requests.find((request) =>
+            request.messages.some((message) =>
+              textOf(message).includes('you are a different task: "part"'),
+            ),
+          )?.tools ?? [],
+        );
+        expect(partTools).toContain('run_subagents');
+        expect(partTools).not.toContain('"split"');
+        // The root was offered workers that may split, never a lead.
+        const offered = JSON.stringify(provider.requests[0]?.tools ?? []);
+        expect(offered).toContain('split');
+        expect(offered).not.toMatch(/\blead\b/u);
+      } finally {
+        delete process.env['MAO_LEAD_AS_WORKER'];
+      }
+    },
+    TIMEOUT,
+  );
+});
+
 real('a lead that starts with the context of the root (D58)', () => {
   it(
     'splits its part, and its worker starts with all of it: what the root read and the lead’s call',

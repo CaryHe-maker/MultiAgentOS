@@ -16,4 +16,9 @@ export const DEFINITION_ARM_DIRECTORIES = {
   'no-acceptance': fileURLToPath(new URL('../definitions-arms/no-acceptance', import.meta.url)),
   /** The root's manual with the original whole examples (Orchestration D83). */
   'few-shot': fileURLToPath(new URL('../definitions-arms/few-shot', import.meta.url)),
+  /** A lead is a worker with `split: true` (Orchestration D88), alone or without criteria. */
+  'lead-flag': fileURLToPath(new URL('../definitions-arms/lead-flag', import.meta.url)),
+  'no-acceptance-lead-flag': fileURLToPath(
+    new URL('../definitions-arms/no-acceptance-lead-flag', import.meta.url),
+  ),
 } as const;

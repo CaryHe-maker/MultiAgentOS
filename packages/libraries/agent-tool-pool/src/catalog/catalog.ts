@@ -168,6 +168,12 @@ const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
 const SPAWN_CONTRACTS: readonly string[] = [
   'workflow.RunSubagentsArgs.v1',
   'workflow.RunSubagentsLeanArgs.v1',
+  // A lead as a worker that may split (Orchestration D88), with and without criteria.
+  'workflow.RunSubagentsSplitArgs.v1',
+  'workflow.RunSubagentsLeanSplitArgs.v1',
+  // The same arm below the root, where neither `lead` nor `split` is offered.
+  'workflow.RunSubagentsNoLeadArgs.v1',
+  'workflow.RunSubagentsLeanNoLeadArgs.v1',
 ];
 const END_CONTRACTS: Readonly<Record<'PUBLISH_REPLY' | 'FINISH_SUBAGENT', readonly string[]>> = {
   PUBLISH_REPLY: ['workflow.ReplyArgs.v1'],

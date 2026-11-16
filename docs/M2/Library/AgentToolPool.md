@@ -66,7 +66,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 ## 3a. `run_subagents` 的校验
 
-- Agent 的 `capabilities` 含 `agent.spawn` 当且仅当声明了 `actions.spawn`，后者须是参数为 `RunSubagentsArgs`（或替代线的 `RunSubagentsLeanArgs`，Orchestration D81）的 CONTROL 工具；
+- Agent 的 `capabilities` 含 `agent.spawn` 当且仅当声明了 `actions.spawn`，后者须是参数为 `RunSubagentsArgs`（或替代线的 `RunSubagentsLeanArgs`、`RunSubagentsSplitArgs`、`RunSubagentsLeanSplitArgs`，Orchestration D81、D88）的 CONTROL 工具；
 - 结束动作含 `FINISH_SUBAGENT` 当且仅当声明了 `spawnable`；这样的 Agent 不得含 `agent.spawn`，结束动作只有 `FINISH_SUBAGENT`，`onDegraded` 为 `RETURN_PARTIAL`（此时不需要发布 Unit），`defaultShare` 不低于 `agentMinShare(budget)`（`finalInputBudget + finalMaxOutputTokens + 2 × (perCallInputLimit + maxOutputTokens)`，与 Kernel/Monitor 的最小份额是同一个函数）；
 - `pinAgent` 把 `actions.spawn` 的工具一并固定，工具名冲突检查也包括它。
 

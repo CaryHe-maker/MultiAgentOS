@@ -57106,6 +57106,570 @@
       "additionalProperties": false,
       "$id": "workflow.RunSubagentsLeanArgs.v1"
     },
+    "workflow.RunSubagentsLeanNoLeadArgs.v1": {
+      "type": "object",
+      "required": [
+        "tasks"
+      ],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "agent",
+              "goal"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              },
+              "agent": {
+                "enum": [
+                  "explorer",
+                  "worker",
+                  "fixer",
+                  "reviewer",
+                  "tester",
+                  "integrator",
+                  "researcher"
+                ]
+              },
+              "goal": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "dependsOn": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                },
+                "maxItems": 11
+              },
+              "writeScope": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "maxItems": 10
+              },
+              "commands": {
+                "type": "boolean"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "maxItems": 10
+              },
+              "effort": {
+                "enum": [
+                  "none",
+                  "low",
+                  "high",
+                  "max"
+                ]
+              },
+              "budget": {
+                "type": "object",
+                "required": [
+                  "tokens"
+                ],
+                "properties": {
+                  "tokens": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "continues": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 12
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.RunSubagentsLeanNoLeadArgs.v1"
+    },
+    "workflow.RunSubagentsLeanSplitArgs.v1": {
+      "type": "object",
+      "required": [
+        "tasks"
+      ],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "agent",
+              "goal"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              },
+              "agent": {
+                "enum": [
+                  "explorer",
+                  "worker",
+                  "fixer",
+                  "reviewer",
+                  "tester",
+                  "integrator",
+                  "researcher"
+                ]
+              },
+              "goal": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "dependsOn": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                },
+                "maxItems": 11
+              },
+              "writeScope": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "maxItems": 10
+              },
+              "commands": {
+                "type": "boolean"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "maxItems": 10
+              },
+              "effort": {
+                "enum": [
+                  "none",
+                  "low",
+                  "high",
+                  "max"
+                ]
+              },
+              "budget": {
+                "type": "object",
+                "required": [
+                  "tokens"
+                ],
+                "properties": {
+                  "tokens": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "continues": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              },
+              "split": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 12
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.RunSubagentsLeanSplitArgs.v1"
+    },
+    "workflow.RunSubagentsNoLeadArgs.v1": {
+      "type": "object",
+      "required": [
+        "tasks"
+      ],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "agent",
+              "goal"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              },
+              "agent": {
+                "enum": [
+                  "explorer",
+                  "worker",
+                  "fixer",
+                  "reviewer",
+                  "tester",
+                  "integrator",
+                  "researcher"
+                ]
+              },
+              "goal": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "dependsOn": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                },
+                "maxItems": 11
+              },
+              "writeScope": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "maxItems": 10
+              },
+              "commands": {
+                "type": "boolean"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "maxItems": 10
+              },
+              "acceptance": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "maxItems": 10
+              },
+              "effort": {
+                "enum": [
+                  "none",
+                  "low",
+                  "high",
+                  "max"
+                ]
+              },
+              "budget": {
+                "type": "object",
+                "required": [
+                  "tokens"
+                ],
+                "properties": {
+                  "tokens": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "continues": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 12
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.RunSubagentsNoLeadArgs.v1"
+    },
+    "workflow.RunSubagentsSplitArgs.v1": {
+      "type": "object",
+      "required": [
+        "tasks"
+      ],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "agent",
+              "goal"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              },
+              "agent": {
+                "enum": [
+                  "explorer",
+                  "worker",
+                  "fixer",
+                  "reviewer",
+                  "tester",
+                  "integrator",
+                  "researcher"
+                ]
+              },
+              "goal": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4000
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "dependsOn": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                },
+                "maxItems": 11
+              },
+              "writeScope": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "maxItems": 10
+              },
+              "commands": {
+                "type": "boolean"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "artifactId",
+                    "sha256",
+                    "size",
+                    "mediaType"
+                  ],
+                  "properties": {
+                    "artifactId": {
+                      "type": "string",
+                      "pattern": "^art_[a-f0-9]{64}$"
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "mediaType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    }
+                  },
+                  "additionalProperties": false,
+                  "$id": "platform.common.ArtifactRef.v1"
+                },
+                "maxItems": 10
+              },
+              "acceptance": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 300
+                },
+                "maxItems": 10
+              },
+              "effort": {
+                "enum": [
+                  "none",
+                  "low",
+                  "high",
+                  "max"
+                ]
+              },
+              "budget": {
+                "type": "object",
+                "required": [
+                  "tokens"
+                ],
+                "properties": {
+                  "tokens": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "continues": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+              },
+              "split": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 12
+        },
+        "plan": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.RunSubagentsSplitArgs.v1"
+    },
     "workflow.SendMessageArgs.v1": {
       "type": "object",
       "required": [

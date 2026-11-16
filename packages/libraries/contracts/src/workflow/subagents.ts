@@ -99,6 +99,56 @@ export const RunSubagentsLeanArgsSchema = closed(
   'workflow.RunSubagentsLeanArgs.v1',
 );
 
+/**
+ * The comparison arm where a lead is a worker that may split (Orchestration D88): no `lead` among
+ * the agents, and `split: true` on a worker for a large part it splits into subtasks of its own.
+ * The system runs such a worker as a lead. With and without criteria (D81).
+ */
+const splitFields = {
+  agent: Type.Enum(['explorer', 'worker', ...SPECIALIST_AGENTS]),
+  /** A worker with a large part may start subtasks of its own inside its writeScope. */
+  split: Type.Optional(Type.Boolean()),
+};
+export const RunSubagentsSplitArgsSchema = closed(
+  {
+    tasks: Type.Array(closed({ ...subagentTaskFields, ...splitFields }), {
+      minItems: 1,
+      maxItems: 12,
+    }),
+    plan: Type.Optional(text(8000)),
+  },
+  'workflow.RunSubagentsSplitArgs.v1',
+);
+export const RunSubagentsLeanSplitArgsSchema = closed(
+  {
+    tasks: Type.Array(closed({ ...leanTaskFields, ...splitFields }), { minItems: 1, maxItems: 12 }),
+    plan: Type.Optional(text(8000)),
+  },
+  'workflow.RunSubagentsLeanSplitArgs.v1',
+);
+/**
+ * The same arm for a task below the root: only the root starts a lead (D88), so neither `lead`
+ * nor `split` is there. With and without criteria (D81).
+ */
+const noLeadAgent = { agent: Type.Enum(['explorer', 'worker', ...SPECIALIST_AGENTS]) };
+export const RunSubagentsNoLeadArgsSchema = closed(
+  {
+    tasks: Type.Array(closed({ ...subagentTaskFields, ...noLeadAgent }), {
+      minItems: 1,
+      maxItems: 12,
+    }),
+    plan: Type.Optional(text(8000)),
+  },
+  'workflow.RunSubagentsNoLeadArgs.v1',
+);
+export const RunSubagentsLeanNoLeadArgsSchema = closed(
+  {
+    tasks: Type.Array(closed({ ...leanTaskFields, ...noLeadAgent }), { minItems: 1, maxItems: 12 }),
+    plan: Type.Optional(text(8000)),
+  },
+  'workflow.RunSubagentsLeanNoLeadArgs.v1',
+);
+
 export const AcceptanceAnswerSchema = closed({
   index: count(0),
   verdict: Type.Enum(['met', 'not_met', 'unknown']),

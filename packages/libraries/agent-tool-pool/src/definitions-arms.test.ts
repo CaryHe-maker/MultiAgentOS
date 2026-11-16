@@ -81,3 +81,64 @@ describe('the comparison arm with the original whole examples (Orchestration D83
     expect(arm.replace(examples, '')).toBe(base);
   });
 });
+
+describe('the comparison arm where a lead is a worker that may split (Orchestration D88)', () => {
+  const sourceOf = (arm: 'lead-flag' | 'no-acceptance-lead-flag') =>
+    new OverlayDefinitionSource(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+      new FileDefinitionSource(DEFINITION_ARM_DIRECTORIES[arm]),
+    );
+
+  it.each(['lead-flag', 'no-acceptance-lead-flag'] as const)(
+    '%s loads, and the root sees workers that may split, never a lead',
+    async (arm) => {
+      const snapshot = await sourceOf(arm).load();
+      const result = buildCatalogIndex(snapshot);
+      expect(result.ok ? [] : result.issues).toEqual([]);
+      const catalog = await DefinitionCatalog.load(sourceOf(arm));
+      const registry = createProtocolRegistry();
+      const main = catalog.latest('PROMPT', 'main-system');
+      const mission = catalog.latest('TEMPLATE', 'mission');
+      const spawn = catalog.latest('TOOL', 'run-subagents');
+      for (const text of [main?.template, JSON.stringify(mission), spawn?.modelDescription])
+        expect(text).not.toMatch(/\blead/iu);
+      expect(JSON.stringify(mission)).toContain('split: true');
+      const parameters = JSON.stringify(
+        spawn === undefined ? {} : registry.resolveContract(spawn.parametersContract),
+      );
+      expect(parameters).toContain('"split"');
+      expect(parameters).not.toContain('"lead"');
+      // Only the root starts a lead: a lead, and each specialist that runs as one, is offered
+      // neither a lead nor split.
+      const lead = catalog.latest('AGENT', 'lead');
+      const below = lead?.actions.spawn?.toolRef;
+      const tool = below === undefined ? undefined : catalog.latest('TOOL', below.id);
+      expect(tool?.id).toBe('run-subagents-sub');
+      expect(tool?.modelName).toBe('run_subagents');
+      expect(tool?.modelDescription).not.toMatch(/\blead|split/iu);
+      const offered = JSON.stringify(
+        tool === undefined ? {} : registry.resolveContract(tool.parametersContract),
+      );
+      expect(offered).not.toContain('"split"');
+      expect(offered).not.toContain('"lead"');
+    },
+  );
+
+  it('keeps the arm without criteria free of criteria when the two go together', async () => {
+    const catalog = await DefinitionCatalog.load(sourceOf('no-acceptance-lead-flag'));
+    const registry = createProtocolRegistry();
+    for (const definition of catalog.list()) {
+      if (
+        definition.kind === 'TEMPLATE' &&
+        (definition.id === 'acceptance' || definition.id === 'review')
+      )
+        continue;
+      if (definition.kind === 'PROMPT') expect(definition.template).not.toMatch(CRITERIA);
+      if (definition.kind === 'TOOL') {
+        expect(definition.modelDescription).not.toMatch(CRITERIA);
+        const parameters = registry.resolveContract(definition.parametersContract);
+        expect(JSON.stringify(parameters)).not.toMatch(/"acceptance"/u);
+      }
+    }
+  });
+});

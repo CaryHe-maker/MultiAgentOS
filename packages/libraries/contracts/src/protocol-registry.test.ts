@@ -130,6 +130,11 @@ const EXPECTED = {
     'RunSubagentsLeanArgs',
     'ExplorerLeanResult',
     'WorkerLeanResult',
+    // The comparison arm where a lead is a worker that may split (Orchestration D88).
+    'RunSubagentsSplitArgs',
+    'RunSubagentsLeanSplitArgs',
+    'RunSubagentsNoLeadArgs',
+    'RunSubagentsLeanNoLeadArgs',
   ],
   catalog: [
     'AgentDefinition',

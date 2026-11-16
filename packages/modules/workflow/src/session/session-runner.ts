@@ -329,6 +329,25 @@ function commandTimeOf(
     : undefined;
 }
 
+/**
+ * The comparison arm where a lead is a worker with `split: true` (Orchestration D88): such a task
+ * of the root runs as a lead, with its prompt, its tools for subtasks and its share. Only the root
+ * starts a lead: below it the field is not offered, and one that comes anyway starts a worker.
+ * Elsewhere no task has the field, and the call is left as it is.
+ */
+function splitAsLead(args: RunSubagentsArgs, isRoot: boolean): RunSubagentsArgs {
+  if (!args.tasks.some((task) => 'split' in task)) return args;
+  return {
+    ...args,
+    tasks: args.tasks.map((task) => {
+      const { split, ...rest } = task as typeof task & { readonly split?: boolean };
+      return isRoot && split === true && rest.agent === 'worker'
+        ? { ...rest, agent: 'lead' }
+        : rest;
+    }),
+  };
+}
+
 export class SessionRunner {
   readonly #deps: SessionRunnerDeps;
   readonly #spawnable: ReadonlyMap<string, SpawnAgentFacts>;
@@ -2773,8 +2792,8 @@ export class SessionRunner {
           this.#deps.config,
         ),
       );
-    const requested = ending.arguments as RunSubagentsArgs;
     const isRoot = projectMissions(this.#records).get(active.missionId)?.parentId === undefined;
+    const requested = splitAsLead(ending.arguments as RunSubagentsArgs, isRoot);
     // A specialist (fixer, reviewer, ...) is a lead that follows the playbook of the template that
     // names it (Orchestration 3.9, D39). Only the root task starts one: the specialist and its
     // tasks take the two levels below it.

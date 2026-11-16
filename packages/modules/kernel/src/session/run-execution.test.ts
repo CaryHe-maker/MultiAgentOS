@@ -25,7 +25,7 @@ import { RunLedgers, minShare } from '../monitor/index.js';
 import { testAgentBudget, testPinnedAgent, testScheduler } from '../test-support/run-work.js';
 import type { ExecutionConfig } from './attempt-request.js';
 import { RunAttempts, type AttemptFault, type AttemptSpec } from './run-attempts.js';
-import { RunExecution, type RetryingActivity } from './run-execution.js';
+import { RunExecution, concurrencyClassOf, type RetryingActivity } from './run-execution.js';
 import { SessionArtifacts } from './session-artifacts.js';
 
 const tool = {
@@ -369,6 +369,40 @@ describe('the queues (M2Design 7.1)', () => {
     const stale = { ...run.factFor(run.last(), run.fileResult()), executionId: testId('exe', 99) };
     await run.execution.handleFact(stale);
     expect(run.reports).toEqual([]);
+  });
+});
+
+describe('the queue class of a command (M2Design 7.1, D87)', () => {
+  const command = (backend: 'BWRAP' | 'UNISOLATED', writableRoots: string[]) =>
+    ({
+      unit: { executionKind: 'COMMAND' },
+      scope: {
+        kind: 'SANDBOX',
+        backend,
+        approvalDigest: 'a'.repeat(64),
+        profile: {
+          repositoryRoot: '/repo',
+          workdir: '',
+          writableRoots,
+          network: false,
+          homeReadOnly: [],
+          homeMaskedFiles: [],
+          maskedFiles: [],
+          maskedDirs: [],
+          protectedExisting: [],
+        },
+      },
+    }) as unknown as Pick<AttemptSpec, 'unit' | 'scope'>;
+
+  it('reads a line of the read-only list in a sandbox, and writes with a writable root', () => {
+    expect(concurrencyClassOf(command('BWRAP', []))).toBe('READ');
+    expect(concurrencyClassOf(command('BWRAP', ['src']))).toBe('EXEC');
+  });
+
+  it('reads one without a sandbox only where Landlock holds its writes', () => {
+    expect(concurrencyClassOf(command('UNISOLATED', []))).toBe('EXEC');
+    expect(concurrencyClassOf(command('UNISOLATED', []), true)).toBe('READ');
+    expect(concurrencyClassOf(command('UNISOLATED', ['src']), true)).toBe('EXEC');
   });
 });
 

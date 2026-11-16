@@ -56,6 +56,7 @@ import {
   agentShareFrom,
   compactionAgentFrom,
   pinAgentFrom,
+  probeLandlock,
   probeSandbox,
   type MemorySample,
   type SandboxProbe,
@@ -191,17 +192,22 @@ function builtIns(catalog: DefinitionCatalog) {
 
 /**
  * The comparison arm a run uses, from the environment, for experiments only: without criteria
- * (Orchestration D81) or with the original whole examples (D83). Both replace the root's manual,
- * so they cannot run together.
+ * (Orchestration D81), with the original whole examples (D83), a lead as a worker that may split
+ * (D88), or the first and the last together. The examples show criteria and leads, so they go
+ * with neither of the others.
  */
 function comparisonArm(): keyof typeof DEFINITION_ARM_DIRECTORIES | undefined {
   const noAcceptance = process.env['MAO_SUBTASK_ACCEPTANCE'] === 'off';
   const fewShot = process.env['MAO_FEW_SHOT'] === 'on';
-  if (noAcceptance && fewShot)
+  const leadFlag = process.env['MAO_LEAD_AS_WORKER'] === 'on';
+  if (fewShot && (noAcceptance || leadFlag))
     throw new Error(
-      'MAO_SUBTASK_ACCEPTANCE=off and MAO_FEW_SHOT=on replace the same manual; run one arm at a time',
+      'MAO_FEW_SHOT=on shows criteria and leads in its examples; run it without MAO_SUBTASK_ACCEPTANCE=off and MAO_LEAD_AS_WORKER=on',
     );
-  return noAcceptance ? 'no-acceptance' : fewShot ? 'few-shot' : undefined;
+  if (noAcceptance && leadFlag) return 'no-acceptance-lead-flag';
+  if (noAcceptance) return 'no-acceptance';
+  if (leadFlag) return 'lead-flag';
+  return fewShot ? 'few-shot' : undefined;
 }
 
 /** The catalog, with the files of a comparison arm in place of its own (D81). */
@@ -260,6 +266,9 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     log(`Commands cannot run isolated here (${sandbox.reason}). ${sandbox.hint}
 `);
   const commandsOffered = commandsOfferedFor(sandbox.available, config.kernel.sandbox.unavailable);
+  // Without a sandbox, Landlock holds what a command writes (D79). Probed once: the runner uses
+  // it, and the Kernel queues a line of the read-only list as a read only when it holds (D87).
+  const landlock = sandbox.available ? false : (probeLandlock() ?? false);
   const analyzeCommand = createCommandAnalyzer(await createCommandParser(), config.kernel.command);
   const snapshotsOf = (sessionId: string): string =>
     join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots');
@@ -315,6 +324,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       commands: {
         analyze: analyzeCommand,
         sandbox: () => (sandbox.available ? 'AVAILABLE' : 'UNAVAILABLE'),
+        ...(landlock === false ? {} : { unisolatedReadOnly: true }),
         probe: sandbox.available
           ? { available: true }
           : { available: false, reason: sandbox.reason },
@@ -391,6 +401,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       config: config.kernel,
       dataDir: config.dataDir,
       subprocess,
+      landlock,
       now,
     });
 

@@ -34,6 +34,7 @@ import { JobTable } from './job-table.js';
 export { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
 export { createSandboxRunner, type TrackedSandboxRunner } from './sandbox/sandbox-runner.js';
 export { buildBwrapArgs } from './sandbox/bwrap-args.js';
+export { probeLandlock } from './sandbox/landlock.js';
 
 export interface ModuleHostControl {
   start(afterStart?: (moduleId: ModuleId) => void | Promise<void>): Promise<void>;
@@ -56,6 +57,12 @@ export interface SupervisorDeps {
   readonly subprocess?: TrackedSubprocessRunner;
   /** Runs commands in `bwrap`; the default is made from the data directory and the user's home. */
   readonly sandbox?: TrackedSandboxRunner;
+  /**
+   * For the default runner: the Python that holds unisolated writes with Landlock, or `false`
+   * (D79). The composition root probes once and tells the Kernel the same (D87); absent, the
+   * runner probes for itself.
+   */
+  readonly landlock?: string | false;
   readonly now?: () => Date;
   /** The longest a background command runs (Orchestration 6.1); default an hour. */
   readonly jobMaxMs?: number;
@@ -86,6 +93,7 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
       cancelGraceMs: deps.config.cancelGraceMs,
       killGraceMs: deps.config.killGraceMs,
       home: homedir(),
+      ...(deps.landlock === undefined ? {} : { landlock: deps.landlock }),
     });
   const correlations = new Map<string, string>();
   const facts = createExecutionFactSink(deps.fabric, (fact) => ({

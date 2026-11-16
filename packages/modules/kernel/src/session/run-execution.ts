@@ -108,6 +108,11 @@ export interface RunExecutionDeps {
   /** What may execute at once over all AgentRuns (`kernel.maxConcurrentAttempts` and the like). */
   readonly limits: QueueLimits;
   /**
+   * Landlock holds the writes of an unisolated command (D79), so one without a writable root, a
+   * line of the read-only list, cannot change the repository and queues as a READ (D87).
+   */
+  readonly unisolatedReadOnly?: boolean;
+  /**
    * A model call was sent to the Supervisor: its thinking may now be streamed to the console, so
    * the Kernel remembers whose call it is. Not a fact, nothing waits for it.
    */
@@ -154,9 +159,14 @@ interface Attempt extends QueueEntry {
 /**
  * The class a Unit declares for the queue (M2Design 7.1). A command that cannot write, one of the
  * read-only list in a sandbox without a writable root, is a READ: it takes no part in the EXEC
- * mutex and is no barrier (M2Design 5.2).
+ * mutex and is no barrier (M2Design 5.2). Without `bwrap` the same holds where Landlock holds
+ * the writes of an unisolated command (D79): with no writable root it reaches nothing of the
+ * repository (`unisolatedReadOnly`, D87). Without either, it could write, and stays an EXEC.
  */
-export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): ConcurrencyClass {
+export function concurrencyClassOf(
+  spec: Pick<AttemptSpec, 'unit' | 'scope'>,
+  unisolatedReadOnly = false,
+): ConcurrencyClass {
   switch (spec.unit.executionKind) {
     case 'MODEL':
       return 'MODEL';
@@ -169,7 +179,7 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
       return 'WRITE';
     case 'COMMAND':
       return spec.scope.kind === 'SANDBOX' &&
-        spec.scope.backend === 'BWRAP' &&
+        (spec.scope.backend === 'BWRAP' || unisolatedReadOnly) &&
         spec.scope.profile.writableRoots.length === 0
         ? 'READ'
         : 'EXEC';
@@ -244,7 +254,7 @@ export class RunExecution {
       retries: 0,
       seq: this.#seq,
       agentRunId: spec.agentRunId,
-      cls: concurrencyClassOf(spec),
+      cls: concurrencyClassOf(spec, this.#deps.unisolatedReadOnly === true),
       state: 'QUEUED',
       // What a command may write decides which others it may run beside (M2Design 7.1). An
       // unisolated command has the same roots, those of its task, only not enforced; it is

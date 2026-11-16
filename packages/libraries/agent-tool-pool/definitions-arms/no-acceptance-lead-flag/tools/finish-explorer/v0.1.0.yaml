@@ -1,0 +1,21 @@
+schemaVersion: v1
+kind: TOOL
+id: finish-explorer
+version: v0.1.0
+description: Control tool that ends an explorer with its summary and report.
+purpose: CONTROL
+modelName: finish_subagent
+modelDescription: >-
+  Call it when you have the answer: it returns your result to the agent that started you, and
+  stops you; call it alone. summary (at most
+  2000 characters) is the answer and what the reader always sees; report is everything you found,
+  with the evidence in the text (file:first-last, page addresses). references lists toolCallIds of
+  your results the caller may want to read. openQuestions lists what you could not settle.
+parametersContract:
+  kind: contract
+  id: workflow.ExplorerLeanResult
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL
