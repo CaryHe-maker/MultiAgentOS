@@ -202,6 +202,9 @@ const WAITS_FOR_USER: ReadonlySet<string> = new Set([
   'PAUSED',
 ]);
 
+/** The phases of the tool calls of one reply: any other phase means its tools are all back. */
+const TOOL_PHASES: ReadonlySet<string> = new Set(['QUEUED', 'CALLING_TOOL', 'RETRYING']);
+
 function secondsBetween(from: string, to: string): string {
   return `${(Math.max(0, Date.parse(to) - Date.parse(from)) / 1000).toFixed(1)}s`;
 }
@@ -236,6 +239,11 @@ export class Console {
   #confirming: string | undefined;
   /** When each running tool Unit started, for the duration on its folded line. */
   readonly #unitStarted = new Map<string, string>();
+  /**
+   * Per AgentRun, the tool Unit it is running now: a call of the same reply that waits behind it
+   * does not take its line, which shows what is being done, not what waits.
+   */
+  readonly #runningUnit = new Map<string, string>();
   /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
   readonly #fullOutputs: ArtifactRef[] = [];
   #sessionId: string | undefined;
@@ -1344,6 +1352,7 @@ export class Console {
         // The tree stays while the run is held, so that a note can still name its task.
         if (event.state === 'AWAITING_INPUT' || event.state === 'CONVERGING') {
           this.#activity.clear();
+          this.#runningUnit.clear();
           this.#jobs.clear();
         }
         if (event.state === 'PAUSED') this.#hint = text.paused;
@@ -1487,23 +1496,29 @@ export class Console {
           for (const [agentRunId, line] of this.#activity)
             if (line.missionId === event.missionId && agentRunId !== event.agentRunId)
               this.#activity.delete(agentRunId);
-        this.#activity.set(event.agentRunId, {
-          agentRunId: event.agentRunId,
-          ...(event.parentAgentRunId === undefined
-            ? {}
-            : { parentAgentRunId: event.parentAgentRunId }),
-          ...(event.missionId === undefined ? {} : { missionId: event.missionId }),
-          ...(event.parentMissionId === undefined
-            ? {}
-            : { parentMissionId: event.parentMissionId }),
-          label: terminalText(event.label),
-          phase: text.phase[event.phase],
-          // Waiting for the user is not work that is taking long: no seconds are counted for it.
-          ...(WAITS_FOR_USER.has(event.phase) ? { waitsForUser: true } : {}),
-          since: event.at,
-          ...(shown === undefined ? {} : { tool: shown }),
-          ...('retry' in event ? { retry: event.retry } : {}),
-        });
+        // A call queued behind one that runs keeps the running one on the line.
+        const running = this.#runningUnit.get(event.agentRunId);
+        if (unit?.state === 'RUNNING') this.#runningUnit.set(event.agentRunId, unit.unitAttemptId);
+        else if (unit?.unitAttemptId === running || !TOOL_PHASES.has(event.phase))
+          this.#runningUnit.delete(event.agentRunId);
+        if (event.phase !== 'QUEUED' || running === undefined)
+          this.#activity.set(event.agentRunId, {
+            agentRunId: event.agentRunId,
+            ...(event.parentAgentRunId === undefined
+              ? {}
+              : { parentAgentRunId: event.parentAgentRunId }),
+            ...(event.missionId === undefined ? {} : { missionId: event.missionId }),
+            ...(event.parentMissionId === undefined
+              ? {}
+              : { parentMissionId: event.parentMissionId }),
+            label: terminalText(event.label),
+            phase: text.phase[event.phase],
+            // Waiting for the user is not work that is taking long: no seconds are counted for it.
+            ...(WAITS_FOR_USER.has(event.phase) ? { waitsForUser: true } : {}),
+            since: event.at,
+            ...(shown === undefined ? {} : { tool: shown }),
+            ...('retry' in event ? { retry: event.retry } : {}),
+          });
         if (unit?.state === 'RUNNING') this.#unitStarted.set(unit.unitAttemptId, event.at);
         if (unit?.state === 'DONE' && tool !== undefined) {
           const started = this.#unitStarted.get(unit.unitAttemptId);
@@ -1632,6 +1647,7 @@ export class Console {
     this.#runState = 'CLOSED';
     this.#aborting = false;
     this.#activity.clear();
+    this.#runningUnit.clear();
     this.#jobs.clear();
     this.#parentOf.clear();
     this.#openRequest = undefined;

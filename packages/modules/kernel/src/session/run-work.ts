@@ -1979,13 +1979,14 @@ export class RunWork {
 
   /** Only for the interface: goes into the AgentRun's next ActivityEvents as it came. */
   updateActivity(request: UpdateActivityRequest): Response {
-    const { requestId, agentRunId, todos, step } = request;
+    const { requestId, agentRunId, todos, step, phase } = request;
     const replay = this.#replay(requestId, request);
     if (replay !== undefined) return replay;
     if (this.#agentRuns.get(agentRunId)?.state !== 'ACTIVE')
       return this.#refuse(requestId, request, 'AGENT_RUN_NOT_FOUND');
     if (todos !== undefined) this.#activity.todos(agentRunId, todos);
     if (step !== undefined) this.#activity.step(agentRunId, step);
+    if (phase === 'AWAITING_GRANT') this.#activity.awaitingGrant(agentRunId);
     return this.#accept(requestId, request);
   }
 

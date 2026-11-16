@@ -33,7 +33,9 @@ export function placementOf(
     return { effort: agent.effort, label: agent.label, writeRoots: agent.writeRoots };
   return {
     effort: spawn.effort ?? agent.effort,
-    label: `${agent.label} ${node.name}`,
+    // A task that inherits runs as its caller's Agent but is the one its phase names (D35): the
+    // activity area calls it that, not by the caller it comes from.
+    label: `${spawn.inherits?.as ?? agent.label} ${node.name}`,
     writeRoots: spawn.writeScope,
     link: { ...dispatch, taskName: node.name },
   };

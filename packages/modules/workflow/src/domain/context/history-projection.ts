@@ -623,6 +623,11 @@ function projectOwn(
             : messageReferences(records, record.referenceId)),
           outputRef: record.source.outputRef,
           toolCallId: record.source.toolCallId,
+          // The Workflow wrote it for its sender (D91): the words are in the record.
+          ...(record.byWorkflow === true && record.text !== undefined
+            ? { text: record.text.slice(0, 4000) }
+            : {}),
+          ...(record.asksGrant === true ? { asksGrant: true } : {}),
         });
         break;
       case 'MESSAGE_UNANSWERED':

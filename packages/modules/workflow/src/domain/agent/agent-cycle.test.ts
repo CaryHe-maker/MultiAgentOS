@@ -14,6 +14,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import {
   answerDelegatedCall,
+  answerRounds,
   closeAgent,
   receiveAgentReport,
   resumeAfterPause,
@@ -550,6 +551,62 @@ describe('wrap-up', () => {
     current = receive(current, report(current.state, only(current), { ok: {}, ref: ref('4') }));
     expect(current.state).toMatchObject({ round: 2, final: true, wrapUpReason: 'ROUND_LIMIT' });
     expect(current.records.some((record) => record.type === 'AGENT_WRAP_UP')).toBe(true);
+  });
+
+  describe('asking the parent for more rounds (D91)', () => {
+    const asking: AgentContext = { ...context, asksForRounds: () => true };
+    // With 11 rounds, rounds 6 to 10 are the last 5 working ones: round 6 waits for the answer.
+    const beforeRoundSix = (ctx: AgentContext) => {
+      const started = startAgent(
+        {
+          workflowRunId: newId('wfr'),
+          sessionId: newId('ses'),
+          agentRunId: 'agr_01ABCDEFGH',
+          definitions: { ...definitions, limits: { maxRounds: 11, maxToolCallsPerRound: 2 } },
+        },
+        ctx,
+      );
+      const step = (from: AgentTransition, result: Parameters<typeof report>[2]) =>
+        receiveAgentReport(from.state, report(from.state, only(from), result), ctx, config);
+      let current = step(started, assembledOutput);
+      for (const path of ['a', 'b', 'c', 'd', 'e']) {
+        const tools = step(current, modelOutput([call('list_files', { path })]));
+        current = step(tools, { ok: {}, ref: ref('4') });
+        if (current.ending === undefined && path !== 'e') current = step(current, assembledOutput);
+      }
+      return current;
+    };
+
+    it('asks before the first of its last five working rounds, and starts nothing meanwhile', () => {
+      const asked = beforeRoundSix(asking);
+      expect(asked.ending).toEqual({ kind: 'ROUNDS', round: 5, maxRounds: 11 });
+      expect(asked.submissions).toEqual([]);
+      expect(asked.state).toMatchObject({ round: 5, roundsAsked: true });
+    });
+
+    it('goes on with the rounds granted, says so once, and asks no more', () => {
+      const granted = answerRounds(beforeRoundSix(asking).state, 11, asking);
+      expect(granted.state).toMatchObject({ round: 6, final: false });
+      expect(granted.state.definitions.limits.maxRounds).toBe(22);
+      expect(granted.state.roundsGranted).toBeUndefined();
+      expect(granted.submissions[0]?.input).toMatchObject({
+        status: { round: 6, maxRounds: 22, roundsGranted: 11 },
+      });
+    });
+
+    it('goes on with the rounds it has when refused, and when there was no one to ask', () => {
+      const refused = answerRounds(beforeRoundSix(asking).state, 0, asking);
+      expect(refused.state.definitions.limits.maxRounds).toBe(11);
+      expect(refused.submissions[0]?.input).toMatchObject({ status: { roundsGranted: 0 } });
+      const silent = answerRounds(beforeRoundSix(asking).state, undefined, asking);
+      expect(silent.submissions[0]?.input).not.toMatchObject({ status: { roundsGranted: 0 } });
+    });
+
+    it('asks nothing of a task that has no parent', () => {
+      const root = beforeRoundSix(context);
+      expect(root.ending).toBeUndefined();
+      expect(root.state.round).toBe(6);
+    });
   });
 
   it('wraps up at maxRounds', () => {

@@ -49,6 +49,8 @@ import {
   resumeAfterPause,
   resumeAfterRefusal,
   answerDelegatedCall,
+  answerRounds,
+  ROUNDS_ASK_AHEAD,
   startAgent,
   type AgentConfig,
   type AgentContext,
@@ -262,6 +264,11 @@ interface ActiveAgent {
    * its task ends, or interrupted, so a new segment of it starts at once.
    */
   readonly stopAfterRound?: { readonly kind: 'STOP' | 'INTERRUPT'; readonly reason: string };
+  /**
+   * The id of the request for more rounds sent for it to its parent (D91): nothing of it runs
+   * until the reply, or until the request is left without one.
+   */
+  readonly awaitingGrant?: string | undefined;
   readonly scope: ProjectionScope;
   readonly agentId: string;
   readonly nodeEnding?: NodeEnding;
@@ -1652,6 +1659,10 @@ export class SessionRunner {
         scope.missionId === undefined
           ? undefined
           : replyRefusal(owedReplies(this.#records, scope.missionId, { agentRunId }), answered),
+      // A subtask asks its parent for more rounds (D91); a root has no one to ask.
+      asksForRounds: () =>
+        scope.missionId !== undefined &&
+        projectMissions(this.#records).get(scope.missionId)?.parentId !== undefined,
       assembleInput: (status, final, withdrawnTools) => {
         // In a folder that is no git repository, git history cannot be read: the tool is not
         // offered, rather than refused on every call (each worker tried it once before).
@@ -2687,6 +2698,8 @@ export class SessionRunner {
         );
       case 'STOP':
         return this.#onStop(workflowRunId, active, ending);
+      case 'ROUNDS':
+        return this.#onRounds(workflowRunId, active, ending);
       case 'JOB':
         return this.#onJobTool(workflowRunId, active, ending);
       case 'DEGRADED':
@@ -3720,6 +3733,103 @@ export class SessionRunner {
   }
 
   /**
+   * A task has `ROUNDS_ASK_AHEAD` working rounds left (D91): the Workflow asks its parent for more
+   * with a request that asks for a decision, sent, woken on and owed an answer as any request is,
+   * and nothing of the task runs until the reply. With no parent to ask, or one that could not be
+   * woken to answer, the task goes on with the rounds it has.
+   */
+  async #onRounds(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ROUNDS' }>,
+  ): Promise<void> {
+    // Told to stop or interrupted, it ends here, where its next round would have begun.
+    if (active.stopAfterRound !== undefined)
+      return this.#halt(workflowRunId, active, active.stopAfterRound);
+    const missions = projectMissions(this.#records);
+    const me = missions.get(active.missionId);
+    const parent = me?.parentId === undefined ? undefined : missions.get(me.parentId);
+    let turn: Extract<SessionLogRecord, { type: 'MODEL_TURN' }> | undefined;
+    for (const record of this.#records)
+      if (record.type === 'MODEL_TURN' && record.agentRunId === active.state.agentRunId)
+        turn = record;
+    const unreachable =
+      parent !== undefined &&
+      this.#wakeLimitReached(parent.missionId) &&
+      this.#sleeping(workflowRunId).some((each) => each.mission.missionId === parent.missionId);
+    if (
+      me === undefined ||
+      parent === undefined ||
+      parent.ended !== undefined ||
+      turn === undefined ||
+      unreachable ||
+      this.#openRequests(me.missionId).length >= MAX_OPEN_REQUESTS
+    )
+      return this.#apply(
+        workflowRunId,
+        answerRounds(active.state, undefined, this.#context(active.scope)),
+      );
+    const requestId = `rounds_${active.state.agentRunId}`;
+    const changed =
+      active.changed.length === 0
+        ? 'It has changed no file yet.'
+        : `Files it changed so far: ${active.changed.slice(0, 12).join(', ')}${active.changed.length > 12 ? ` and ${String(active.changed.length - 12)} more` : ''}.`;
+    const text = `Task ${me.name} has used ${String(ending.round)} of its ${String(ending.maxRounds)} rounds; ${String(ROUNDS_ASK_AHEAD)} working rounds are left. The Workflow asks for it: ${String(ending.maxRounds)} more rounds, so that it need not wrap up its part unfinished. ${changed} It waits for your answer and does nothing meanwhile: grant true gives the rounds and it goes on; grant false leaves it the rounds it has, and it finishes with them.`;
+    await this.#append([
+      {
+        type: 'MISSION_MESSAGE',
+        workflowRunId,
+        from: me.missionId,
+        fromLabel: me.name,
+        to: [parent.missionId],
+        kind: 'request',
+        byWorkflow: true,
+        asksGrant: true,
+        text,
+        source: {
+          modelTurnRequestId: turn.requestId,
+          outputRef: turn.outputRef,
+          toolCallId: requestId,
+        },
+      },
+    ]);
+    this.#agents.set(active.state.agentRunId, { ...active, awaitingGrant: requestId });
+    const sessionId = this.#sessionIdOrThrow();
+    // What the interface misses is no reason to stop the work: a refusal is left as it is.
+    await this.#deps.gateway
+      .updateActivity(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          agentRunId: active.state.agentRunId,
+          phase: 'AWAITING_GRANT',
+        },
+        contextOf(sessionId, workflowRunId),
+      )
+      .catch(() => undefined);
+    return this.#advance(workflowRunId);
+  }
+
+  /**
+   * The request for more rounds `requestId` was answered, or left without an answer (D91): the
+   * task that waits on it starts its next round with what was granted.
+   */
+  async #grantAnswered(workflowRunId: string, requestId: string, grant: boolean): Promise<void> {
+    const waiting = [...this.#agents.values()].find((each) => each.awaitingGrant === requestId);
+    if (waiting === undefined) return;
+    const current: ActiveAgent = { ...waiting, awaitingGrant: undefined };
+    this.#agents.set(waiting.state.agentRunId, current);
+    if (current.stopAfterRound !== undefined)
+      return this.#halt(workflowRunId, current, current.stopAfterRound);
+    const granted = grant ? current.state.definitions.limits.maxRounds : 0;
+    await this.#apply(
+      workflowRunId,
+      answerRounds(current.state, granted, this.#context(current.scope)),
+    );
+  }
+
+  /**
    * `send_message` (Orchestration 5): routed along the tree by name, recorded once, and answered at
    * once. Who gets it reads it at its next assembly, or is woken by it.
    */
@@ -3779,6 +3889,12 @@ export class SessionRunner {
       return answer(
         true,
         `Not sent: replyTo must be the id of a message sent to you${args.replyTo === undefined ? '' : `; ${args.replyTo} is not one`}. Send it as inform instead.`,
+      );
+    // A request that asks for a decision is answered with it (D91).
+    if (request?.asksGrant === true && args.grant === undefined)
+      return answer(
+        true,
+        `Not sent: request ${request.source.toolCallId} asks for a decision. Reply with grant true to give what it asks for, or grant false to refuse it.`,
       );
     if (kind === 'request' && this.#openRequests(me.missionId).length >= MAX_OPEN_REQUESTS)
       return answer(
@@ -3852,6 +3968,7 @@ export class SessionRunner {
         ...(interrupt ? { interrupt: true } : {}),
         ...(kind === 'inform' ? {} : { kind }),
         ...(request === undefined ? {} : { replyTo: request.source.toolCallId }),
+        ...(request?.asksGrant === true && args.grant !== undefined ? { grant: args.grant } : {}),
         ...(handed?.kind === 'HANDED' ? { referenceId: handed.referenceId } : {}),
         // What was said goes into the log itself, for replay and audit (D56).
         ...(args.summary === undefined ? {} : { summary: args.summary }),
@@ -3885,6 +4002,9 @@ export class SessionRunner {
         this.#deps.config,
       ),
     );
+    // The task that waits on the decision goes on with it.
+    if (request?.asksGrant === true)
+      await this.#grantAnswered(workflowRunId, request.source.toolCallId, args.grant === true);
     if (interrupt)
       for (const target of targets) await this.#interruptMission(workflowRunId, target);
     return this.#advance(workflowRunId);
@@ -3897,10 +4017,11 @@ export class SessionRunner {
   async #interruptMission(workflowRunId: string, mission: MissionView): Promise<void> {
     const running = [...this.#agents.values()].find((each) => each.missionId === mission.missionId);
     if (running !== undefined) {
-      this.#agents.set(running.state.agentRunId, {
-        ...running,
-        stopAfterRound: { kind: 'INTERRUPT', reason: 'interrupted by its parent' },
-      });
+      const halt = { kind: 'INTERRUPT', reason: 'interrupted by its parent' } as const;
+      this.#agents.set(running.state.agentRunId, { ...running, stopAfterRound: halt });
+      // One that waits for more rounds runs nothing whose end would halt it: it halts now (D91).
+      if (running.awaitingGrant !== undefined)
+        return this.#grantAnswered(workflowRunId, running.awaitingGrant, false);
       await this.#haltAgentRun(workflowRunId, running.state.agentRunId);
       return;
     }
@@ -3993,6 +4114,9 @@ export class SessionRunner {
         ...running,
         stopAfterRound: { kind: 'STOP', reason: note },
       });
+      // One that waits for more rounds runs nothing whose end would halt it: it halts now (D91).
+      if (running.awaitingGrant !== undefined)
+        return this.#grantAnswered(workflowRunId, running.awaitingGrant, false);
       await this.#haltAgentRun(workflowRunId, running.state.agentRunId);
       return;
     }
@@ -4121,6 +4245,10 @@ export class SessionRunner {
           });
       }
       await this.#append(unanswered);
+      // A task that waited on one of them for more rounds goes on with what it has (D91).
+      for (const record of unanswered)
+        if (record.type === 'MESSAGE_UNANSWERED')
+          await this.#grantAnswered(workflowRunId, record.requestToolCallId, false);
     }
     // A task that delivered leaves its background commands running: their end goes to the task
     // above (Orchestration 6.4). One that was stopped or failed stops them.

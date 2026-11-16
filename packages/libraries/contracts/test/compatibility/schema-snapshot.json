@@ -5087,6 +5087,15 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "asksGrant": {
+                    "type": "boolean",
+                    "const": true
                   }
                 },
                 "additionalProperties": false
@@ -5289,6 +5298,10 @@
             "noSubtasksYet": {
               "type": "boolean",
               "const": true
+            },
+            "roundsGranted": {
+              "type": "integer",
+              "minimum": 0
             },
             "finalRetry": {
               "type": "boolean",
@@ -6428,6 +6441,15 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 128
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "asksGrant": {
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
@@ -8977,6 +8999,7 @@
                 "QUEUED",
                 "WAITING_SUBTASKS",
                 "AWAITING_ANSWER",
+                "AWAITING_GRANT",
                 "PAUSED",
                 "COMPACTING",
                 "WRAPPING_UP",
@@ -12187,6 +12210,15 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4000
+                          },
+                          "asksGrant": {
+                            "type": "boolean",
+                            "const": true
                           }
                         },
                         "additionalProperties": false
@@ -13543,6 +13575,15 @@
                                     "type": "string",
                                     "minLength": 1,
                                     "maxLength": 128
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 4000
+                                  },
+                                  "asksGrant": {
+                                    "type": "boolean",
+                                    "const": true
                                   }
                                 },
                                 "additionalProperties": false
@@ -13745,6 +13786,10 @@
                             "noSubtasksYet": {
                               "type": "boolean",
                               "const": true
+                            },
+                            "roundsGranted": {
+                              "type": "integer",
+                              "minimum": 0
                             },
                             "finalRetry": {
                               "type": "boolean",
@@ -14891,6 +14936,10 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "phase": {
+                  "type": "string",
+                  "const": "AWAITING_GRANT"
                 }
               },
               "additionalProperties": false,
@@ -17777,6 +17826,7 @@
                         "QUEUED",
                         "WAITING_SUBTASKS",
                         "AWAITING_ANSWER",
+                        "AWAITING_GRANT",
                         "PAUSED",
                         "COMPACTING",
                         "WRAPPING_UP",
@@ -23593,6 +23643,10 @@
               "type": "boolean",
               "const": true
             },
+            "roundsGranted": {
+              "type": "integer",
+              "minimum": 0
+            },
             "finalRetry": {
               "type": "boolean",
               "const": true
@@ -27785,6 +27839,10 @@
                     "noSubtasksYet": {
                       "type": "boolean",
                       "const": true
+                    },
+                    "roundsGranted": {
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "finalRetry": {
                       "type": "boolean",
@@ -35793,6 +35851,15 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 128
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "asksGrant": {
+                    "type": "boolean",
+                    "const": true
                   }
                 },
                 "additionalProperties": false
@@ -39289,6 +39356,15 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 128
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 4000
+                          },
+                          "asksGrant": {
+                            "type": "boolean",
+                            "const": true
                           }
                         },
                         "additionalProperties": false
@@ -39491,6 +39567,10 @@
                     "noSubtasksYet": {
                       "type": "boolean",
                       "const": true
+                    },
+                    "roundsGranted": {
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "finalRetry": {
                       "type": "boolean",
@@ -41315,6 +41395,15 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 128
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4000
+                      },
+                      "asksGrant": {
+                        "type": "boolean",
+                        "const": true
                       }
                     },
                     "additionalProperties": false
@@ -41517,6 +41606,10 @@
                 "noSubtasksYet": {
                   "type": "boolean",
                   "const": true
+                },
+                "roundsGranted": {
+                  "type": "integer",
+                  "minimum": 0
                 },
                 "finalRetry": {
                   "type": "boolean",
@@ -44384,6 +44477,10 @@
             }
           },
           "additionalProperties": false
+        },
+        "phase": {
+          "type": "string",
+          "const": "AWAITING_GRANT"
         }
       },
       "additionalProperties": false,
@@ -53312,6 +53409,17 @@
             "text": {
               "type": "string"
             },
+            "byWorkflow": {
+              "type": "boolean",
+              "const": true
+            },
+            "asksGrant": {
+              "type": "boolean",
+              "const": true
+            },
+            "grant": {
+              "type": "boolean"
+            },
             "source": {
               "type": "object",
               "required": [
@@ -57714,6 +57822,9 @@
           "maxLength": 64
         },
         "interrupt": {
+          "type": "boolean"
+        },
+        "grant": {
           "type": "boolean"
         }
       },

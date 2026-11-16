@@ -396,6 +396,11 @@ export const UpdateActivityRequestSchema = closed(
      * so the interface shows it as a line of its own, like a finished tool.
      */
     step: Type.Optional(closed({ toolName: text(64), argsSummary: text(80, 0) })),
+    /**
+     * What the AgentRun waits for while nothing of it runs, which only Workflow knows (D91): its
+     * parent's answer to an ask for more rounds.
+     */
+    phase: Type.Optional(Type.Literal('AWAITING_GRANT')),
   },
   'kernel.unit.UpdateActivityRequest.v1',
 );

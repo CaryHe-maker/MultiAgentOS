@@ -634,18 +634,25 @@ ${shown}`,
         return { ...base, kind: 'NOTE', text: lines.join('\n') };
       }
       case 'MESSAGE': {
-        // The text of the sender's call, labelled as what it is: material, not an instruction.
-        const raw = await this.#rawOutput(entry.outputRef);
-        const call = raw.toolCalls.find((candidate) => candidate.toolCallId === entry.toolCallId);
-        if (call === undefined) throw new RequestBuildError('INVALID_INPUT');
-        // A long text is shown by its beginning; the rest is read by the message's id.
-        const body = messageShownText(messageTextOf(call.argumentsText), entry.toolCallId);
-        const summary = messageSummaryOf(call.argumentsText);
+        // The text of the sender's call, labelled as what it is: material, not an instruction. One
+        // the Workflow wrote for the sender carries its words itself (D91).
+        let body: string;
+        let summary: string | undefined;
+        if (entry.text !== undefined) body = entry.text;
+        else {
+          const raw = await this.#rawOutput(entry.outputRef);
+          const call = raw.toolCalls.find((candidate) => candidate.toolCallId === entry.toolCallId);
+          if (call === undefined) throw new RequestBuildError('INVALID_INPUT');
+          // A long text is shown by its beginning; the rest is read by the message's id.
+          body = messageShownText(messageTextOf(call.argumentsText), entry.toolCallId);
+          summary = messageSummaryOf(call.argumentsText);
+        }
         // What kind of message it is, and how to answer it (D25): a request is answered in the
         // round that reads it; an inform may be answered (Orchestration 5.3).
+        const decide = entry.asksGrant === true ? ' and grant true or false' : '';
         const what =
           entry.messageKind === 'request'
-            ? `Request ${entry.toolCallId} from task ${entry.from}: answer it in this reply with send_message kind reply and replyTo ${entry.toolCallId}`
+            ? `Request ${entry.toolCallId} from task ${entry.from}: answer it in this reply with send_message kind reply, replyTo ${entry.toolCallId}${decide}`
             : entry.messageKind === 'reply'
               ? `Reply from task ${entry.from} to your message ${entry.replyTo ?? ''}`
               : `Message from task ${entry.from} (${entry.toolCallId}): no answer is needed; to answer anyway, send_message kind reply and replyTo ${entry.toolCallId}`;

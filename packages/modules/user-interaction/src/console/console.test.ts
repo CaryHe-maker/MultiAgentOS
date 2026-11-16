@@ -304,6 +304,35 @@ describe('Console', () => {
     expect(t.live()?.activity).toEqual([]);
   });
 
+  it('keeps the running command on the line while another call of the reply is queued', async () => {
+    const t = setup();
+    await t.console.submit('hi');
+    const unit = (
+      unitAttemptId: string,
+      argsSummary: string,
+      phase: 'QUEUED' | 'CALLING_TOOL',
+      state: 'QUEUED' | 'RUNNING' | 'DONE',
+    ) =>
+      t.event({
+        type: 'ActivityEvent',
+        agentRunId: 'arn_1',
+        label: 'main',
+        phase,
+        at: new Date(0).toISOString(),
+        unit: { unitAttemptId, toolName: 'run-command', argsSummary, state },
+      });
+    await unit('uat_a', 'make test', 'CALLING_TOOL', 'RUNNING');
+    await unit('uat_b', 'make lint', 'QUEUED', 'QUEUED');
+    expect(t.live()?.activity[0]).toMatchObject({ tool: 'run-command make test' });
+    await unit('uat_a', 'make test', 'CALLING_TOOL', 'DONE');
+    await unit('uat_b', 'make lint', 'CALLING_TOOL', 'RUNNING');
+    expect(t.live()?.activity[0]).toMatchObject({ tool: 'run-command make lint' });
+    // With nothing running, a queued call is what the line shows.
+    await unit('uat_b', 'make lint', 'CALLING_TOOL', 'DONE');
+    await unit('uat_c', 'make docs', 'QUEUED', 'QUEUED');
+    expect(t.live()?.activity[0]).toMatchObject({ tool: 'run-command make docs' });
+  });
+
   it('draws SubAgents under the AgentRun that started them, and lists the run on /timeline', async () => {
     const t = setup({ clock: { ms: 60_000 } });
     await t.console.submit('hi');

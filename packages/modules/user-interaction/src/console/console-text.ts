@@ -357,6 +357,7 @@ export const ConsoleText = Object.freeze({
     QUEUED: '排队',
     WAITING_SUBTASKS: '等待子任务',
     AWAITING_ANSWER: '等待你的回答',
+    AWAITING_GRANT: '申请额度中',
     PAUSED: '已暂停',
     COMPACTING: '正在压缩上下文',
     WRAPPING_UP: '收尾',

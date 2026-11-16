@@ -12,7 +12,16 @@ import type { Console, ConsoleView } from '@multiagentos/user-interaction';
 import { afterEach, expect, it, describe } from 'vitest';
 import { composeSystem } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
-import { scriptedAgents, textOf, tool, type ScriptedChat } from './chat-driver.js';
+import { completionResponse } from '../support/scripted-model.js';
+import {
+  isTaskText,
+  scriptedAgents,
+  textOf,
+  tool,
+  type ChatRequest,
+  type ProviderTurn,
+  type ScriptedChat,
+} from './chat-driver.js';
 
 const TIMEOUT = 120_000;
 const OFFLINE_KEY = 'sk-acceptance-offline-key-0000';
@@ -36,11 +45,14 @@ async function missionOn(goal: string, provider: ScriptedChat, files: Record<str
     await writeFile(join(repository, name), content);
   }
   const notices: string[] = [];
+  /** Every phase the activity area showed, as it showed it. */
+  const phases = new Set<string>();
   const attached: { console?: Console } = {};
   let asked: string | undefined;
   const view: ConsoleView = {
     print: (record) => void notices.push(`${record.kind}: ${record.text}`),
     update: (live) => {
+      for (const line of live.activity) phases.add(line.phase);
       const question = live.pending?.kind === 'AUTHORIZATION' ? live.pending.text : undefined;
       if (question !== undefined && question !== asked)
         queueMicrotask(() => void attached.console?.submit('y'));
@@ -70,7 +82,7 @@ async function missionOn(goal: string, provider: ScriptedChat, files: Record<str
       await console.shutdown('RUN_FINISHED');
       return exit;
     });
-    return { code, notices, dataDir, repository };
+    return { code, notices, phases, dataDir, repository };
   } finally {
     globalThis.fetch = original;
   }
@@ -713,6 +725,104 @@ real('a lead that starts with the context of the root (D58)', () => {
       expect(first('w')).toContain('broken-before-the-fix');
       expect(first('w')).toContain('you are a different task: "part"');
       expect(first('w')).toContain('Your goal: write fixed into src/value.txt');
+    },
+    TIMEOUT,
+  );
+});
+
+real('a subtask that asks its parent for more rounds (D91)', () => {
+  const READS = 34;
+  const notes = Object.fromEntries(
+    Array.from({ length: READS }, (_, index) => [
+      `notes/n${String(index)}.txt`,
+      `note ${String(index)}\n`,
+    ]),
+  );
+  /** The parent's reply to the request the Workflow sent, by the id it read in its context. */
+  const answer = (provider: { requests: ChatRequest[] }, grant: boolean): ProviderTurn => ({
+    response: () => {
+      const read = provider.requests
+        .at(-1)
+        ?.messages.map((message) => textOf(message))
+        .join('\n');
+      const id = /Request (rounds_[A-Za-z0-9_]+) from task big/u.exec(read ?? '')?.[1] ?? 'none';
+      return completionResponse(
+        {
+          calls: [
+            {
+              name: 'send_message',
+              arguments: { to: 'big', kind: 'reply', replyTo: id, grant, text: 'answered' },
+            },
+          ],
+        },
+        'grant',
+      );
+    },
+  });
+  const run = async (grant: boolean) => {
+    const worker = [
+      // It reads what it will change, as a write needs.
+      tool('read_file', { path: 'src/value.txt' }),
+      ...Array.from({ length: READS - 1 }, (_, index) =>
+        tool('read_file', { path: `notes/n${String(index)}.txt` }),
+      ),
+      tool('write_file', { path: 'src/value.txt', content: 'fixed\n' }),
+      tool('run_command', { command: check }),
+      tool('finish_subagent', {
+        summary: 'wrote fixed',
+        status: 'done',
+        changedFiles: ['src/value.txt'],
+        validation: [{ command: check, exitCode: 0 }],
+      }),
+    ];
+    const provider = scriptedAgents({ main: [] }, { big: worker });
+    provider.add(
+      tool('run_subagents', {
+        plan: 'One long part.',
+        tasks: [{ name: 'big', agent: 'worker', goal: 'the long part', writeScope: ['src'] }],
+      }),
+      tool('sleep', { until: [{ kind: 'children' }] }),
+      answer(provider, grant),
+      tool('sleep', { until: [{ kind: 'children' }] }),
+      tool('reply', { text: 'done' }),
+    );
+    const result = await missionOn('do the long part', provider, {
+      ...notes,
+      'src/value.txt': 'broken\n',
+    });
+    const said = (task: string) =>
+      provider.requests
+        .filter((request) => request.messages.some((message) => isTaskText(textOf(message), task)))
+        .map((request) => request.messages.map((message) => textOf(message)).join('\n'));
+    return { result, provider, said };
+  };
+
+  it(
+    'waits for the answer, and goes on with the rounds its parent granted',
+    async () => {
+      const { result, provider, said } = await run(true);
+      expect(result.code).toBe(0);
+      expect(await readFile(join(result.repository, 'src/value.txt'), 'utf8')).toBe('fixed\n');
+      // The parent read the request, sent as a message of the task, and how to answer it.
+      const root = provider.requests
+        .map((request) => request.messages.map((message) => textOf(message)).join('\n'))
+        .find((text) => text.includes('more rounds, so that it need not wrap up'));
+      expect(root).toContain('grant true or false');
+      expect(root).toContain('has used 34 of its 40 rounds');
+      // The round after the answer says what was granted.
+      // The round after the answer says what was granted, and the task finished well within it.
+      const big = said('big');
+      expect(
+        big.filter((text) =>
+          text.includes('Your parent granted 40 more rounds: this is round 35 of 80 now.'),
+        ),
+      ).toHaveLength(1);
+      expect(big.length).toBeLessThan(40);
+      expect(result.phases).toContain('申请额度中');
+      const log = await logOf(result.dataDir);
+      expect(
+        log.some((record) => record['type'] === 'MISSION_MESSAGE' && record['grant'] === true),
+      ).toBe(true);
     },
     TIMEOUT,
   );

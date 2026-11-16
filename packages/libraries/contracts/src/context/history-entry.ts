@@ -151,6 +151,10 @@ export const ContextHistoryEntrySchema = Type.Union(
       ),
       outputRef: artifactRefOf(MEDIA_TYPES.modelOutput),
       toolCallId: ToolCallIdSchema,
+      /** Written by the Workflow for the sender (D91): the words themselves, not in `outputRef`. */
+      text: Type.Optional(text(4000)),
+      /** A request that asks for a decision: the reply says grant true or false (D91). */
+      asksGrant: Type.Optional(Type.Literal(true)),
     }),
     /** The plan of the work written by the root task (Orchestration 5.3), by its call. */
     closed({
@@ -202,6 +206,8 @@ export const StatusFactsSchema = closed({
   lastRunning: Type.Optional(Type.Literal(true)),
   /** The task has started no subtask yet (D73); said once, to a task that can start them. */
   noSubtasksYet: Type.Optional(Type.Literal(true)),
+  /** The parent answered the task's ask for more rounds (D91): the rounds granted, 0 for none. */
+  roundsGranted: Type.Optional(count()),
   /** The final call is asked again: the first answer did not call exactly one finishing tool. */
   finalRetry: Type.Optional(Type.Literal(true)),
   /**

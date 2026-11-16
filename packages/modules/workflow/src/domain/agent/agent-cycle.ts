@@ -200,6 +200,10 @@ export interface AgentState {
    * the task sleeps instead of starting another round.
    */
   readonly sleepAfter?: Extract<AgentEnding, { kind: 'SLEEP' }>;
+  /** It asked its parent for more rounds once (D91): an AgentRun asks no more than once. */
+  readonly roundsAsked?: true;
+  /** The answer to that ask, for the next status alone: the rounds granted, 0 for none. */
+  readonly roundsGranted?: number;
   readonly fatal?: ReasonCode;
 }
 
@@ -251,7 +255,12 @@ export type AgentEnding =
       readonly arguments: unknown;
       readonly source: ControlSource;
     }
-  | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView };
+  | { readonly kind: 'CLOSED'; readonly outputRef?: ArtifactRef; readonly budget: BudgetView }
+  /**
+   * The AgentRun has `ROUNDS_ASK_AHEAD` working rounds left (D91): before the next one starts, the
+   * runner asks its parent for more and answers with `answerRounds`. Nothing runs meanwhile.
+   */
+  | { readonly kind: 'ROUNDS'; readonly round: number; readonly maxRounds: number };
 
 /** Where a control call's arguments live; bodies stay in the model output artifact. */
 export interface ControlSource {
@@ -296,7 +305,12 @@ export interface AgentContext {
    * (Orchestration 5.3); `answered` are the ids its `send_message` replies name.
    */
   readonly owedReplies?: (agentRunId: string, answered: ReadonlySet<string>) => string | undefined;
+  /** The task has a parent to ask for more rounds when few are left (D91). */
+  readonly asksForRounds?: () => boolean;
 }
+
+/** With this many working rounds left, an AgentRun that can asks its parent for more (D91). */
+export const ROUNDS_ASK_AHEAD = 5;
 
 export type ToolInput =
   | {
@@ -534,14 +548,36 @@ function nextRound(
   // and what the root lent to this task is no longer in it.
   const exhausted = state.budget.agentRun === 'EXHAUSTED' || state.budget.run === 'EXHAUSTED';
   if (exhausted) return degrade(state, 'BUDGET_EXHAUSTED', records);
+  // A few working rounds before the limit, the task asks its parent for more, once (D91): the
+  // round starts when the parent has answered, with the rounds it granted.
+  const { maxRounds } = state.definitions.limits;
+  if (
+    state.roundsAsked !== true &&
+    state.wrapUpReason === undefined &&
+    // The next round is the first of the last `ROUNDS_ASK_AHEAD` working rounds, of a task whose
+    // limit leaves more working rounds before them than in them: a short limit is not extended.
+    maxRounds - 1 - (state.round + 1) === ROUNDS_ASK_AHEAD - 1 &&
+    state.round >= ROUNDS_ASK_AHEAD &&
+    // A round that got nothing done (its model call failed, its tools failed) is no sign that more
+    // rounds would help: the task asks only after one in which a call succeeded.
+    state.roundHadOk &&
+    context.asksForRounds?.() === true
+  )
+    return {
+      state: { ...state, roundsAsked: true },
+      records,
+      submissions: [],
+      ending: { kind: 'ROUNDS', round: state.round, maxRounds },
+    };
   // `maxRounds` counts the final round too: the round after `maxRounds - 1` is the final call, so a
   // model never gets more calls than the limit says. One working round is always left.
   const atLimit = state.round >= Math.max(state.definitions.limits.maxRounds - 1, 1);
   const wrapUpReason = state.wrapUpReason ?? (atLimit ? 'ROUND_LIMIT' : undefined);
   const final = wrapUpReason !== undefined;
   if (final && state.finalUsed) return degrade(state, wrapUpReason, records);
+  const { roundsGranted, ...rest } = state;
   const next: AgentState = {
-    ...state,
+    ...rest,
     round: state.round + 1,
     final,
     finalUsed: state.finalUsed || final,
@@ -558,6 +594,7 @@ function nextRound(
     budget: next.budget,
     final,
     ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
+    ...(roundsGranted === undefined ? {} : { roundsGranted }),
   };
   const wrapUpRecords: readonly NewLogRecord[] =
     wrapUpReason === undefined
@@ -578,6 +615,30 @@ function nextRound(
     context.assembleInput(status, final, withdrawnOf(next)),
     'context',
     [...records, ...wrapUpRecords],
+  );
+}
+
+/**
+ * The parent answered the ask for more rounds (D91), or there was none to ask: `granted` rounds
+ * are added to the limit, and the round that waited starts. Undefined says nothing was asked.
+ */
+export function answerRounds(
+  state: AgentState,
+  granted: number | undefined,
+  context: AgentContext,
+): AgentTransition {
+  if (granted === undefined) return nextRound(state, context);
+  const { limits } = state.definitions;
+  return nextRound(
+    {
+      ...state,
+      definitions: {
+        ...state.definitions,
+        limits: { ...limits, maxRounds: limits.maxRounds + granted },
+      },
+      roundsGranted: granted,
+    },
+    context,
   );
 }
 

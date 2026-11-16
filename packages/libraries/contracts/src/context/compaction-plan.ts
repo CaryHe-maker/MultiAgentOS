@@ -47,6 +47,11 @@ export function entryBytes(entry: ContextHistoryEntry): number {
     case 'TOOL_RESULT':
       return sizeOf(entry.outputRef) + ENTRY_OVERHEAD_BYTES;
     case 'MESSAGE':
+      // One the Workflow wrote for its sender carries its own words (D91).
+      return (
+        (entry.text === undefined ? sizeOf(entry.outputRef) : textSize(entry.text)) +
+        ENTRY_OVERHEAD_BYTES
+      );
     case 'PLAN':
       return sizeOf(entry.outputRef) + ENTRY_OVERHEAD_BYTES;
     case 'PROJECT_INSTRUCTIONS':

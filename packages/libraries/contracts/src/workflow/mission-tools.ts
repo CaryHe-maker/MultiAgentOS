@@ -112,6 +112,11 @@ export const SendMessageArgsSchema = closed(
      * receiver ends its round, and a new segment starts with the message at the end of its context.
      */
     interrupt: Type.Optional(Type.Boolean()),
+    /**
+     * Of a reply to a request that asks for a decision (D91), such as more rounds: true gives what
+     * it asks for, false refuses it. Such a reply without it is not sent.
+     */
+    grant: Type.Optional(Type.Boolean()),
   },
   'workflow.SendMessageArgs.v1',
 );

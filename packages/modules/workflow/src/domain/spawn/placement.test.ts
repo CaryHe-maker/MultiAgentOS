@@ -37,4 +37,10 @@ describe('placementOf', () => {
     });
     expect(placementOf(node(spawn), agent, dispatch).effort).toBe('high');
   });
+
+  it('calls a task that inherits by the Agent its phase names, not by its caller (D35)', () => {
+    const inherits = { missionId: 'msc_root', agentRunId: 'agr_root', as: 'worker' };
+    const lead = { ...agent, label: 'lead' };
+    expect(placementOf(node({ ...spawn, inherits }), lead, dispatch).label).toBe('worker fix-api');
+  });
 });

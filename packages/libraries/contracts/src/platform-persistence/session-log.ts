@@ -411,6 +411,15 @@ export const SessionLogRecordSchema = Type.Union(
        */
       summary: Type.Optional(text(300)),
       text: Type.Optional(Type.String()),
+      /**
+       * Written by the Workflow for the sending task, not by its model (D91): its words are `text`,
+       * and `source` is the last model turn of the task, with the message's own id.
+       */
+      byWorkflow: Type.Optional(Type.Literal(true)),
+      /** A request that asks for a decision (D91): its reply says `grant`. */
+      asksGrant: Type.Optional(Type.Literal(true)),
+      /** Of a reply to such a request: what was decided. */
+      grant: Type.Optional(Type.Boolean()),
       source: closed({
         modelTurnRequestId: IdSchemas.requestId,
         outputRef: ArtifactRefSchema,

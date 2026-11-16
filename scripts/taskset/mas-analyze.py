@@ -32,7 +32,10 @@ def main(run_dir: str) -> None:
         if record['type'] == 'GRAPH_EXTENDED':
             for node in record['nodes']:
                 if node.get('mission'):
-                    names[node['mission']['id']] = (node['name'], (node.get('agentRef') or {}).get('id', '?'))
+                    # A task that inherits runs as its caller's Agent; it is the one its phase names.
+                    inherited = ((node.get('spawn') or {}).get('inherits') or {}).get('as')
+                    agent = inherited or (node.get('agentRef') or {}).get('id', '?')
+                    names[node['mission']['id']] = (node['name'], agent)
     task_of = {}
     for record in log:
         if record['type'] == 'AGENT_RUN_REGISTERED':

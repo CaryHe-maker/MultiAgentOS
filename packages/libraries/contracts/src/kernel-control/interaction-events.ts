@@ -269,6 +269,8 @@ export const ACTIVITY_PHASES = [
   'WAITING_SUBTASKS',
   /** The AgentRun called `ask_user` and waits for the answer. */
   'AWAITING_ANSWER',
+  /** The AgentRun asked its parent for more rounds and waits for the answer (D91). */
+  'AWAITING_GRANT',
   /** The run is paused: nothing of this AgentRun runs. */
   'PAUSED',
   /** Its context is being compacted: nothing of this AgentRun runs until it is done. */

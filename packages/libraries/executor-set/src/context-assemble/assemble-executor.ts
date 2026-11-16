@@ -106,6 +106,7 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
     commandMinutes,
     lastRunning,
     noSubtasksYet,
+    roundsGranted,
     jobs = [],
   } = status;
   const lines: string[] = [];
@@ -158,6 +159,13 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
         `Your previous answer to this final call did not call exactly one of ${finish.join(', ') || 'the finish tools'}. Answer with one call of one of them and nothing else: no other tool, no second call.`,
       );
   } else {
+    // The parent answered the ask for more rounds the Workflow sent for this task (D91).
+    if (roundsGranted !== undefined)
+      lines.push(
+        roundsGranted > 0
+          ? `Your parent granted ${String(roundsGranted)} more rounds: this is round ${String(round)} of ${String(maxRounds)} now.`
+          : `Your parent did not grant more rounds: this is round ${String(round)} of ${String(maxRounds)}; finish with the rounds you have left.`,
+      );
     const notice = roundNotice(round, maxRounds);
     if (notice !== undefined) lines.push(notice);
   }

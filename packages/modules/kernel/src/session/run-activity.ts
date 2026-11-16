@@ -161,6 +161,11 @@ export class RunActivity {
     this.#emit(agentRunId, 'AWAITING_ANSWER');
   }
 
+  /** The AgentRun asked its parent for more rounds and waits for the answer (D91). */
+  awaitingGrant(agentRunId: string): void {
+    this.#emit(agentRunId, 'AWAITING_GRANT');
+  }
+
   /** The run is paused: nothing of this AgentRun runs until it is continued. */
   paused(agentRunId: string): void {
     this.#emit(agentRunId, 'PAUSED');
