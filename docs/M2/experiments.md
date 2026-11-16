@@ -686,6 +686,8 @@ Cary 2026-11-16 定：用当前的 mas（Mission）在 pyregex、survey-med-seg�
 | pyawk，替代线 + split（D89–D92） | `5528602` | 12.8 | 0.965 | 0.72（高峰时段，低价约 0.37） | 27.5 / 0.986 / 0.21 | 31.1 / 0.986 / 0.60 | `DONE` |
 | survey-med-seg，替代线 + split（D89–D92） | `5528602` | 14.7 | 0.992 | 0.23 | 22.2 / 1.000 / 0.12 | 32.4 / 1.000 / 0.42 | `DONE` |
 | textutils，Mission 基线1 | `c6071ac` | 24.6 | 0.993 | 0.66 | 22.3 / 0.970 / 0.23 | 45.0（dev-mission-3） | `DONE` |
+| pyregex，Mission 基线1（+D94、D95） | `3a21869` | 18.9 | 0.971 | 0.42 | 20.0 / 0.966 / 0.18 | 30.7 / 0.971 / 0.73 | `DONE` |
+| pyawk，Mission 基线1（+D94–D96） | `c24c72e` | 16.7 | 0.986 | 0.40 | 27.5 / 0.986 / 0.21 | 31.1 / 0.986 / 0.60 | `DONE` |
 
 **L1 pyregex**（`ad7af37`，含 D72–D79）：第 3.9 分钟派出 unicode、parser、engine、api 四个 worker 与一个 tester（它又派了三个写测试的子任务）。parser、api、unicode 在第 8.8–17.6 分钟结束；engine 用满 40 轮，第 25.0 分钟以 partial 交回（142 个单元测试全过、性能达标，只剩与 `re` 的两处边界差异）。拖慢的是根任务自己写的验收：给 unicode 的是"全码位与真 re 零差异"，给 engine 的是"check_engine.py 与真 re 零差异"，题目只要求与 Python 3.12 `re` 兼容，没有要求零差异。于是 unicode 两次全码位扫描（124 s、288 s），engine 反复跑对照脚本（每次约 2 分钟，最后一次 212 s 被杀）。engine 交回后，根任务自己修那两处差异，每改一处就重跑整个大对照（每条到 2 分钟上限转后台，前后 5 个后台命令），第 25–43 分钟没有任何并行。第 43 分钟由 Cary 停止，数据与工作区存于 `~/bench/p3mas/results/dv-pyregex-stopped/`；对停止时的工作区跑隐藏测试，208 个过了 202 个（0.9712），与早期 Mission 相同、高于 `dsh`，可见最后 18 分钟在分数上没有明显收益。另：根任务的提示词里缺了 worker 与 lead 都有的"慢的检查只重跑失败的部分"。随后的改动见 D80。
 
@@ -707,6 +709,10 @@ Cary 2026-11-16 定：用当前的 mas（Mission）在 pyregex、survey-med-seg�
 
 **L10 textutils，Mission 基线1**（`c6071ac`，基线1 定稿后的第一次运行，不再设任何环境变量；Cary 用 `--ui` 运行，标签 `b1-textutils`）：24.6 分钟，0.993（135 个过了 134 个），`DONE`，是 textutils 上分数最高的一次（`dsh` 22.3 / 0.970，K12 13.3 / 0.985），但比 `dsh` 慢 2.3 分钟，几乎是 K12 的两倍；$0.66（UTC 11:19–11:44，周一，不在高峰；442 次请求，输入 38.3M、命中 97.9%，输出 712k，思考约占 55%）。根任务第 2.4 分钟派出 grep、sort-uniq、cut-tr、wc-head-tail、join-paste-comm、nl-fold-expand 六个 worker，sed（`split: true`，作为 lead）与 tests（专家 tester）；tester 第 5.3 分钟派三个写测试的任务时额度不够（BUDGET_INSUFFICIENT），之后派出 spec-grep-sed、spec-sort-misc 两个。子任务在 9.1–16.8 分钟陆续结束，最晚的 cut-tr 到 19.3 分钟；根任务第 14.4 分钟给四个子任务发缺陷消息（tr 因 `build_set()` 缺 `fill_target` 不能用、`head -n -0` 应输出全部行、`paste -z` 没实现等），最后一个子任务结束后独自修补与检查 5.3 分钟。**cut-tr 在前台等了 9 分钟**：它的对比脚本第 6.5 分钟跑了 120 秒被转入后台，它在同一分钟停掉；第 8.9 分钟先试 `timeoutMs` 超过 600000 被拒，再在前台跑 `timeout 500 python3 diff_cut_tr.py 2>&1 | tail -60`，用了 557 秒，退出码 0，输出为空（管道里 Python 的缓冲输出随超时被杀而丢失），它的命令共 11.7 分钟。wc-head-tail 也在第 6.4 分钟把转入后台的命令当场停掉。**轮次申请**：nl-fold-expand、join-paste-comm、wc-head-tail 在第 7.6、8.8、11.5 分钟申请，都获批（join-paste-comm 最后用了 77 轮）；第 12.0 分钟 sort-uniq 到第 34 轮没有申请——这三次申请把根任务唤醒了三次，用满了连续唤醒上限（D12），D91 判定根任务叫不醒而静默跳过，sort-uniq 在第 40 轮被强制收尾，第一次交付还漏了 `changedFiles`。由此改了 D94（要求决定的请求总能唤醒、不计入上限）与 D95（任一子任务结束使唤醒计数复位；转入后台的命令写明接下来怎样）。失败的工具调用 3 次（nl-fold-expand 给工具多传 `limit`、cut-tr 的 `timeoutMs` 超上限、sort-uniq 交付漏 `changedFiles`），任务之间 10 条消息。没过的一个测试是 `grep -r -h apple d` 的顺序：我们先输出 `d/x.txt`，GNU grep 先输出子目录 `d/sub/y.txt`。
 
+**L11 pyregex，Mission 基线1**（`3a21869`，基线1 加 D94、D95；Cary 用 `--ui` 运行，标签 `b1-pyregex`）：18.9 分钟，0.971（208 个过了 202 个），`DONE`，与 pyregex 上的最高分持平（J 系列 30.7 分钟），比 `dsh` 快 1.1 分钟、多过 1 个，比 L2 多过 2 个、慢 2.2 分钟；$0.42（UTC 12:39–12:58，不在高峰；263 次请求，输入 22.6M、命中 97.9%，输出 462k）。6 个失败都是 bytes 模式（`R.compile(b'x')`、`R.search(b'\w+', …)`、`findall`/`sub`/`split` 的 bytes 用例）抛 `TypeError`：交付的 README 与设计文档写明"只支持 str 模式"，规格没有提 bytes；`dsh` 失败的 7 个里有这 6 个，L2 的 8 个也包含它们。根任务第 0.0 分钟 `list_files` 的 `depth` 写成非整数；第 2.2 分钟第一次 run_subagents 所有任务都漏了 writeScope 被整份退回（D96 由此而来），第 2.5 分钟派出 engine（`split: true`，作为 lead）、api、tests，engine 再拆成 parser、charutil、exec；第 10.6–11.5 分钟 api 报告两个引擎缺陷，engine 转给 exec 并打断它，消息都有效；docs 第 14.8 分钟才派出，到 17.7 分钟结束；根任务最后独自 1.3 分钟，最后一轮没有工具调用（NO_ACTION，D97 由此而来）。没有命令超过 59 秒、没有命令转入后台，也没有任务在一段里用到第 34 轮，D94、D95 都没有触发。
+
+**L12 pyawk，Mission 基线1**（`c24c72e`，基线1 加 D94、D95、D96；Cary 用 `--ui` 运行，标签 `b1-pyawk`）：16.7 分钟，0.986（141 个过了 139 个），`DONE`，与 `dsh` 同分、快 10.8 分钟，是 pyawk 上分数最高的一次；比 L8 多过 3 个、慢 3.9 分钟；$0.40（UTC 13:26–13:43，不在高峰；253 次请求，输入 22.8M、命中 97.7%，输出 432k）。没过的两个正是 `dsh`、L5、L8 都没过的：十六进制字符串 `"0x10"` 转数字、`tolower` 只转 ASCII；L8 新错的 `substr` 起始小于 1 与变量名后带空格的括号这次都对了。根任务第 2.9 分钟第一次派任务就成功（没有漏 writeScope，D96 生效），派出 frontend、runtime、library 三个 worker 与 tester（专家）；tester 第 6.7 分钟派三个写测试的阶段任务；第 9.8 分钟派 fix-calls，第 11.8 分钟派 docs（到 14.9 分钟）。runtime 第 10.7 分钟到第 34 轮申请轮次，约 6 秒获批，最后用了 59 轮（D91/D94 生效）。没有命令超过 30 秒、没有命令转入后台，D95 没有触发。失败的工具调用 4 次：根任务第 0.0 分钟 `list_files` 的 `depth` 非整数（与 L11 相同）、runtime 一次回复被截断、docs 两次 `edit_file` 漏 `newString`；根任务最后一轮没有工具调用（NO_ACTION，与 L7、L11、tu-k9 相同，D97 由此而来）。任务之间 9 条消息。
+
 ### Mission 基线1（2026-11-16 定）
 
 Cary 2026-11-16 定：以 L9（`dv-medseg-split`）那次运行的配置为 **Mission 基线1**，其余配置删除（Orchestration D93）。基线1 就是原来的替代线 `no-acceptance-lead-flag`：子任务没有验收条件，完成目标就交付；lead 是 worker 的参数 `split: true`，只有根任务能用；继承上下文总是开着；加上至 D92 为止的全部机制。从此运行不再需要任何环境变量开关，直接用 `mas-live.sh <题> <标签>`。
@@ -719,5 +725,7 @@ Cary 2026-11-16 定：以 L9（`dv-medseg-split`）那次运行的配置为 **Mi
 | pyawk | L8 | `5528602` | 12.8 | 0.965 | 27.5 / 0.986 |
 | survey-med-seg | L9 | `5528602` | 14.7 | 0.992 | 22.2 / 1.000 |
 | textutils | L10 | `c6071ac` | 24.6 | 0.993 | 22.3 / 0.970 |
+| pyregex | L11 | `3a21869` | 18.9 | 0.971 | 20.0 / 0.966 |
+| pyawk（重跑） | L12 | `c24c72e` | 16.7 | 0.986 | 27.5 / 0.986 |
 
-pyregex 还没有用基线1 运行。L10 之后又加了 D94、D95。
+开发集五道主体题都已用基线1 运行。L10 之后加了 D94、D95，L11 之后加了 D96，L12 之后加了 D97。
