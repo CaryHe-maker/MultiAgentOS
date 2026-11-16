@@ -116,7 +116,7 @@ describe.skipIf(python === undefined)('an unisolated command under Landlock (D79
     expect(result.output).toContain('devnull-ok');
   });
 
-  it('can be turned off, and then writes anywhere as before', async () => {
+  it('can be turned off, and then writes anywhere as before', () => {
     const runner = createSandboxRunner({
       emptyFile,
       cancelGraceMs: 400,

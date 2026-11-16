@@ -88,7 +88,9 @@ export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;
  * The comparison arm without criteria (Orchestration D81): `run_subagents` without `acceptance`,
  * so no agent sees the field at all. Read as `RunSubagentsArgs`, whose `acceptance` is optional.
  */
-const { acceptance: _criteria, ...leanTaskFields } = subagentTaskFields;
+const leanTaskFields = Object.fromEntries(
+  Object.entries(subagentTaskFields).filter(([key]) => key !== 'acceptance'),
+) as Omit<typeof subagentTaskFields, 'acceptance'>;
 export const RunSubagentsLeanArgsSchema = closed(
   {
     tasks: Type.Array(closed(leanTaskFields), { minItems: 1, maxItems: 12 }),

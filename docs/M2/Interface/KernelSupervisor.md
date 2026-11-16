@@ -57,7 +57,7 @@ approvalDigest = sha256(canonicalJson({ command, workdir, network, writableRoots
 
 ```ts
 // executor.CommandInput（Workflow 填 command、workdir?、timeoutMs?、network?；模型看到的 RunCommandArgs 相同）
-interface RunCommandArgs { command: string /* 1..8000 */; workdir?: string; timeoutMs?: number /* ≤ 600000 */; network?: boolean }
+interface RunCommandArgs { command: string /* 1..32000，Orchestration D85 */; workdir?: string; timeoutMs?: number /* ≤ 600000 */; network?: boolean }
 
 // kernel.execution.CommandExecutorInput（Core 补全后交给 Executor）
 interface CommandExecutorInput { command: string; timeoutMs: number }
@@ -103,7 +103,7 @@ interface SandboxRunner {
 只有 `executionKind = 'COMMAND'` 的 Executor 拿到真实的 `SandboxRunner`，其余得到一个拒绝一切的实现。
 
 **停止的升级**（M2Design 第 4.7 节）：`signal` 触发后，对 `--json-status-fd` 报告的 `child-pid` 的进程组发 SIGTERM；`cancelGraceMs` 后对外层进程组发 SIGKILL；再等 `killGraceMs`。仍无法确认已停止时，`run` 以特殊拒绝 `STOP_UNCONFIRMED` 结束，
-Supervisor 上报 `ExecutionFact(STOP_UNCONFIRMED)`；Core 收到后经 `reportSystemFault` 停机。
+Supervisor 上报 `ExecutionFact(STOP_UNCONFIRMED)`；Core 收到后经 `reportSystemFault` 停机。`UNISOLATED` 的命令没有 PID 命名空间，它是自己会话的首进程：两次信号都发给这个会话里的每个进程（从 `/proc` 按会话号找，僵尸进程除外）和它的进程组，所以换了进程组的子进程（例如 `timeout` 运行的程序）也一并停止（Orchestration D84）。
 
 **可用性探测**：Session 开始时以真实的 profile 运行一次 `/bin/true`（仓库根目录为工作目录）。结果 `SandboxProbe { available: boolean; backend; reason?: 'NO_BWRAP' | 'USERNS_DENIED' | 'PROFILE_FAILED'; hint?: string }` 写入 `SESSION_STARTED` 的 `sandbox`（`state`: `ISOLATED`、`UNISOLATED`、`UNAVAILABLE`，不可用时带 `reason`）与每个 Session 的审计（`SANDBOX_PROBED`）；模型在运行时上下文中看到同一状态。不可用且 `sandbox.unavailable = deny` 时，命令工具不提供给任何 Agent。
 

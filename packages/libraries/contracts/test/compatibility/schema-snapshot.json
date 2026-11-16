@@ -7297,7 +7297,7 @@
         "command": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 8000
+          "maxLength": 32000
         },
         "workdir": {
           "type": "string",
@@ -8450,7 +8450,7 @@
         "command": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 8000
+          "maxLength": 32000
         },
         "workdir": {
           "type": "string",
@@ -9408,7 +9408,7 @@
             "command": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 8000
+              "maxLength": 32000
             },
             "workdir": {
               "type": "string",
@@ -14111,7 +14111,7 @@
                         "command": {
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 8000
+                          "maxLength": 32000
                         },
                         "workdir": {
                           "type": "string",
@@ -16828,7 +16828,7 @@
                     "command": {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 8000
+                      "maxLength": 32000
                     },
                     "workdir": {
                       "type": "string",
@@ -23735,7 +23735,7 @@
         "command": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 8000
+          "maxLength": 32000
         },
         "timeoutMs": {
           "type": "integer",
@@ -29236,7 +29236,7 @@
                 "command": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 8000
+                  "maxLength": 32000
                 },
                 "timeoutMs": {
                   "type": "integer",
@@ -39857,7 +39857,7 @@
                 "command": {
                   "type": "string",
                   "minLength": 1,
-                  "maxLength": 8000
+                  "maxLength": 32000
                 },
                 "workdir": {
                   "type": "string",
@@ -41883,7 +41883,7 @@
             "command": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 8000
+              "maxLength": 32000
             },
             "workdir": {
               "type": "string",

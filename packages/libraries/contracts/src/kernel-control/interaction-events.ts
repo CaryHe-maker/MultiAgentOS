@@ -1,5 +1,6 @@
 import { COMPACTION_FAILURES, COMPACTION_TRIGGERS } from '../context/compaction.js';
 import { WrapUpReasonSchema } from '../context/history-entry.js';
+import { COMMAND_MAX_CHARS } from '../executor/command.js';
 import { Type, type Static } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
@@ -62,7 +63,7 @@ export const AuthorizationRequestSchema = Type.Union(
     closed({
       ...question,
       capability: Type.Literal('command.exec'),
-      command: text(8000),
+      command: text(COMMAND_MAX_CHARS),
       workdir: Type.String({ maxLength: 1024 }),
       writableRoots: Type.Array(text(1024), { minItems: 1 }),
       network: Type.Boolean(),

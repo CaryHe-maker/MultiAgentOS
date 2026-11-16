@@ -22,15 +22,13 @@ describe('the comparison arm without criteria (Orchestration D81)', () => {
     const snapshot = await source().load();
     const result = buildCatalogIndex(snapshot);
     expect(result.ok ? [] : result.issues).toEqual([]);
-    const ids = async (catalog: DefinitionCatalog) =>
+    const ids = (catalog: DefinitionCatalog) =>
       catalog
         .list()
         .map((each) => `${each.kind}:${each.id}@${each.version}`)
         .sort();
-    expect(await ids(await DefinitionCatalog.load(source()))).toEqual(
-      await ids(
-        await DefinitionCatalog.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)),
-      ),
+    expect(ids(await DefinitionCatalog.load(source()))).toEqual(
+      ids(await DefinitionCatalog.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY))),
     );
   });
 

@@ -27,6 +27,7 @@ import {
 import { PRLIMIT_PATH, buildBwrapArgs } from './bwrap-args.js';
 import { sanitizeGitConfig } from './git-config.js';
 import { landlockArgs, landlockWritable, probeLandlock } from './landlock.js';
+import { signalSession } from './session-processes.js';
 
 /**
  * Starts a command in `bwrap` and ends it (M2Design 4.7, 6.1; Kernel/Supervisor 5). It checks
@@ -213,6 +214,9 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
   const tmpSizeSupported = supportsTmpfsSize(bwrap);
   const landlock = deps.landlock === false ? undefined : (deps.landlock ?? probeLandlock());
 
+  /** The unisolated commands among the live ones: they are ended by their session (D84). */
+  const sessions = new WeakSet<ChildProcess>();
+
   const run: SandboxRunner['run'] = (options) =>
     new Promise<SandboxRunResult>((resolve, reject) => {
       const { scope, command, signal } = options;
@@ -293,6 +297,7 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
         return;
       }
       live.add(child);
+      if (unisolated) sessions.add(child);
 
       const chunks: Buffer[] = [];
       let size = 0;
@@ -339,6 +344,12 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
 
       const sendGroup = (pid: number | undefined, kill: NodeJS.Signals) => {
         if (pid === undefined) return;
+        // An unisolated command is stopped by its session: what moved to another group, as the
+        // program under `timeout` does, is in it too (D84). bwrap's namespace holds the rest.
+        if (unisolated) {
+          signalSession(pid, kill);
+          return;
+        }
         try {
           process.kill(-pid, kill);
         } catch {
@@ -478,12 +489,16 @@ export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunn
     run,
     killAll: () => {
       for (const child of live) {
-        if (child.pid !== undefined)
-          try {
-            process.kill(-child.pid, 'SIGKILL');
-          } catch {
-            child.kill('SIGKILL');
-          }
+        if (child.pid === undefined) continue;
+        if (sessions.has(child)) {
+          signalSession(child.pid, 'SIGKILL');
+          continue;
+        }
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
+        }
       }
     },
     active: () => live.size,
