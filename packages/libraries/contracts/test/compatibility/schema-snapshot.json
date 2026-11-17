@@ -50960,6 +50960,10 @@
             "maxDependencyDepth": {
               "type": "integer",
               "minimum": 0
+            },
+            "staggerWorkersMs": {
+              "type": "integer",
+              "minimum": 0
             }
           },
           "additionalProperties": false,
@@ -51030,6 +51034,10 @@
           "minimum": 1
         },
         "maxDependencyDepth": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "staggerWorkersMs": {
           "type": "integer",
           "minimum": 0
         }

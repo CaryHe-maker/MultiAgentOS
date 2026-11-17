@@ -630,3 +630,48 @@ describe('more subtasks for a run (D62)', () => {
     TIMEOUT,
   );
 });
+
+describe('stagger (experiment): workers of one call with one context start one after another', () => {
+  it(
+    'starts the second worker only once the first has its first model reply',
+    async () => {
+      const place = await roots({ 'a/.keep': '', 'b/.keep': '' });
+      const box: { provider?: ScriptedChat; sawB?: boolean } = {};
+      const isTask = (name: string) => (request: ScriptedChat['requests'][number]) =>
+        request.messages.some((message) =>
+          textOf(message).includes(`you are a different task: "${name}"`),
+        );
+      // The first worker's first reply is held a while: the second must not ask meanwhile.
+      const firstReply = (async () => {
+        await until(() => box.provider?.requests.some(isTask('a')) === true, 'the first worker');
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        box.sawB = box.provider?.requests.some(isTask('b')) === true;
+      })();
+      const provider = scriptedAgents(
+        {
+          main: [
+            spawn(
+              { name: 'a', agent: 'worker', goal: 'part a', writeScope: ['a'] },
+              { name: 'b', agent: 'worker', goal: 'part b', writeScope: ['b'] },
+            ),
+            waitForTasks(),
+            reply('both done'),
+          ],
+        },
+        {
+          a: [{ wait: firstReply, then: finishWorker('a done', []) }],
+          b: [finishWorker('b done', [])],
+        },
+      );
+      box.provider = provider;
+      const chat = await chatOn(place, provider);
+      await chat.say('do both parts');
+      expect(chat.printed('REPLY')).toContain('both done');
+      expect(box.sawB).toBe(false);
+      expect(provider.requests.findIndex(isTask('b'))).toBeGreaterThan(
+        provider.requests.findIndex(isTask('a')),
+      );
+    },
+    TIMEOUT,
+  );
+});

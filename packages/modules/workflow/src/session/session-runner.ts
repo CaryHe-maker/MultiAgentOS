@@ -413,10 +413,81 @@ export class SessionRunner {
   }
 
   async #append(records: readonly NewLogRecord[]): Promise<void> {
-    for (const record of records) this.#records.push(await this.#deps.store.append(record));
+    for (const record of records) {
+      const stored = await this.#deps.store.append(record);
+      this.#records.push(stored);
+      if (stored.type === 'MODEL_TURN' && this.#held.size > 0)
+        this.#advanceLater(stored.workflowRunId, 0);
+    }
   }
 
-  async handleSessionEvent(envelope: WorkflowSessionEvent): Promise<void> {
+  /**
+   * Experiment (stagger): the workers that wait for the first one of their call, by node, with the
+   * first one's node and the time they start at the latest.
+   */
+  readonly #held = new Map<string, { readonly leader: string; readonly until: number }>();
+
+  #now(): number {
+    return (this.#deps.now ?? (() => new Date()))().getTime();
+  }
+
+  /** An advance after the event in hand, in the same line as the events. */
+  #advanceLater(workflowRunId: string, ms: number): void {
+    const timer = setTimeout(() => {
+      void this.#serially(async () => {
+        if (this.#held.size > 0) await this.#advance(workflowRunId);
+      });
+    }, ms);
+    timer.unref();
+  }
+
+  /** Whether a worker still waits: until the first one has a model reply, has ended, or time is up. */
+  #isHeld(nodeId: string): boolean {
+    const hold = this.#held.get(nodeId);
+    if (hold === undefined) return false;
+    const leaderRuns = new Set(
+      this.#records.flatMap((record) =>
+        record.type === 'AGENT_RUN_REGISTERED' && record.nodeId === hold.leader
+          ? [record.agentRunId]
+          : [],
+      ),
+    );
+    const go =
+      this.#now() >= hold.until ||
+      this.#records.some(
+        (record) =>
+          (record.type === 'MODEL_TURN' && leaderRuns.has(record.agentRunId)) ||
+          (record.type === 'NODE_ENDED' && record.nodeId === hold.leader),
+      );
+    if (go) this.#held.delete(nodeId);
+    return !go;
+  }
+
+  /**
+   * Every event, and the advance a stagger timer asks for, runs one after the other: Fabric already
+   * hands events over in order, and the timer joins the same line.
+   */
+  #line: Promise<unknown> = Promise.resolve();
+
+  #serially(work: () => Promise<void>): Promise<void> {
+    const next = this.#line.then(work, work);
+    this.#line = next.catch(() => undefined);
+    return next;
+  }
+
+  handleSessionEvent(envelope: WorkflowSessionEvent): Promise<void> {
+    return this.#serially(() => this.#handleSessionEvent(envelope));
+  }
+
+  handleSystemEvent(envelope: WorkflowSystemEvent): Promise<void> {
+    return this.#serially(() => this.#handleSystemEvent(envelope));
+  }
+
+  handleRunEvent(envelope: WorkflowInboxEvent): Promise<void> {
+    return this.#serially(() => this.#handleRunEvent(envelope));
+  }
+
+  async #handleSessionEvent(envelope: WorkflowSessionEvent): Promise<void> {
     const { sessionId, event } = envelope;
     const reply = (result: Parameters<WorkflowGatewayPort['reportSessionCommand']>[0]['result']) =>
       this.#deps.gateway.reportSessionCommand(
@@ -514,9 +585,10 @@ export class SessionRunner {
     this.#interrupted = false;
     this.#runFailure = undefined;
     this.#released.clear();
+    this.#held.clear();
   }
 
-  async handleSystemEvent(envelope: WorkflowSystemEvent): Promise<void> {
+  async #handleSystemEvent(envelope: WorkflowSystemEvent): Promise<void> {
     const { event } = envelope;
     if (event.type === 'SessionListQuery') {
       await this.#deps.gateway.reportSessionList(
@@ -545,7 +617,7 @@ export class SessionRunner {
     );
   }
 
-  async handleRunEvent(envelope: WorkflowInboxEvent): Promise<void> {
+  async #handleRunEvent(envelope: WorkflowInboxEvent): Promise<void> {
     const { event, workflowRunId } = envelope;
     switch (event.type) {
       case 'RunStart':
@@ -1505,6 +1577,7 @@ export class SessionRunner {
     for (const node of ready) {
       const record = projected.nodes.get(node.nodeId);
       if (record === undefined) continue;
+      if (this.#isHeld(node.nodeId)) continue;
       await this.#append([
         {
           type: 'NODE_STARTED',
@@ -3185,6 +3258,7 @@ export class SessionRunner {
       }),
     );
     await this.#extend(workflowRunId, revisionNumber, 'SPAWN', revision);
+    this.#staggerWorkers(workflowRunId, tasks, inherit, revision.nodes);
     // The call comes back at once (D14): the tasks run while the caller goes on or sleeps.
     const current = this.#agents.get(active.state.agentRunId) ?? active;
     await this.#apply(
@@ -3209,6 +3283,42 @@ export class SessionRunner {
       ),
     );
     await this.#advance(workflowRunId);
+  }
+
+  /**
+   * Experiment (stagger): the workers of one call that run as worker with the caller's context and
+   * wait for no other task send the same prefix (worker prompt, worker tools, the caller's view).
+   * One starts at once; the others wait for its first model reply, at most `staggerWorkersMs`, so
+   * their first request finds that prefix in the provider's cache. A worker lent no commands has
+   * other tools, so it is a group of its own. Leads, explorers, specialists and phase tasks start
+   * at once.
+   */
+  #staggerWorkers(
+    workflowRunId: string,
+    tasks: SpawnPlan['tasks'],
+    inherit: ReadonlyMap<string, { readonly as: string; readonly runAs: string }>,
+    nodes: readonly GraphNodeRecord[],
+  ): void {
+    const ms = this.#deps.config.staggerWorkersMs ?? 0;
+    if (ms <= 0) return;
+    const groups = new Map<boolean, string[]>();
+    for (const task of tasks) {
+      if (inherit.get(task.name)?.runAs !== 'worker' || (task.dependsOn ?? []).length > 0) continue;
+      const nodeId = nodes.find((node) => node.name === task.name)?.nodeId;
+      if (nodeId === undefined) continue;
+      const commands = task.commands !== false;
+      groups.set(commands, [...(groups.get(commands) ?? []), nodeId]);
+    }
+    const until = this.#now() + ms;
+    let waits = false;
+    for (const [leader, ...rest] of groups.values()) {
+      if (leader === undefined) continue;
+      for (const nodeId of rest) {
+        this.#held.set(nodeId, { leader, until });
+        waits = true;
+      }
+    }
+    if (waits) this.#advanceLater(workflowRunId, ms + 50);
   }
 
   /** Where the caller may write: a task its own scope, the root what its Agent may (3.6). */

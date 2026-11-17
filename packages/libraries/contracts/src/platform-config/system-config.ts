@@ -202,6 +202,12 @@ export const WorkflowConfigSchema = closed(
     /** `run_subagents` (M2Design 3.6). */
     maxSubagentsPerCall: count(1),
     maxDependencyDepth: count(),
+    /**
+     * Experiment (stagger): workers of one run_subagents call that start with the same context
+     * start one first; the others wait for its first model reply, at most this many milliseconds,
+     * so they find its prefix in the provider's cache. 0 or absent: all start at once.
+     */
+    staggerWorkersMs: Type.Optional(count()),
   },
   'platform.config.WorkflowConfig.v1',
 );

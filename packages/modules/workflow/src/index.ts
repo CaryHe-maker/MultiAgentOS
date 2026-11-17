@@ -45,6 +45,8 @@ export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
   maxNestedInstructions: 8,
   maxSubagentsPerCall: 8,
   maxDependencyDepth: 2,
+  // Experiment branch exp/stagger-1.1: on, at most 5 seconds.
+  staggerWorkersMs: 5000,
 });
 
 export interface WorkflowDeps {
