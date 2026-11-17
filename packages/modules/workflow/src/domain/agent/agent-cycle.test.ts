@@ -189,6 +189,20 @@ describe('startup', () => {
     expect(unitId(start())).toEqual(['context-assemble']);
   });
 
+  it('assembles the context again, once, when the pack of a model call cannot be read', () => {
+    const waiting = atModel();
+    const gone = replied(waiting, [], { reject: 'ARTIFACT_EXPIRED' });
+    expect(types(gone)).toContain('MODEL_ATTEMPT_FAILED');
+    expect(unitId(gone)).toEqual(['context-assemble']);
+    expect(gone.state.round).toBe(waiting.state.round);
+    // Twice in a row: the Unit's failure as before, not a loop.
+    const again = replied(reassemble(gone), [], { reject: 'ARTIFACT_EXPIRED' });
+    expect(unitId(again)).not.toEqual(['context-assemble']);
+    // A model call that succeeds in between lets the next one be rebuilt again.
+    const fine = replied(reassemble(gone), [call('list_files', {})]);
+    expect(fine.state.packRebuilt).toBe(false);
+  });
+
   it('writes the log before it submits, with IDs derived from the path', () => {
     const started = start();
     expect(types(started)).toEqual(['UNIT_SUBMITTED']);

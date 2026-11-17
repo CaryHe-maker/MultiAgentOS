@@ -175,6 +175,11 @@ export interface AgentState {
   readonly replyRefusals: number;
   /** How many times in a row the model was refused for the size of the context (Core 6a). */
   readonly overflows: number;
+  /**
+   * The context pack of the last model call could not be read, and the context was assembled
+   * again for it; a second such refusal in a row is the Unit's failure as usual.
+   */
+  readonly packRebuilt: boolean;
   readonly roundHadOk: boolean;
   /** A call of this round failed and was counted: the other calls of a batch do not count again. */
   readonly roundErrored: boolean;
@@ -688,6 +693,7 @@ export function startAgent(
     regenerations: 0,
     replyRefusals: 0,
     overflows: 0,
+    packRebuilt: false,
     roundHadOk: false,
     roundErrored: false,
     roundMixed: false,
@@ -763,6 +769,10 @@ function failed(
       ? degrade({ ...state, overflows }, 'CONTEXT_LIMIT', records)
       : nextRound(wrapUp({ ...state, overflows: 0 }, 'CONTEXT_LIMIT'), context, records);
   }
+  // The pack the call was to read is gone: it is assembled again, once, from the log, which
+  // still holds everything it was made of. No round is spent; it is not the model's doing.
+  if (code === 'ARTIFACT_EXPIRED' && pending.role === 'MODEL' && !state.packRebuilt)
+    return reassemble({ ...state, packRebuilt: true }, context, records);
   if (code === 'LIMIT_EXCEEDED' && (pending.role === 'CONTEXT' || pending.role === 'MODEL'))
     return state.final
       ? degrade(state, 'CONTEXT_LIMIT', records)
@@ -1691,7 +1701,7 @@ export function receiveAgentReport(
         records,
       );
     case 'MODEL':
-      return handleModel({ ...state, overflows: 0 }, report, context, config);
+      return handleModel({ ...state, overflows: 0, packRebuilt: false }, report, context, config);
     case 'CLOSING':
       return ended(
         state,

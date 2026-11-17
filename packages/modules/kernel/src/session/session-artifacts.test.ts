@@ -100,6 +100,21 @@ describe('ownership', () => {
     expect(await artifacts.read(ref)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
   });
 
+  it('registers an artifact before its body is written, so a sweep in between keeps it', async () => {
+    const { artifacts, lines, bodies } = setup();
+    let linesWhenWritten = -1;
+    // The body lands after the owner line: at that moment the index already names it.
+    const original = bodies.set.bind(bodies);
+    bodies.set = (key, value) => {
+      linesWhenWritten = lines.length;
+      return original(key, value);
+    };
+    const ref = await artifacts.put('a context pack', 'application/json', 'ONCE');
+    expect(linesWhenWritten).toBe(1);
+    expect(lines[0]?.artifactId).toBe(ref.artifactId);
+    expect((await artifacts.read(ref)).ok).toBe(true);
+  });
+
   it('treats a missing body as expired', async () => {
     const { artifacts, bodies } = setup();
     const ref = await artifacts.put('a', 'text/plain', 'SESSION');
