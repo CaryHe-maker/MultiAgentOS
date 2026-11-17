@@ -754,40 +754,4 @@ describe('messages and waking (Orchestration 4, 5)', () => {
     ]);
     expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
   });
-
-  it('tells a task it is the last one running while its sibling only sleeps (D72, D107)', async () => {
-    const lastRunning = (request: SubmitUnitRequest) =>
-      (request.input as { status?: { lastRunning?: boolean } }).status?.lastRunning === true;
-    const { kernel, runner, assembled } = setup({
-      chat: [
-        model({
-          toolName: 'run_subagents',
-          args: {
-            tasks: [
-              { name: 'waiter', agent: 'explorer', goal: 'wait for the go' },
-              { name: 'doer', agent: 'explorer', goal: 'do the part' },
-            ],
-          },
-        }),
-        model({ toolName: 'sleep', args: { until: [{ kind: 'children', mode: 'any' }] } }),
-        send('waiter', 'go'),
-        sleepForChildren(),
-        model({ toolName: 'reply', args: { text: 'done' } }),
-      ],
-      explorer: [
-        sleepOn({ kind: 'message' }),
-        send('parent', 'half way'),
-        model({ toolName: 'finish_subagent', args: { summary: 'part done' } }),
-        model({ toolName: 'finish_subagent', args: { summary: 'went' } }),
-      ],
-    });
-    await begin(kernel);
-    const doer = ofType(runner.records, 'AGENT_RUN_REGISTERED').filter(
-      (record) => record.agentRef.id === 'explorer',
-    )[1]?.agentRunId;
-    const ofDoer = assembled.filter((request) => request.agentRunId === doer);
-    // Its first call sees the waiter starting; its next one sees it asleep, with nothing at work.
-    expect(ofDoer.map(lastRunning)).toEqual([false, true]);
-    expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
-  });
 });

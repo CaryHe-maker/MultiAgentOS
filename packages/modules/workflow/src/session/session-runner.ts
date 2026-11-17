@@ -1789,18 +1789,8 @@ export class SessionRunner {
             : [...missions.values()].filter(
                 (mission) => mission.parentId === parentId && mission.missionId !== scope.missionId,
               );
-        // A sibling asleep, with no job of its own and nothing below it at work, only waits,
-        // often for this task (D107): it holds up nobody, so it does not count.
-        const stateOf = missionStateOf(this.#records);
-        const working = (mission: MissionView): boolean =>
-          mission.ended === undefined &&
-          (stateOf(mission) !== 'asleep' ||
-            (missions !== undefined &&
-              (jobsHeldBy(this.#records, mission.missionId, missions).some((job) => job.running) ||
-                [...missions.values()].some(
-                  (each) => each.parentId === mission.missionId && working(each),
-                ))));
-        const lastRunning = siblings.length > 0 && !siblings.some(working);
+        const lastRunning =
+          siblings.length > 0 && siblings.every((sibling) => sibling.ended !== undefined);
         return {
           final,
           ...(withdrawn.length === 0 ? {} : { withdrawnTools: [...new Set(withdrawn)] }),

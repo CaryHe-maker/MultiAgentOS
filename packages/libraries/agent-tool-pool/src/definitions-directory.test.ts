@@ -144,7 +144,7 @@ describe('shipped definitions', () => {
     expect(gaps).toEqual([]);
   });
 
-  it('give chat and lead the handbook of ways to split work (Phase2Plan 2)', async () => {
+  it('give main and lead the handbook of ways to split work (Phase2Plan 2)', async () => {
     const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
@@ -155,52 +155,45 @@ describe('shipped definitions', () => {
     };
     // A short list of ways, as dsh and other agents keep it (D68): the system keeps the rules.
     for (const way of ['Fan out and join', 'Explore, then build', 'Alone']) {
-      expect(promptOf('chat-system')).toContain(`- ${way}:`);
+      expect(promptOf('main-system')).toContain(`- ${way}:`);
       expect(promptOf('lead-system')).toContain(`- ${way}:`);
     }
     expect(promptOf('lead-system')).toContain('- Interface first:');
     // Prompts stay short (D68): the check is the project's own, at the strength the task needs.
-    for (const id of [
-      'chat-system',
-      'main-system',
-      'lead-system',
-      'worker-system',
-      'explorer-system',
-    ])
+    for (const id of ['main-system', 'lead-system', 'worker-system', 'explorer-system'])
       expect(promptOf(id).length).toBeLessThan(4500);
     expect(promptOf('worker-system')).toContain('do not build extra test harnesses');
-    // Only the root starts a lead, as a worker with split (D88, D93): the way is the root's alone.
-    expect(promptOf('chat-system')).toContain('- Workers with split: true for large parts:');
-    // The root of a long task has its own prompt and learns splitting once, from its template
-    // (D106, D108): no Turn-chat wording, and no handbook beside the template's table.
-    expect(promptOf('main-system')).toContain('You are the root of a long task');
-    expect(promptOf('main-system')).not.toContain('run_subagents');
-    expect(promptOf('main-system')).not.toContain('End with exactly one call of reply');
+    // Only the root starts a lead, as a worker with split (D88, D93): the way is main's alone.
+    expect(promptOf('main-system')).toContain('- Workers with split: true for large parts:');
     expect(promptOf('lead-system')).not.toContain('split: true');
     const mission = catalog.latest('TEMPLATE', 'mission');
     expect(JSON.stringify(mission?.nodes)).toContain('table of decisions');
-    // The root of a long task decides by a table and reads the shapes of its calls, not solved
+    // The root of a long task decides by a table and reads a manual of the system, not solved
     // tasks (Orchestration D37, 2026-11-14): how each tool is called, what comes back, what next.
     const guide = mission?.nodes.find((node) => node.kind === 'AGENT' && node.guide !== undefined);
     const text = guide?.kind === 'AGENT' ? (guide.guide ?? '') : '';
     expect(text).toContain('Decisions, by what you see.');
-    for (const entry of ['run_subagents {plan:', 'continues: give a finished part back'])
+    for (const entry of [
+      'run_subagents: parts to build',
+      'continues: give a finished part back',
+      'sleep: wait without spending anything.',
+      'send_message: talk to your subtasks',
+      'Background commands:',
+      'stop_subagents {names:',
+    ])
       expect(text).toContain(entry);
-    // How a tool is called is said once, in its own description (D108).
-    for (const entry of ['sleep:', 'send_message:', 'Background commands:', 'stop_subagents'])
-      expect(text).not.toContain(entry);
-    // Every specialist is in the guide with what to write for it (Orchestration D39), and a
+    // Every specialist is in the manual with what to write for it (Orchestration D39), and a
     // general shape of a large task and a counter-example where splitting does not pay are there.
     for (const specialist of ['fixer:', 'reviewer:', 'tester:', 'integrator:', 'researcher:'])
-      expect(text).toContain(`\n  ${specialist} `);
+      expect(text).toContain(`\n    ${specialist} `);
     expect(text).not.toContain('sub_mission');
     expect(text).toContain('Counter-example, do not split:');
     // The goal tells the root what the system is for and how it is judged.
     expect(JSON.stringify(mission?.nodes)).toContain('judged by how soon the goal is delivered');
-    // The guide is short and asks for no more checking than the project's own (D68, D108).
+    // The manual is short and asks for no more checking than the project's own (D68).
     expect(text.length).toBeLessThan(5000);
     expect(text).toContain('do not run them again');
-    // The guide carries placeholders, not the content of solved tasks.
+    // The manual carries placeholders, not the content of solved tasks.
     for (const word of ['Whole task', 'toolchain', 'latexmk', 'HH_', 'run.sh', 'flight'])
       expect(text).not.toContain(word);
     // Every pre-orchestrated template carries several examples of its speciality for its root, the
