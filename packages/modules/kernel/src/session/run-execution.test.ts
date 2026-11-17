@@ -136,6 +136,7 @@ function setup(
   const ended: string[] = [];
   const faults: AttemptFault[] = [];
   const retries: RetryingActivity[] = [];
+  const audits: object[] = [];
   const releasedBytes: number[] = [];
   const cancelled: number[] = [];
   const cancelledExecutions: { executionId: string; reason: string }[] = [];
@@ -178,6 +179,7 @@ function setup(
           afterAssemble: options.compaction,
         }),
     retrying: (activity) => retries.push(activity),
+    audit: (entry) => audits.push(entry),
     released: (bytes) => releasedBytes.push(bytes),
     readRepositoryFile: (path) => Promise.resolve(path === 'AGENTS.md' ? 'be careful' : undefined),
     enqueue: (work) => {
@@ -290,6 +292,7 @@ function setup(
     ended,
     faults,
     retries,
+    audits,
     releasedBytes,
     cancelled,
     cancelledExecutions,
@@ -545,6 +548,40 @@ describe('technical retries', () => {
     await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope });
     return contextPackRef;
   }
+
+  it('puts every failed model call on the audit with what the error said (D109)', async () => {
+    const run = setup();
+    await atModel(run);
+    await run.execution.handleFact(
+      run.factFor(run.last(), failure({ detail: 'TypeError fetch failed <- ECONNREFUSED' })),
+    );
+    await run.execution.handleFact(
+      run.factFor(
+        run.last(),
+        failure({
+          reasonCode: 'PROVIDER_ERROR',
+          retryable: false,
+          requestState: 'UNKNOWN',
+          detail: 'no data from the provider for 60 s',
+        }),
+      ),
+    );
+    // The retried attempt and the last one are both on record, each with its own cause.
+    expect(
+      run.audits.filter((entry) => (entry as { type?: string }).type === 'MODEL_FAILED'),
+    ).toMatchObject([
+      {
+        reasonCode: 'PROVIDER_UNREACHABLE',
+        retryable: true,
+        detail: 'TypeError fetch failed <- ECONNREFUSED',
+      },
+      {
+        reasonCode: 'PROVIDER_ERROR',
+        retryable: false,
+        detail: 'no data from the provider for 60 s',
+      },
+    ]);
+  });
 
   it('waits for the longer of the back-off and Retry-After, and says so', async () => {
     const run = setup();

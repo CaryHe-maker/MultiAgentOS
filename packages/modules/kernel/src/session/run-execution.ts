@@ -551,6 +551,7 @@ export class RunExecution {
       return;
     if (await this.#createdProtected(attempt, fact)) return;
     this.#auditWeb(attempt, fact);
+    this.#auditModelFailure(attempt, fact);
     if (fact.executionKind === 'MODEL')
       this.#deps.modelAnswered?.({
         agentRunId: attempt.spec.agentRunId,
@@ -692,6 +693,24 @@ export class RunExecution {
       ...(fact.executionKind === 'WEB_SEARCH'
         ? { queries: input?.['queries'] }
         : { url: input?.['url'] }),
+    });
+  }
+
+  /**
+   * A model call that failed goes on record with what the provider or the HTTP client said
+   * (D109), retried or not: the fact itself is not kept, so without this line the cause of a
+   * stall or a provider error is lost when the run ends. The detail never holds the key.
+   */
+  #auditModelFailure(attempt: Attempt, fact: ExecutionFact): void {
+    if (fact.executionKind !== 'MODEL' || fact.outcome !== 'FAILED') return;
+    this.#deps.audit?.({
+      type: 'MODEL_FAILED',
+      unitAttemptId: attempt.unitAttemptId,
+      requestId: attempt.spec.requestId,
+      agentRunId: attempt.spec.agentRunId,
+      reasonCode: fact.reasonCode,
+      retryable: fact.retryable,
+      ...(fact.detail === undefined ? {} : { detail: fact.detail }),
     });
   }
 
