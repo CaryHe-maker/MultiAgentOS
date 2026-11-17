@@ -983,3 +983,17 @@ DeepSeek 在领头请求预填充完成后（这个规模约 1–2 秒）就写�
 - 不过的 2 项：`test_049_string_to_number`（"字符串转数字"，pyawk 每次运行都错）与 `test_081_tolower_numbers`，都是各部分共用的数字与字符串转换语义，属于共同契约要解决的一类。
 - 费用组成：命中 $0.061、未命中 $0.040、输出 $0.236（dsh：$0.072、$0.008、$0.127）。
 - 基线1.2 至此在三道题上都不低于 dsh 且更快：pyawk 同分快 49%，minipy 高 0.023 快 36%，textutils 高 0.015 快 20%；费用是 dsh 的 1.6–2.3 倍。
+
+### 最终集大任务第二次运行：Mission 基线1.2（2026-11-18 定，Orchestration D111）
+
+Cary 2026-11-18 定：基线1.2 冻结为 Mission 模式的最终版本，在最终集的 5 道大任务上各跑一次；这是最终集允许的两次中的第二次、也是最后一次。不看单题细节调参，只看合计。
+
+条件与 `dsh` 的对照运行、与第一次运行完全一致：
+- 题目内容：`scripts/taskset/phase3-freeze.mjs --verify` 核对，全部与封存时的哈希一致（2026-11-17 UTC 17:12）。
+- 联网与否、时间上限、资源都取自各题 `task.toml`：pylua、sqlengine、pyarchive 离线，survey-av-fusion、minidb 联网；`[agent] timeout_sec` 9000 秒；2 个 CPU、4096 MB。启动都经同一个 `scripts/taskset/agentrun.mjs`，评分是同一个 `tests/test.sh`。离线题的模型请求经用量代理（记录每次请求的命中与未命中），联网题由 mas 自己计数。
+- 流程：`scripts/taskset/phase3-mas.sh`（与第一次一样不带界面），一次一道，顺序与第一次相同（pylua、survey-av-fusion、sqlengine、minidb、pyarchive），标签 `f2-<题>`；不在 DeepSeek 高峰时段开始任何一道（工作日 UTC 01:00–04:00、06:00–10:00）。
+- 版本：mas 取 `feature/PLphase3/stagger` 的头，代码与标签 `mission-baseline-1.2` 相同。
+- 余额：开始前 $6.21（2026-11-17 UTC 17:11）。
+- 环境检查（开始前）：5 个镜像都在，内网 `benchint` 与 `benchnet` 都在，用量代理由 `agentrun.mjs` 按需启动；WSL 内存可用 6.3 GB、磁盘 E: 剩 41 GB；以前没有 `f2-` 的运行记号。离线路径在同一提交上刚跑过（b12-pyawk，正常结束）；联网路径用一道非最终集的小题 `tb2/fix-git`（标签 `f2check-fix-git`）实跑确认。
+- 综述题的评分要查 arXiv，遇到限流时稍后单独重新评分，不重跑。
+- 联网路径实跑结果：`f2check-fix-git` 得分 1、0.5 分钟、$0.004、`DONE`（UTC 17:13–17:14）；运行在脱离终端的 tmux 会话里进行，启动它的 WSL 调用结束后照常跑完。
