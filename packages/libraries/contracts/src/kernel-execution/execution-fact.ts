@@ -210,6 +210,8 @@ export const ExecutionFactSchema = Type.Union(
       retryable: Type.Boolean(),
       /** From Retry-After; the wait is the larger of this and the back-off (Execution 4a). */
       retryAfterMs: Type.Optional(count()),
+      /** What the provider or the HTTP client said, as it said it, without the key (D109). */
+      detail: Type.Optional(text(1000)),
     }),
     modelTerminated,
     modelUnconfirmed,

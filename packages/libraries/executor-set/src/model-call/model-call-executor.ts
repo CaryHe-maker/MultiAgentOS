@@ -36,6 +36,61 @@ export interface ModelCallExecutorOptions {
    * cache from the first changed message on (docs/M2/experiments.md, E13).
    */
   readonly replayKeep?: number;
+  /** How long a streamed call may go without a byte from the provider (D109); tests shorten it. */
+  readonly streamIdleMs?: number;
+}
+
+/**
+ * A streamed call that gets no byte from the provider for this long has stalled (D109): DeepSeek
+ * sends a piece every few seconds while it works, so the call is ended as failed and asked again,
+ * instead of waiting for the HTTP client's own limit of 300 seconds (experiments m3-textutils).
+ */
+export const STREAM_IDLE_MS = 60_000;
+
+/** A timer that aborts when it is not touched for `ms`; it starts at once. */
+function idleWatch(ms: number): {
+  readonly signal: AbortSignal;
+  readonly touch: () => void;
+  readonly stop: () => void;
+} {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const touch = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      controller.abort();
+    }, ms);
+  };
+  touch();
+  return { signal: controller.signal, touch, stop: () => clearTimeout(timer) };
+}
+
+/**
+ * What an error said, for the fact of the call (D109): the name, code, status, message and the
+ * start of the provider's answer of every error in the chain. The key never appears in it.
+ */
+export function failureDetailOf(error: unknown, secret: string): string | undefined {
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; typeof current === 'object' && current !== null && depth < 5; depth += 1) {
+    const { name, code, statusCode, message, responseBody, cause } = current as {
+      name?: unknown;
+      code?: unknown;
+      statusCode?: unknown;
+      message?: unknown;
+      responseBody?: unknown;
+      cause?: unknown;
+    };
+    const said = [name, code, statusCode, message]
+      .filter((each) => typeof each === 'string' || typeof each === 'number')
+      .map(String);
+    if (typeof responseBody === 'string' && responseBody.length > 0)
+      said.push(responseBody.slice(0, 300));
+    if (said.length > 0) parts.push(said.join(' '));
+    current = cause;
+  }
+  const detail = parts.join(' <- ').split(secret).join('[key]').slice(0, 1000);
+  return detail.length === 0 ? undefined : detail;
 }
 
 /** Seconds or an HTTP date; anything else means no hint (ExecutorSet 7). */
@@ -157,6 +212,7 @@ const replayOf = (pack: AssembleContextPack, keep?: number): readonly (string | 
  */
 export function createModelCallExecutor(options: ModelCallExecutorOptions = {}): Executor<'MODEL'> {
   const inner = options.fetch ?? globalThis.fetch;
+  const idleMs = options.streamIdleMs ?? STREAM_IDLE_MS;
   // Experiments (docs/M2/experiments.md) set the window through MAS_REPLAY_KEEP.
   const fromEnv = Number(process.env['MAS_REPLAY_KEEP'] ?? '');
   const keep =
@@ -168,7 +224,7 @@ export function createModelCallExecutor(options: ModelCallExecutorOptions = {}):
     executionKind: 'MODEL',
     execute: async (input, environment) => {
       try {
-        return await callModel(input, environment, inner, keep);
+        return await callModel(input, environment, inner, keep, idleMs);
       } catch {
         return failureOf('INTERNAL', false, 'UNKNOWN');
       }
@@ -181,6 +237,7 @@ async function callModel(
   environment: ExecutorEnvironment,
   inner: typeof globalThis.fetch,
   replayKeep: number | undefined,
+  idleMs: number,
 ): Promise<ExecutorOutcome> {
   const base = environment.scope;
   if (base.kind !== 'MODEL') return violation('SCOPE_MISSING');
@@ -220,7 +277,17 @@ async function callModel(
   const answerTools = new Set(
     specs.filter((spec) => spec.answer === true).map((spec) => spec.name),
   );
-  const tap = environment.progress === undefined ? undefined : streamTap(tell, answerTools);
+  // A streamed call is watched for a stall (D109): every byte off the network touches the timer.
+  const streaming = environment.progress !== undefined;
+  const idle = streaming ? idleWatch(idleMs) : undefined;
+  const watcher = streaming ? streamTap(tell, answerTools) : undefined;
+  const tap =
+    watcher === undefined
+      ? undefined
+      : (bytes: Uint8Array): void => {
+          idle?.touch();
+          watcher(bytes);
+        };
   const model = createLanguageModel(
     scope,
     apiKey,
@@ -242,7 +309,8 @@ async function callModel(
               ? { type: 'tool' as const, toolName: end }
               : { type: 'auto' as const },
         }),
-    abortSignal: environment.signal,
+    abortSignal:
+      idle === undefined ? environment.signal : AbortSignal.any([environment.signal, idle.signal]),
   };
   try {
     // With a progress callback the request streams, so the person watching sees the thinking as
@@ -252,7 +320,19 @@ async function callModel(
         ? await model.doGenerate(callOptions)
         : await generateByStreaming(model, callOptions);
   } catch (error) {
-    const outcome = classifyCall(error, progress, environment.signal);
+    // A stall is the provider's failure, not a stop: the Workflow asks again, as after any
+    // PROVIDER_ERROR, and the provider may have processed the request (UNKNOWN).
+    if (idle?.signal.aborted === true && !environment.signal.aborted)
+      return {
+        ...failureOf('PROVIDER_ERROR', false, 'UNKNOWN'),
+        detail: `no data from the provider for ${String(idleMs / 1000)} s`,
+      };
+    const classified = classifyCall(error, progress, environment.signal);
+    const detail = failureDetailOf(error, apiKey);
+    const outcome =
+      classified.outcome === 'FAILED' && detail !== undefined
+        ? { ...classified, detail }
+        : classified;
     if (
       outcome.outcome === 'FAILED' &&
       outcome.retryable &&
@@ -264,6 +344,7 @@ async function callModel(
     }
     return outcome;
   } finally {
+    idle?.stop();
     if (environment.progress !== undefined) tell({ kind: 'END' });
   }
   return completedCall(result, base, environment, input);
@@ -281,7 +362,7 @@ export function failureOf(
   retryable: boolean,
   requestState: RequestState,
   usage?: TokenUsage,
-): ExecutorOutcome {
+): Extract<ExecutorOutcome, { outcome: 'FAILED' }> {
   return {
     outcome: 'FAILED',
     reasonCode,

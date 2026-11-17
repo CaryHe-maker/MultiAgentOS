@@ -10,7 +10,7 @@ import { APICallError } from 'ai';
 import { describe, expect, it } from 'vitest';
 import { createAssembleExecutor } from '../context-assemble/assemble-executor.js';
 import { MODEL_SCOPE, chatCompletion, environmentFor } from '../test-support/environments.js';
-import { classifyCall, createModelCallExecutor } from './model-call-executor.js';
+import { classifyCall, createModelCallExecutor, failureDetailOf } from './model-call-executor.js';
 
 const TOOLS = [
   {
@@ -269,7 +269,11 @@ describe('MODEL (ExecutorSet 7)', () => {
     ],
   ] as const)('%s → %s, %s', async (_name, respond, reasonCode, requestState, retryable) => {
     const { outcome, recorded } = await call(respond);
-    expect(outcome).toEqual({ outcome: 'FAILED', reasonCode, retryable, requestState });
+    // What the error said comes with it (D109), and is never the key.
+    const { detail, ...classified } = outcome as { detail?: string };
+    expect(classified).toEqual({ outcome: 'FAILED', reasonCode, retryable, requestState });
+    expect(detail?.length).toBeGreaterThan(0);
+    expect(detail).not.toContain('sk-');
     expect(recorded.calls).toBe(1); // the SDK never retries
   });
 
@@ -583,6 +587,116 @@ describe('MODEL thinking reaches the watcher before the answer does', () => {
       result: { reasoning: { text: 'thinking hard still thinking' } },
     });
     expect(events.at(-1)).toBe('END');
+  });
+});
+
+describe('MODEL ends a stalled stream and keeps what the error said (D109)', () => {
+  const piece = (delta: object) =>
+    new TextEncoder().encode(
+      `data: ${JSON.stringify({
+        id: 'x',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'deepseek-flash',
+        choices: [{ index: 0, delta }],
+      })}\n\n`,
+    );
+
+  it('fails a stream that sends nothing more for the idle limit, instead of waiting on', async () => {
+    let step = 0;
+    // One piece of thinking, then the provider goes quiet and never ends the answer.
+    const stalled = (init?: RequestInit) =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            step += 1;
+            if (step === 1) controller.enqueue(piece({ reasoning_content: 'a start' }));
+            else
+              return new Promise<void>((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => {
+                  reject(new DOMException('aborted', 'AbortError'));
+                });
+              });
+            return undefined;
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    const executor = createModelCallExecutor({
+      fetch: (_input, init) => Promise.resolve(stalled(init)),
+      streamIdleMs: 50,
+    });
+    const started = Date.now();
+    const outcome = await executor.execute(
+      { contextPack: pack, final: false },
+      environmentFor('MODEL', MODEL_SCOPE, { progress: () => undefined }),
+    );
+    expect(outcome).toMatchObject({
+      outcome: 'FAILED',
+      reasonCode: 'PROVIDER_ERROR',
+      requestState: 'UNKNOWN',
+      detail: 'no data from the provider for 0.05 s',
+    });
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('does not end a stream whose pieces keep coming, however long it takes in all', async () => {
+    let step = 0;
+    const steady = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            step += 1;
+            // Ten pieces 20 ms apart: 200 ms in all, well over the limit of 50 ms, never idle.
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            if (step <= 10) controller.enqueue(piece({ reasoning_content: 'more ' }));
+            else if (step === 11) {
+              controller.enqueue(piece({ content: 'done' }));
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({
+                    id: 'x',
+                    object: 'chat.completion.chunk',
+                    created: 1,
+                    model: 'deepseek-flash',
+                    choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+                  })}\n\ndata: [DONE]\n\n`,
+                ),
+              );
+            } else controller.close();
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'text/event-stream' } },
+      );
+    const executor = createModelCallExecutor({
+      fetch: () => Promise.resolve(steady()),
+      streamIdleMs: 50,
+    });
+    const outcome = await executor.execute(
+      { contextPack: pack, final: false },
+      environmentFor('MODEL', MODEL_SCOPE, { progress: () => undefined }),
+    );
+    expect(outcome.outcome).toBe('COMPLETED');
+  });
+
+  it('keeps the error as it came, with its cause, and never the key', async () => {
+    expect(
+      failureDetailOf(
+        Object.assign(new TypeError('terminated'), {
+          cause: Object.assign(new Error('Body Timeout Error'), {
+            name: 'BodyTimeoutError',
+            code: 'UND_ERR_BODY_TIMEOUT',
+          }),
+        }),
+        'sk-secret',
+      ),
+    ).toBe('TypeError terminated <- BodyTimeoutError UND_ERR_BODY_TIMEOUT Body Timeout Error');
+    expect(failureDetailOf(new Error('bad key sk-secret'), 'sk-secret')).toBe(
+      'Error bad key [key]',
+    );
+    const { outcome } = await call(status(503));
+    expect(outcome).toMatchObject({ outcome: 'FAILED', reasonCode: 'PROVIDER_ERROR' });
+    expect(outcome.outcome === 'FAILED' ? outcome.detail : undefined).toContain('503');
   });
 });
 

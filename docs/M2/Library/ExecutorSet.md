@@ -248,6 +248,8 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 - **给旁观者的实时预览**（[Phase1Console](../Phase1Console.md) 第 4 节）：`ExecutorEnvironment.progress` 存在时（只有 MODEL 的环境会有），请求改为流式（`doStream`），结果仍由整个流累积而成，与一次性应答逐字相同（内容、思考、用量与缓存命中）；不存在时仍用 `doGenerate`。旁观者看到的是：思考（`reasoning_content`）、"答案开始写了"的一次信号（`ANSWER`：调用了工具定义标了 `answer` 的工具，如 `reply`；和工具调用一起出现的正文不算，正文本身不传），以及正在写的工具调用（`TOOL`：工具名一出现就发，参数 `path` 写完整后带 `target` 再发一次）。这些从网络这一侧读（`tracked-fetch` 把字节旁路给 `stream-tap`），因为提供方的 SDK 会先读到第一段正文或工具调用才交出流，思考排在最前面，经 SDK 就要等它整段结束才到。回调不等待、抛出的错误被忽略，流结束时无论成败只发一次 `END`；流在开始之后中途断开按 `PROVIDER_ERROR`（不可重试、`UNKNOWN`）处理。
 - 用量：思考 token 已包含在输出用量中（`completion_tokens`，M2TechStack 第 3.2 节第 7 项），不另外累加；思考用尽 `maxOutputTokens` 时没有回复内容，按输出被截断处理。
 - 失败分类表与 M1 相同（M1 ExecutorSet 第 4.5 节）。provider 报告上下文过长时返回 `REJECTED(CONTEXT_OVERFLOW)`（触发压缩）。DeepSeek 的超限是 HTTP 400、`invalid_request_error`，与别的参数错误只能靠 message 区分：`This model's maximum context length is N tokens. However, you requested M tokens (X in the messages, Y in the completion)`；识别用 `maximum context length` 一句，并从中取出 M 作为溢出的规模交给 Kernel（`max_tokens` 也算进总数）。实测见 [Evaluation/Stage8Compaction](../../History/M2/Evaluation/Stage8Compaction.md)。
+- **断流**（Orchestration D109）：流式请求从发出起，连续 60 秒（`STREAM_IDLE_MS`）没有收到 provider 的任何字节，就中止这次请求，交回 `FAILED(PROVIDER_ERROR)`，`requestState = UNKNOWN`，由 Workflow 像其他 `PROVIDER_ERROR` 一样重新请求；原来要等 HTTP 客户端自己的 300 秒读取超时。产品的模型调用都带 `progress`，因此都是流式，都受这条检查；测试可用 `streamIdleMs` 改短。
+- **原始错误**（D109）：失败时把错误链上每一层的名称、`code`、HTTP 状态、消息与 provider 回答的开头（至多 300 字符）写成 `detail`（至多 1000 字符，密钥替换为 `[key]`），随失败交回，Kernel 写进这次调用的执行事实（`ExecutionFact.detail`）；断流时为 `no data from the provider for 60 s`。
 - 限流与过载（可重试的失败）时，从响应头 `Retry-After`（秒数或 HTTP 日期）或 provider 的同义字段取得重试时刻，换算为 `retryAfterMs` 随失败交回（DeepSeek 的文档没有承诺这个头，实测也未观察到，没有时省略）；Execution 据此决定等待（M2Design 第 7.4 节）。
 - **摘要请求**（M2Design 第 9.6 节）：Kernel 的压缩过程发出摘要请求。请求由 `context-assemble` 组装（第 6.4 节）：
   前缀式带原有的工具定义、不设 `tool_choice`，以复用提示词缓存，模型调用工具时不执行，按 `COMPACTION_SUMMARY_INVALID` 处理；纯文本式不带工具定义；思考强度取 Kernel 配置 `compaction.summaryReasoningEffort`（缺省 `low`）；输出为摘要文本，思考内容丢弃；
@@ -262,7 +264,7 @@ M1 的测试全部保留。增加：
 - `output-read`：行号与原文一致；`pattern` 按字面匹配；`offset`、`limit` 的边界；结果不超过预览上限；`\r\n` 与 `\n`；同一输入结果逐字节相同；
 - `context-assemble`：同一输入得到逐字节相同的 ContextPack；普通调用不去掉任何条目，追加条目后前一次的结果是新结果的前缀；system 段与运行时上下文无关；
   收尾调用的保险只去掉完整的模型轮、`PINNED` 与最近一轮不被去掉；`AGENTS.md` 不进入 system 段；
-- `model-call`：思考强度映射；思考内容与输出分开；收尾调用的两步；用 fake provider 覆盖第 6.3 节的回传规则；`CONTEXT_OVERFLOW` 的识别；`Retry-After` 的两种格式换算为 `retryAfterMs`；
+- `model-call`：思考强度映射；思考内容与输出分开；收尾调用的两步；用 fake provider 覆盖第 6.3 节的回传规则；`CONTEXT_OVERFLOW` 的识别；断流时中止并交回 `PROVIDER_ERROR`、持续有数据的长请求不被中止、`detail` 带错误链且不含密钥；`Retry-After` 的两种格式换算为 `retryAfterMs`；
   前缀式摘要请求与之前普通请求的前缀相同；
 - `fs/`：`isWritable` 与 Core、沙盒三处判定一致（属性测试）；对抗测试：越界路径（绝对路径、`..`、大小写与 Unicode 变体）、符号链接与符号链接替换（目标与中间目录，含检查与写入之间的替换）、竞争写入、`baseSha` 与 `expectAbsent`、受保护路径与排除规则；编辑匹配的唯一性、归一重试、换行符保持；写入失败不留下临时文件；
 - `command/parse/`：引号与转义中的分隔符不拆分；子 shell、`{ }`、管道、heredoc 中的子命令都被取出；变量作命令名、命令替换与语法错误判为不可复用；ARITY 表的取词；

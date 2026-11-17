@@ -72,6 +72,7 @@ export function toExecutionFact(
           requestState: outcome.requestState ?? 'UNKNOWN',
           ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
           ...(outcome.retryAfterMs === undefined ? {} : { retryAfterMs: outcome.retryAfterMs }),
+          ...(outcome.detail === undefined ? {} : { detail: outcome.detail.slice(0, 1000) }),
         } as ExecutionFact;
       case 'VIOLATION':
         return {

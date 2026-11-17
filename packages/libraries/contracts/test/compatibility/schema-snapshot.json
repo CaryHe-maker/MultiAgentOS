@@ -26590,6 +26590,11 @@
             "retryAfterMs": {
               "type": "integer",
               "minimum": 0
+            },
+            "detail": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
             }
           },
           "additionalProperties": false

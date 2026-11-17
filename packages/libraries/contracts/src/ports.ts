@@ -335,6 +335,8 @@ export type ExecutorOutcome =
       readonly usage?: TokenUsage;
       readonly requestState?: RequestState;
       readonly retryAfterMs?: number;
+      /** The error as it came, kept with the fact of a model call (D109); never the key. */
+      readonly detail?: string;
     }
   | { readonly outcome: 'VIOLATION'; readonly reasonCode: ViolationCode };
 
