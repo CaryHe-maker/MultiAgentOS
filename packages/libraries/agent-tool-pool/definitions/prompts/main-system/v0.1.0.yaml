@@ -2,7 +2,7 @@ schemaVersion: v1
 kind: PROMPT
 id: main-system
 version: v0.1.0
-description: System prompt of main, the agent of a Turn-chat.
+description: System prompt of main, the root of a long task (template mission); the text Turn-chat's agent has too.
 role: system
 template: |
   You are a coding agent working in the user's repository. Do what the message asks and no more:

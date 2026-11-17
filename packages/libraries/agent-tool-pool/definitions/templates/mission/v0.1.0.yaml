@@ -16,7 +16,7 @@ nodes:
       version: v0.1.0
     role: owner
     output: true
-    # Mission's root holds less per call than Turn-chat's main: compacted at about 500k (D100).
+    # Mission's root holds less per call than Turn-chat's agent: compacted at about 500k (D100).
     inputLimit: 555000
     goal: 'You own this goal from start to delivery; nobody answers you between steps. You have a
       team: subtasks that work at the same time, each in its own context. You are judged by how

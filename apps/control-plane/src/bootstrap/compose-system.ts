@@ -171,8 +171,8 @@ function largestBudget(budgets: readonly AgentBudgetOf[]): AgentBudgetOf {
 type AgentBudgetOf = PinnedDefinitionSet['agent']['budget'];
 
 /**
- * The built-ins of this process (Module/Workflow 4): the Agent `main`, the templates, and every
- * Agent a template names, each at the version the catalog pins.
+ * The built-ins of this process (Module/Workflow 4): the root Agents `chat` and `main`, the
+ * templates, and every Agent a template names, each at the version the catalog pins.
  */
 function builtIns(catalog: DefinitionCatalog) {
   const context = { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' };
@@ -185,7 +185,7 @@ function builtIns(catalog: DefinitionCatalog) {
     if (found === undefined) throw new ConfigError(`the built-in Agent ${id} is missing`);
     return found;
   });
-  // The Agents `run_subagents` may start are built in with main, whatever the template (M2Design 3.9).
+  // The Agents `run_subagents` may start are built in with the roots, whatever the template (M2Design 3.9).
   const spawnable = catalog
     .list()
     .filter((each) => each.kind === 'AGENT' && each.spawnable !== undefined)

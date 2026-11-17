@@ -40,8 +40,8 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `web-search`、`web-fetch` | `purpose = UNIT`，参数为 `executor.WebSearchInput`、`executor.WebFetchInput` |
 | UNIT | `external-list`、`external-read`、`external-search` | 读工作区之外的文件（Kernel/Core 第 5h 节）：沿用 `REPOSITORY_LIST`、`FILE_READ`、`REPOSITORY_SEARCH` 的 Executor，受保护能力 `external.read`（代替 `repo.read`，只有这三种 `executionKind` 可以声明它，也不能与 `repo.read` 同时声明）；只有 main 带它们 |
 | TOOL | `list-external-files`、`read-external-file`、`search-external-repository` | `purpose = UNIT`，模型看到的名字是 `list_external_files`、`read_external_file`、`search_external_repository`；参数与 `list-files`、`read-file`、`search-repository` 相同（`executor.RepositoryListInput`、`executor.FileReadInput`、`context.RepositorySearchInput`），`path` 必须是绝对路径，描述里写明两种写法（Linux 路径与带盘符的 Windows 路径）和"不要猜路径" |
-| PROMPT | `chat-system` | chat 的系统提示词（`FINAL`），与原来的 `main-system` 逐字相同：做事规则、`run_subagents` 的用法与拆分的方法 |
-| PROMPT | `main-system` | Mission 根任务的系统提示词（`FINAL`，D108）：身份、通用的做事规则与如何交付；拆分只在模板 `mission` 的 goal 与 guide 里讲 |
+| PROMPT | `chat-system` | chat 的系统提示词（`FINAL`），与 `main-system` 逐字相同：做事规则、`run_subagents` 的用法与拆分的方法 |
+| PROMPT | `main-system` | Mission 根任务（`main`）的系统提示词（`FINAL`）：文字与 `chat-system` 相同，是基线1.1 时 main 的提示词（Orchestration D110 撤回了 D106、D108 给根任务另写的提示）；拆分的决策表与工具手册在模板 `mission` 的 guide 里 |
 | UNIT | `file-write`、`file-edit`、`output-read` | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |
 | TOOL | `write-file`、`edit-file`、`read-output` | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
 | TOOL | `update-todos` | `purpose = CONTROL`，参数为 `workflow.UpdateTodosArgs`；由 main 的 `actions.todos` 引用 |

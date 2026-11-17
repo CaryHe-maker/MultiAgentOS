@@ -14,15 +14,6 @@ import { owedReplies, replyReminder } from '../graph/mission-replies.js';
 import { rolledBackRanges } from './rolled-back.js';
 import { workspaceChangedNote } from '../workspace/workspace-binding.js';
 
-/**
- * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
- * the same entries and a later call only appends to an earlier one (invariants 7 and 27). main
- * sees every input of the Session and its work, across runs; a template node sees the run's goal
- * and its own steps. Tool results name their preview only; `fullRef` never enters
- * a projection. The category is the one field that may change: a prompt is PINNED while its input
- * is the current one.
- */
-
 /** What a SubAgent is given: its task and the results of the tasks it waits for (M2Design 3.6). */
 export interface TaskScope {
   readonly name: string;
@@ -290,6 +281,14 @@ function projectInherited(
   ];
 }
 
+/**
+ * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
+ * the same entries and a later call only appends to an earlier one (invariants 7 and 27). The root
+ * of a Turn-chat sees every input of the Session and its work, across runs; a template node sees
+ * the run's goal and its own steps. Tool results name their preview only; `fullRef` never enters
+ * a projection. The category is the one field that may change: a prompt is PINNED while its input
+ * is the current one.
+ */
 export function projectHistory(
   records: readonly SessionLogRecord[],
   scope: ProjectionScope,
