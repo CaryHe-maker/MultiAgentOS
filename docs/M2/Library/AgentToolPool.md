@@ -26,7 +26,8 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 | kind | id | 说明 |
 |---|---|---|
-| AGENT | `main` | Turn-chat 的主 Agent：列目录、检索、读文件、只读 git、写与编辑、命令、网页检索与读取、读工作区之外的文件（`external.read`）、派生 SubAgent；结束工具 `reply`（`PUBLISH_REPLY`），降级时 `PUBLISH_NOTICE`；没有启动 Unit；`thinking.defaultEffort = high`，允许 `none`–`max` |
+| AGENT | `chat` | Turn-chat 的 Agent（Orchestration D106）：定义、额度、动作与原来的 `main` 逐字相同，只是系统提示是 `chat-system`；Mission 不用它 |
+| AGENT | `main` | Mission 的根任务（模板 `mission` 的根节点，D106）：列目录、检索、读文件、只读 git、写与编辑、命令、网页检索与读取、读工作区之外的文件（`external.read`）、派生 SubAgent；结束工具 `reply`（`PUBLISH_REPLY`），降级时 `PUBLISH_NOTICE`；没有启动 Unit；`thinking.defaultEffort = high`，允许 `none`–`max` |
 | UNIT | `repository-search`、`file-read`、`context-assemble`、`model-call` | M1 实例的 `v1` 版本：契约改为 major 1 的版本，`failurePolicy` 去掉 `USER_DECLINED` |
 | UNIT | `repository-list` | `executionKind = REPOSITORY_LIST`，受保护能力 `repo.read`，工具 `list-files` |
 | UNIT | `message-publish` | `executionKind = MESSAGE_PUBLISH`，Kernel 内建，无工具 |
@@ -39,7 +40,8 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `web-search`、`web-fetch` | `purpose = UNIT`，参数为 `executor.WebSearchInput`、`executor.WebFetchInput` |
 | UNIT | `external-list`、`external-read`、`external-search` | 读工作区之外的文件（Kernel/Core 第 5h 节）：沿用 `REPOSITORY_LIST`、`FILE_READ`、`REPOSITORY_SEARCH` 的 Executor，受保护能力 `external.read`（代替 `repo.read`，只有这三种 `executionKind` 可以声明它，也不能与 `repo.read` 同时声明）；只有 main 带它们 |
 | TOOL | `list-external-files`、`read-external-file`、`search-external-repository` | `purpose = UNIT`，模型看到的名字是 `list_external_files`、`read_external_file`、`search_external_repository`；参数与 `list-files`、`read-file`、`search-repository` 相同（`executor.RepositoryListInput`、`executor.FileReadInput`、`context.RepositorySearchInput`），`path` 必须是绝对路径，描述里写明两种写法（Linux 路径与带盘符的 Windows 路径）和"不要猜路径" |
-| PROMPT | `main-system` | main 的系统提示词（`FINAL`，见下） |
+| PROMPT | `chat-system` | chat 的系统提示词（`FINAL`），与原来的 `main-system` 逐字相同：做事规则、`run_subagents` 的用法与拆分的方法 |
+| PROMPT | `main-system` | Mission 根任务的系统提示词（`FINAL`，D108）：身份、通用的做事规则与如何交付；拆分只在模板 `mission` 的 goal 与 guide 里讲 |
 | UNIT | `file-write`、`file-edit`、`output-read` | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |
 | TOOL | `write-file`、`edit-file`、`read-output` | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
 | TOOL | `update-todos` | `purpose = CONTROL`，参数为 `workflow.UpdateTodosArgs`；由 main 的 `actions.todos` 引用 |
@@ -47,7 +49,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `run-subagents`、`finish-explorer`、`finish-worker` | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个。`run_subagents` 立即返回（Orchestration D14），任务的 `agent` 可以是 `explorer`、`worker` 或五个专家之一，worker 可带 `split: true`（系统按 lead 运行；Orchestration D88、D93）；只有 main 带这个工具，main 总是根任务 |
 | TOOL | `lead-run-subagents` | `purpose = CONTROL`；模型看到的名字同样是 `run_subagents`；参数为 `workflow.RunSubagentsNestedArgs`：只能派 `explorer` 与 `worker`，没有 `split`，所以只有根任务能派出 lead 与专家（D93）；由 lead 的 `actions.spawn` 引用 |
 | TOOL | `ask-user` | `purpose = CONTROL`，参数为 `workflow.AskUserArgs`；由 main 与 worker 的 `actions.askUser` 引用，explorer 没有；与 `run_subagents` 同样只能单独出现 |
-| PROMPT | `explorer-system`、`worker-system` | SubAgent 的系统提示词；main 的提示词增加 `run_subagents` 的用法与派生准则（M2Design 第 3.9 节） |
+| PROMPT | `explorer-system`、`worker-system` | SubAgent 的系统提示词；chat 的提示词增加 `run_subagents` 的用法与派生准则，Mission 根任务的派生准则在模板 `mission` 里（M2Design 第 3.9 节） |
 | AGENT | `lead` | 组长（[Orchestration](../Orchestration.md) 第 9.4 节）：worker 的能力加上 `agent.spawn`，不由模型直接选：根任务派一个带 `split: true` 的 worker、或派一个专家时，系统按 lead 运行它；它用 `lead-run-subagents` 派生自己的 explorer 与 worker（受任务深度限制，最深一层不带 `run_subagents`）；结束工具 `finish-worker`；缺省份额 2,400,000，40 轮、160 个工具 Unit、60 分钟 |
 | PROMPT | `lead-system` | lead 的系统提示词：先写方案与接口约定，再按不相交的写入范围派生，休眠等子任务，用消息通知兄弟任务，最后统一验证 |
 | TOOL | `sleep` | `purpose = CONTROL`，参数为 `workflow.SleepArgs`；由 main、lead、worker、explorer 的 `actions.sleep` 引用：结束当前段，任务休眠到条件满足（Orchestration 第 4 节）；只能单独出现 |

@@ -89,7 +89,7 @@ function fullOutputOf(
   for (const record of records) {
     if (record.type === 'WORKSPACE_REVERTED')
       for (const turnId of record.revertedTurnIds) reverted.add(turnId);
-    if (record.type === 'AGENT_RUN_REGISTERED' && record.agentRef.id === 'main')
+    if (record.type === 'AGENT_RUN_REGISTERED' && record.parentAgentRunId === undefined)
       main.add(record.agentRunId);
     // Every segment of a task reads what an earlier segment of it ran (Orchestration 3.4).
     if (

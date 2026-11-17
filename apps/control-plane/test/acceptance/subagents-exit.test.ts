@@ -484,7 +484,7 @@ describe('what the user sees', () => {
       await doneReplies(chat, 1);
       await chat.console.submit('/timeline');
       const timeline = chat.printed('NOTICE').at(-1) ?? '';
-      expect(timeline).toContain('main');
+      expect(timeline).toContain('chat');
       expect(timeline).toContain('  explorer survey');
     },
     TIMEOUT,

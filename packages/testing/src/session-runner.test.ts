@@ -82,7 +82,7 @@ const solo: TemplateDefinition = {
   digest,
   description: 'one step',
   nodes: [
-    { name: 'answer', kind: 'AGENT', agent: { id: 'main', version: 'v1.0.0' }, output: true },
+    { name: 'answer', kind: 'AGENT', agent: { id: 'chat', version: 'v1.0.0' }, output: true },
   ],
 };
 
@@ -148,10 +148,10 @@ function setup(
   const runner = new SessionRunner({
     gateway: kernel.gateway,
     store: new SessionLogStore(persistence),
-    agents: new Map([['main', binding('main', definitions)]]),
+    agents: new Map([['chat', binding('chat', definitions)]]),
     templates: new Map([['solo', solo]]),
     definitionsDigest: digest,
-    definitionVersions: ['main@v1.0.0'],
+    definitionVersions: ['chat@v1.0.0'],
     config: {
       repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
       maxNestedInstructions: 8,

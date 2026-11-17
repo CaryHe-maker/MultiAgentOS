@@ -22,7 +22,6 @@ import { workspaceChangedNote } from '../workspace/workspace-binding.js';
  * a projection. The category is the one field that may change: a prompt is PINNED while its input
  * is the current one.
  */
-const MAIN_AGENT_ID = 'main';
 
 /** What a SubAgent is given: its task and the results of the tasks it waits for (M2Design 3.6). */
 export interface TaskScope {
@@ -519,7 +518,7 @@ function projectOwn(
         } else if (
           ownMission !== undefined && record.missionId !== undefined
             ? record.missionId === ownMission
-            : record.agentRef.id === MAIN_AGENT_ID
+            : record.parentAgentRunId === undefined
         ) {
           mainRuns.add(record.agentRunId);
         }

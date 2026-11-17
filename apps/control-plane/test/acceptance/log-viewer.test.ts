@@ -76,7 +76,7 @@ describe('mas log', () => {
       expect(shown.out).toContain('line one');
       expect(shown.out).toContain('It has two lines.');
       // The provider's usage is kept with the model's output, not on the log record.
-      expect(shown.out).toMatch(/模型 main .*输入 100 输出 10/u);
+      expect(shown.out).toMatch(/模型 chat .*输入 100 输出 10/u);
       expect(shown.out).toContain('2 次模型调用');
     },
     TIMEOUT,

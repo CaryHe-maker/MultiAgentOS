@@ -159,7 +159,8 @@ export interface SessionRunnerDeps {
   readonly newAgentRunId?: () => string;
 }
 
-const MAIN = 'main';
+/** The Agent of a Turn-chat; Mission's root is the Agent its template names (main). */
+const CHAT_AGENT = 'chat';
 /** The id the root task of a Turn-chat is named by (Orchestration 3.2). */
 const CHAT_TEMPLATE = 'chat';
 /** Messages one segment may send (Orchestration 5). */
@@ -888,7 +889,7 @@ export class SessionRunner {
   }
 
   #mainRef(): DefinitionRef {
-    const { id, version } = this.#binding(MAIN).ref;
+    const { id, version } = this.#binding(CHAT_AGENT).ref;
     return { id, version };
   }
 
@@ -1442,9 +1443,7 @@ export class SessionRunner {
     requested: string | undefined,
   ): { readonly agentRunId: string; readonly redirectedFrom?: string } | undefined {
     if (requested === undefined) {
-      const main = [...this.#agents.values()].find(
-        (each) => each.task === undefined && each.agentId === MAIN,
-      );
+      const main = [...this.#agents.values()].find((each) => each.task === undefined);
       return main === undefined ? undefined : { agentRunId: main.state.agentRunId };
     }
     if (this.#agents.has(requested)) return { agentRunId: requested };
@@ -1790,8 +1789,18 @@ export class SessionRunner {
             : [...missions.values()].filter(
                 (mission) => mission.parentId === parentId && mission.missionId !== scope.missionId,
               );
-        const lastRunning =
-          siblings.length > 0 && siblings.every((sibling) => sibling.ended !== undefined);
+        // A sibling asleep, with no job of its own and nothing below it at work, only waits,
+        // often for this task (D107): it holds up nobody, so it does not count.
+        const stateOf = missionStateOf(this.#records);
+        const working = (mission: MissionView): boolean =>
+          mission.ended === undefined &&
+          (stateOf(mission) !== 'asleep' ||
+            (missions !== undefined &&
+              (jobsHeldBy(this.#records, mission.missionId, missions).some((job) => job.running) ||
+                [...missions.values()].some(
+                  (each) => each.parentId === mission.missionId && working(each),
+                ))));
+        const lastRunning = siblings.length > 0 && !siblings.some(working);
         return {
           final,
           ...(withdrawn.length === 0 ? {} : { withdrawnTools: [...new Set(withdrawn)] }),

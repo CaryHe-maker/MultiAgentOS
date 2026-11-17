@@ -52,7 +52,7 @@ describe('thinking streamed to the console', () => {
       // A scripted answer comes whole, inside one merge window; that it arrives in pieces for a
       // real provider is covered by the Executor's and the merger's tests.
       expect(seen.at(-1)).toBe('The user says hi. I should greet back and keep it short.');
-      expect(chat.lives.at(-1)?.thinking?.[0]).toMatchObject({ label: 'main', number: 1 });
+      expect(chat.lives.at(-1)?.thinking?.[0]).toMatchObject({ label: 'chat', number: 1 });
       // The answer is the same as without watching.
       expect(chat.printed('REPLY')).toEqual(['Hello!']);
     },
@@ -70,7 +70,7 @@ describe('thinking streamed to the console', () => {
         live.activity.filter((line) => line.phase === '正在输出回答');
       const seen = chat.lives.flatMap(writing);
       expect(seen.length).toBeGreaterThan(0);
-      expect(seen[0]).toMatchObject({ label: 'main' });
+      expect(seen[0]).toMatchObject({ label: 'chat' });
       // The text is only there when it is published: the live state carries none of it.
       expect(JSON.stringify(chat.lives)).not.toContain(text);
       // Once the reply is printed, nothing is being written any more.

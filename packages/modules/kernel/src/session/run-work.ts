@@ -1665,9 +1665,7 @@ export class RunWork {
     // budget, a narrower input limit included (D100), so the summary request begins as its
     // requests do. Main without one (`/compact` before any run) is the Agent of the Turn-chat.
     if (target.kind === 'MAIN') {
-      const live = [...this.#agentRuns.values()].find(
-        (each) => each.parent === undefined && each.agent.id === 'main',
-      );
+      const live = [...this.#agentRuns.values()].find((each) => each.parent === undefined);
       if (live !== undefined) return { agent: live.agent };
       const agent = this.#deps.compactionAgent();
       return agent === undefined ? undefined : { agent };
@@ -1683,7 +1681,7 @@ export class RunWork {
 
   #targetOf(agentRunId: string): CompactionTarget {
     const record = this.#agentRuns.get(agentRunId);
-    return record !== undefined && record.parent === undefined && record.agent.id === 'main'
+    return record !== undefined && record.parent === undefined
       ? { kind: 'MAIN' }
       : { kind: 'AGENT_RUN', agentRunId };
   }

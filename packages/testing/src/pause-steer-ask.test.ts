@@ -134,9 +134,9 @@ function setup(
     store: new SessionLogStore(new FileSessionStore(dataDir)),
     agents: new Map([
       [
-        'main',
+        'chat',
         {
-          ref: { kind: 'AGENT', id: 'main', version: 'v1.0.0', digest } as const,
+          ref: { kind: 'AGENT', id: 'chat', version: 'v1.0.0', digest } as const,
           modelRef: { id: 'deepseek-flash', version: 'v2.0.0' },
           effort: 'high' as const,
           allowedEfforts: ['high' as const],
@@ -149,7 +149,7 @@ function setup(
     ]),
     templates: new Map(),
     definitionsDigest: digest,
-    definitionVersions: ['main@v1.0.0'],
+    definitionVersions: ['chat@v1.0.0'],
     config: {
       repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
       maxNestedInstructions: 8,

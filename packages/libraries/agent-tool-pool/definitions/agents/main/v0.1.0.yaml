@@ -2,7 +2,7 @@ schemaVersion: v1
 kind: AGENT
 id: main
 version: v0.1.0
-description: 'The agent of a Turn-chat: reads, searches, changes and tests the repository and replies.'
+description: 'The root of a long task (template mission): plans the goal, splits it among subtasks, checks the result and delivers it.'
 role: coding assistant
 modelRef:
   id: deepseek-flash

@@ -150,6 +150,26 @@ function forNamespaces(
   return Object.freeze(limited);
 }
 
+/** The Agent of a Turn-chat, and the Agents that run the root of a WorkflowRun. */
+const CHAT_AGENT = 'chat';
+const ROOT_AGENTS = [CHAT_AGENT, 'main'] as const;
+
+/** Field by field the most of the roots' budgets: what the run's ledger must be able to fund. */
+function largestBudget(budgets: readonly AgentBudgetOf[]): AgentBudgetOf {
+  const [first, ...rest] = budgets;
+  if (first === undefined) throw new ConfigError('no root Agent');
+  return rest.reduce(
+    (most, each) => ({
+      perCallInputLimit: Math.max(most.perCallInputLimit, each.perCallInputLimit),
+      maxOutputTokens: Math.max(most.maxOutputTokens, each.maxOutputTokens),
+      finalInputBudget: Math.max(most.finalInputBudget, each.finalInputBudget),
+      finalMaxOutputTokens: Math.max(most.finalMaxOutputTokens, each.finalMaxOutputTokens),
+    }),
+    first,
+  );
+}
+type AgentBudgetOf = PinnedDefinitionSet['agent']['budget'];
+
 /**
  * The built-ins of this process (Module/Workflow 4): the Agent `main`, the templates, and every
  * Agent a template names, each at the version the catalog pins.
@@ -159,15 +179,19 @@ function builtIns(catalog: DefinitionCatalog) {
   const templates = catalog
     .list()
     .filter((each): each is TemplateDefinition => each.kind === 'TEMPLATE');
-  const main = catalog.latest('AGENT', 'main');
-  if (main === undefined) throw new ConfigError('the built-in Agent main is missing');
+  // The roots: chat runs a Turn-chat, main is the root of the template mission.
+  const roots = ROOT_AGENTS.map((id) => {
+    const found = catalog.latest('AGENT', id);
+    if (found === undefined) throw new ConfigError(`the built-in Agent ${id} is missing`);
+    return found;
+  });
   // The Agents `run_subagents` may start are built in with main, whatever the template (M2Design 3.9).
   const spawnable = catalog
     .list()
     .filter((each) => each.kind === 'AGENT' && each.spawnable !== undefined)
     .map(({ id, version }) => ({ id, version }));
   const refs = [
-    { id: main.id, version: main.version },
+    ...roots.map(({ id, version }) => ({ id, version })),
     ...spawnable,
     ...templates.flatMap((template) =>
       template.nodes.flatMap((node) => (node.kind === 'AGENT' ? [node.agent] : [])),
@@ -212,8 +236,11 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
         }
       : undefined;
   assertStartupChecks(config.kernel, [...builtin.sets.values()], registry, options.credentials);
-  const main = builtin.sets.get('main');
-  if (main === undefined) throw new ConfigError('the built-in Agent main is missing');
+  const rootBudgets = ROOT_AGENTS.map((id) => {
+    const set = builtin.sets.get(id);
+    if (set === undefined) throw new ConfigError(`the built-in Agent ${id} is missing`);
+    return set.agent.budget;
+  });
 
   const subprocess = options.subprocess ?? createSubprocessRunner();
   // Writes rest on snapshots, and snapshots on git: without it the system only reads (M2Design 4.6).
@@ -267,10 +294,11 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       compactionAgent: compactionAgentFrom(catalog, registry, {
         preset,
         commands: commandsOffered,
+        agentId: CHAT_AGENT,
       }),
       agentShare: agentShareFrom(catalog),
       ...(compactionPrompt === undefined ? {} : { compactionPrompt }),
-      mainBudget: main.agent.budget,
+      mainBudget: largestBudget(rootBudgets),
       config: config.kernel,
       repositoryRoot: options.repositoryRoot,
       preset,

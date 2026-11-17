@@ -41,7 +41,8 @@ export function instructionsToLoad(
         turnId = record.turnId;
         break;
       case 'AGENT_RUN_REGISTERED':
-        if (scope.kind === 'MAIN' && record.agentRef.id === 'main') mine.add(record.agentRunId);
+        if (scope.kind === 'MAIN' && record.parentAgentRunId === undefined)
+          mine.add(record.agentRunId);
         break;
       case 'UNIT_SUBMITTED':
         owners.set(record.requestId, record.agentRunId);

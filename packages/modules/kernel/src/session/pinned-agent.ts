@@ -174,11 +174,16 @@ export interface CompactionCatalog extends AgentCatalog {
 export function compactionAgentFrom(
   catalog: CompactionCatalog,
   registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
-  options: { readonly preset: 'standard' | 'readonly'; readonly commands: boolean },
+  options: {
+    readonly preset: 'standard' | 'readonly';
+    readonly commands: boolean;
+    /** The Agent of the Turn-chat, whose context `/compact` compacts. */
+    readonly agentId: string;
+  },
 ): () => PinnedAgent | undefined {
   const made = new Map<string, PinnedAgent | undefined>();
   return () => {
-    const named = catalog.latest('AGENT', 'main');
+    const named = catalog.latest('AGENT', options.agentId);
     if (named === undefined) return undefined;
     const key = `${named.id}@${named.version}`;
     if (made.has(key)) return made.get(key);

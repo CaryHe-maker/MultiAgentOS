@@ -26,10 +26,13 @@ export function assertStartupChecks(
   credentials: ProviderCredentials,
 ): void {
   const { budget } = config;
-  const main = agents.find((set) => set.agent.id === 'main');
-  if (main === undefined) throw new ConfigError('the built-in Agent main is missing');
-  if (budget.inputTokenLimit < minShare(main.agent.budget))
-    throw new ConfigError(`kernel.budget.inputTokenLimit must be at least minShare(main)`);
+  // Every root, the Agent of a Turn-chat and the root of a mission, must fit one input's budget.
+  for (const id of ['chat', 'main']) {
+    const root = agents.find((set) => set.agent.id === id);
+    if (root === undefined) throw new ConfigError(`the built-in Agent ${id} is missing`);
+    if (budget.inputTokenLimit < minShare(root.agent.budget))
+      throw new ConfigError(`kernel.budget.inputTokenLimit must be at least minShare(${id})`);
+  }
   if (budget.runTokenLimit < budget.inputTokenLimit)
     throw new ConfigError('kernel.budget.runTokenLimit must be at least inputTokenLimit');
 

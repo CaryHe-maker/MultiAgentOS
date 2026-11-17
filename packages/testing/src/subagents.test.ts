@@ -212,8 +212,8 @@ function setup(replies: Record<string, readonly ReturnType<typeof model>[]>) {
     store: new SessionLogStore(new FileSessionStore(dataDir)),
     agents: new Map([
       [
-        'main',
-        binding('main', main, ['repo.read', 'workspace.write', 'agent.spawn'], ['high', 'none']),
+        'chat',
+        binding('chat', main, ['repo.read', 'workspace.write', 'agent.spawn'], ['high', 'none']),
       ],
       ['explorer', binding('explorer', explorer, ['repo.read'], ['none', 'low'])],
       [
@@ -228,7 +228,7 @@ function setup(replies: Record<string, readonly ReturnType<typeof model>[]>) {
     ]),
     templates: new Map(),
     definitionsDigest: digest,
-    definitionVersions: ['main@v1.0.0'],
+    definitionVersions: ['chat@v1.0.0'],
     config: {
       repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
       maxNestedInstructions: 8,
@@ -299,7 +299,7 @@ const ofType = <T extends SessionLogRecord['type']>(
 describe('run_subagents', () => {
   it('starts the tasks, joins their results in the written order, and the caller goes on', async () => {
     const { kernel, runner, assembled } = setup({
-      main: [
+      chat: [
         model({
           toolName: 'run_subagents',
           args: {
@@ -320,7 +320,7 @@ describe('run_subagents', () => {
     await begin(kernel);
     const { records } = runner;
     const registered = ofType(records, 'AGENT_RUN_REGISTERED');
-    const main = registered.find((record) => record.agentRef.id === 'main');
+    const main = registered.find((record) => record.agentRef.id === 'chat');
     const children = registered.filter((record) => record.agentRef.id === 'explorer');
     expect(children).toHaveLength(2);
     // Both are tasks below main's task, whether main still ran or slept when they started.
@@ -348,7 +348,7 @@ describe('run_subagents', () => {
     ]);
     // main spawned and slept, then a new segment of its task replied.
     const mainRuns = new Set(
-      registered.filter((record) => record.agentRef.id === 'main').map((r) => r.agentRunId),
+      registered.filter((record) => record.agentRef.id === 'chat').map((r) => r.agentRunId),
     );
     expect(mainRuns.size).toBe(2);
     expect(
@@ -385,7 +385,7 @@ describe('run_subagents', () => {
       ],
     };
     const { kernel, runner, assembled } = setup({
-      main: [
+      chat: [
         model({ toolName: 'run_subagents', args: overlap }),
         model({ toolName: 'run_subagents', args: overlap }),
         model({ toolName: 'reply', args: { text: 'by myself' } }),
@@ -394,7 +394,7 @@ describe('run_subagents', () => {
     await begin(kernel);
     const { records } = runner;
     expect(ofType(records, 'AGENT_RUN_REGISTERED').map((record) => record.agentRef.id)).toEqual([
-      'main',
+      'chat',
     ]);
     const answers = ofType(records, 'FEEDBACK').filter(
       (record) => record.code === 'INVALID_ACTION',
@@ -413,7 +413,7 @@ describe('run_subagents', () => {
 
   it('takes the result of a final call as it is, and says what it lacks (D69)', async () => {
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         model({
           toolName: 'run_subagents',
           args: {
@@ -453,7 +453,7 @@ describe('run_subagents', () => {
 
   it('accepts a worker only after it checked what it changed, and notes what it did not report', async () => {
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         model({
           toolName: 'run_subagents',
           args: {
@@ -503,7 +503,7 @@ describe('run_subagents', () => {
 describe('the length of a result', () => {
   it('is never a reason to refuse it: a long summary and a very long report are both accepted', async () => {
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         model({
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
@@ -526,7 +526,7 @@ describe('the length of a result', () => {
 
   it('needs no evidence and no findings: a summary alone is a result', async () => {
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         model({
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
@@ -546,7 +546,7 @@ describe('the length of a result', () => {
 describe('the tool results a task lists', () => {
   it('are never a reason to fail it: what does not pass is told in one note', async () => {
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         model({
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
@@ -586,7 +586,7 @@ describe('the tool results a task lists', () => {
         args: { tasks: [{ name, agent: 'explorer', goal: 'x' }] },
       });
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         call('first'),
         sleepForChildren(),
         call('second'),
@@ -611,7 +611,7 @@ describe('a last result that does not follow the form', () => {
   it('is not lost: the caller gets what was written, marked as not following the form', async () => {
     const bad = model({ toolName: 'finish_subagent', args: { report: 'everything I found' } });
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         model({
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
@@ -644,7 +644,7 @@ describe('a plan before the work', () => {
 
   it('is not a round without progress, even when the todos are refused', async () => {
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         model({ toolName: 'update_todos', args: wrong }),
         model({
           toolName: 'run_subagents',
@@ -667,7 +667,7 @@ describe('a plan before the work', () => {
 
   it('is judged from the second in a row on', async () => {
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         model({ toolName: 'update_todos', args: plan }),
         model({ toolName: 'update_todos', args: plan }),
         model({ toolName: 'update_todos', args: plan }),
@@ -688,7 +688,7 @@ describe('messages and waking (Orchestration 4, 5)', () => {
 
   it('routes a message to a sibling, wakes it, and the sender is told', async () => {
     const { kernel, runner, assembled } = setup({
-      main: [
+      chat: [
         model({
           toolName: 'run_subagents',
           args: {
@@ -730,7 +730,7 @@ describe('messages and waking (Orchestration 4, 5)', () => {
 
   it('wakes the highest sleeping task when every task only waits', async () => {
     const { kernel, runner } = setup({
-      main: [
+      chat: [
         model({
           toolName: 'run_subagents',
           args: { tasks: [{ name: 'waiter', agent: 'explorer', goal: 'wait' }] },
@@ -752,6 +752,42 @@ describe('messages and waking (Orchestration 4, 5)', () => {
       'MESSAGE',
       'CHILDREN',
     ]);
+    expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
+  });
+
+  it('tells a task it is the last one running while its sibling only sleeps (D72, D107)', async () => {
+    const lastRunning = (request: SubmitUnitRequest) =>
+      (request.input as { status?: { lastRunning?: boolean } }).status?.lastRunning === true;
+    const { kernel, runner, assembled } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: {
+            tasks: [
+              { name: 'waiter', agent: 'explorer', goal: 'wait for the go' },
+              { name: 'doer', agent: 'explorer', goal: 'do the part' },
+            ],
+          },
+        }),
+        model({ toolName: 'sleep', args: { until: [{ kind: 'children', mode: 'any' }] } }),
+        send('waiter', 'go'),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'done' } }),
+      ],
+      explorer: [
+        sleepOn({ kind: 'message' }),
+        send('parent', 'half way'),
+        model({ toolName: 'finish_subagent', args: { summary: 'part done' } }),
+        model({ toolName: 'finish_subagent', args: { summary: 'went' } }),
+      ],
+    });
+    await begin(kernel);
+    const doer = ofType(runner.records, 'AGENT_RUN_REGISTERED').filter(
+      (record) => record.agentRef.id === 'explorer',
+    )[1]?.agentRunId;
+    const ofDoer = assembled.filter((request) => request.agentRunId === doer);
+    // Its first call sees the waiter starting; its next one sees it asleep, with nothing at work.
+    expect(ofDoer.map(lastRunning)).toEqual([false, true]);
     expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
   });
 });
