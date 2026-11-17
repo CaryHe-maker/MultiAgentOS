@@ -1,9 +1,10 @@
-import type {
-  AppendLogPort,
-  ArtifactOwnerLine,
-  ArtifactRef,
-  ArtifactStorePort,
-  UserInput,
+import {
+  sha256Hex,
+  type AppendLogPort,
+  type ArtifactOwnerLine,
+  type ArtifactRef,
+  type ArtifactStorePort,
+  type UserInput,
 } from '@multiagentos/contracts';
 
 export type ArtifactRetention = ArtifactOwnerLine['retention'];
@@ -52,33 +53,42 @@ export class SessionArtifacts {
     for await (const line of this.#deps.owners.readAll()) this.#owners.set(line.artifactId, line);
   }
 
-  /** The strongest registration wins: SESSION is never given up, and `fullOutput` stays set. */
+  /**
+   * The strongest registration wins: SESSION is never given up, and `fullOutput` stays set. The
+   * owner line goes in before the body is written: a sweep that read the index before the line
+   * began before the write, so the body is newer than its cutoff, and one that read it after the
+   * line keeps the body as marked. Written the other way round, a body could land just before a
+   * sweep began while its line came after the index was read, and be removed while in use.
+   */
   async put(
     text: string,
     mediaType: string,
     retention: ArtifactRetention,
     options: { readonly fullOutput?: boolean } = {},
   ): Promise<ArtifactRef> {
-    const ref = await this.#deps.store.put(Buffer.from(text, 'utf8'), mediaType);
-    const known = this.#owners.get(ref.artifactId);
+    const content = Buffer.from(text, 'utf8');
+    const sha256 = sha256Hex(content);
+    const artifactId = `art_${sha256}`;
+    const known = this.#owners.get(artifactId);
     const fullOutput = options.fullOutput === true || known?.fullOutput === true;
     const kept = known?.retention === 'SESSION' ? 'SESSION' : retention;
-    if (known?.retention === 'SESSION' && fullOutput === (known.fullOutput === true)) return ref;
-    const at = this.#deps.now().toISOString();
-    const line: ArtifactOwnerLine = {
-      artifactId: ref.artifactId,
-      mediaType: ref.mediaType,
-      sha256: ref.sha256,
-      size: ref.size,
-      retention: kept,
-      source: known?.source ?? 'PRODUCED',
-      ...(fullOutput ? { fullOutput: true as const } : {}),
-      retainedSince: at,
-      at,
-    };
-    await this.#deps.owners.append(line);
-    this.#owners.set(ref.artifactId, line);
-    return ref;
+    if (known?.retention !== 'SESSION' || fullOutput !== (known.fullOutput === true)) {
+      const at = this.#deps.now().toISOString();
+      const line: ArtifactOwnerLine = {
+        artifactId,
+        mediaType,
+        sha256,
+        size: content.byteLength,
+        retention: kept,
+        source: known?.source ?? 'PRODUCED',
+        ...(fullOutput ? { fullOutput: true as const } : {}),
+        retainedSince: at,
+        at,
+      };
+      await this.#deps.owners.append(line);
+      this.#owners.set(artifactId, line);
+    }
+    return this.#deps.store.put(content, mediaType);
   }
 
   /**
