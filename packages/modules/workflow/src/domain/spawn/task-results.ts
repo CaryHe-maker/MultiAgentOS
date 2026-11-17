@@ -2,7 +2,7 @@ import {
   normalizeRequestPath,
   type ArtifactRef,
   type SessionLogRecord,
-  type WorkerResult,
+  type SubagentResult,
 } from '@multiagentos/contracts';
 
 /**
@@ -84,7 +84,7 @@ export function outcomeOf(
 interface FinishArguments {
   readonly references?: readonly string[];
   readonly changedFiles?: readonly string[];
-  readonly status?: WorkerResult['status'];
+  readonly status?: SubagentResult['status'];
   readonly validation?: readonly { readonly command: string; readonly exitCode: number }[];
 }
 

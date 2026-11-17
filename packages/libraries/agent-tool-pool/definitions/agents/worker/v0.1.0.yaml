@@ -39,10 +39,14 @@ unitRefs:
 actions:
   end:
     - toolRef:
-        id: finish-worker
+        id: finish-subagent
         version: v0.1.0
       then: FINISH_SUBAGENT
       allowedInFinal: true
+      requires:
+        - status
+        - changedFiles
+        - validation
   onDegraded: RETURN_PARTIAL
   sleep:
     toolRef:

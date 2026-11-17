@@ -29,7 +29,7 @@ export function pinnedAgentOf(
   registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
   requested: readonly ProtectedCapability[],
 ): PinnedAgent | PinFailure {
-  const { agent, model, prompt, units, tools } = set;
+  const { agent, model, prompt } = set;
   if (!agent.thinking.allowedEfforts.includes(effort)) return 'FORBIDDEN';
   const request = model.features.thinking.effortMapping.find(
     (entry) => entry.effort === effort,
@@ -46,14 +46,54 @@ export function pinnedAgentOf(
     request.thinking === 'DISABLED'
       ? { ...base, thinking: 'DISABLED' }
       : { ...base, thinking: 'ENABLED', thinkingEffort: request.providerEffort ?? effort };
+  const { ordinary, final } = offeredTools(set, registry, requested);
 
-  const specOf = (tool: ToolDefinition): ModelToolSpec => ({
+  return {
+    id: agent.id,
+    capabilities: agent.capabilities,
+    units: set.units,
+    maxToolUnits: agent.limits.maxToolUnits,
+    ...(agent.limits.maxWallClockMs === undefined
+      ? {}
+      : { maxWallClockMs: agent.limits.maxWallClockMs }),
+    modelScope,
+    budget: agent.budget,
+    contextWindowTokens: model.limits.contextWindowTokens,
+    cacheHitWeight: model.pricing.offPeak.inputCacheHit / model.pricing.offPeak.inputCacheMiss,
+    instructions: prompt.template,
+    // A final call lists the same tools as every other call, so the cached prefix holds (D102);
+    // which of them it must call is told in its status, and checked by Workflow.
+    toolSpecs: () => ordinary,
+    ownToolNames: ordinary.map((spec) => spec.name),
+    finalToolNames: final.map((spec) => spec.name),
+  };
+}
+
+/** A tool as the model is shown it. */
+function specOf(
+  tool: ToolDefinition,
+  registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
+): ModelToolSpec {
+  return {
     name: tool.modelName,
     description: tool.modelDescription,
     parameters: registry.jsonSchemaOf(tool.parametersContract),
     purpose: tool.purpose,
     ...(tool.answer === undefined ? {} : { answer: tool.answer }),
-  });
+  };
+}
+
+/**
+ * The tools an Agent is offered under `requested`, in the order a request lists them, and those of
+ * a final call. One function for the AgentRun's own tools and for what it is shown (D99), so a
+ * task shown its caller's tools lists them byte for byte as the caller's requests do.
+ */
+function offeredTools(
+  set: PinnedDefinitionSet,
+  registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
+  requested: readonly ProtectedCapability[],
+): { readonly ordinary: ModelToolSpec[]; readonly final: ModelToolSpec[] } {
+  const { agent, units, tools } = set;
   const toolOf = (ref: { readonly id: string; readonly version: string }) =>
     tools.find((tool) => tool.id === ref.id && tool.version === ref.version);
   // A tool beyond the ceiling is not offered at all; asking for it would be refused (M2Design 5.4).
@@ -100,24 +140,32 @@ export function pinnedAgentOf(
     ...(ask === undefined ? [] : [ask]),
     ...taskTools,
     ...ends.map((end) => end.tool),
-  ].map(specOf);
-  const final = ends.filter((end) => end.allowedInFinal).map((end) => specOf(end.tool));
+  ].map((tool) => specOf(tool, registry));
+  const final = ends.filter((end) => end.allowedInFinal).map((end) => specOf(end.tool, registry));
+  return { ordinary, final };
+}
 
+/**
+ * What an AgentRun is shown when it is not its own Agent (D99): the presenting Agent's prompt and
+ * its tools under the capabilities it was offered by, then the tools it lists and never calls. The
+ * prompt says those are not the presenting Agent's to call; a task shown them is told in its own
+ * context which tools are its own.
+ */
+export function presentationOf(
+  set: PinnedDefinitionSet,
+  registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
+  offered: readonly ProtectedCapability[],
+  listed: readonly ToolDefinition[],
+): { readonly instructions: string; readonly toolSpecs: ModelToolSpec[] } {
+  const { ordinary } = offeredTools(set, registry, offered);
+  const names = listed.map((tool) => tool.modelName);
+  const one = names.length === 1;
   return {
-    id: agent.id,
-    capabilities: agent.capabilities,
-    units,
-    maxToolUnits: agent.limits.maxToolUnits,
-    ...(agent.limits.maxWallClockMs === undefined
-      ? {}
-      : { maxWallClockMs: agent.limits.maxWallClockMs }),
-    modelScope,
-    budget: agent.budget,
-    contextWindowTokens: model.limits.contextWindowTokens,
-    cacheHitWeight: model.pricing.offPeak.inputCacheHit / model.pricing.offPeak.inputCacheMiss,
-    instructions: prompt.template,
-    // A final call offers only the end tools allowed in it (ExecutorSet 6.1).
-    toolSpecs: (isFinal) => (isFinal ? final : ordinary),
+    instructions:
+      names.length === 0
+        ? set.prompt.template
+        : `${set.prompt.template}\n\n${names.join(', ')} ${one ? 'is' : 'are'} listed for the subtasks that start with your context, not for you: never call ${one ? 'it' : 'them'}; a call is refused.`,
+    toolSpecs: [...ordinary, ...listed.map((tool) => specOf(tool, registry))],
   };
 }
 
@@ -157,6 +205,11 @@ export interface AgentCatalog {
     ref: { readonly id: string; readonly version: string },
     context: BoundaryContext,
   ): PortResult<PinnedDefinitionSet>;
+  /** A tool by its reference: what an Agent lists and never calls (D99). */
+  tool?(
+    ref: { readonly id: string; readonly version: string },
+    context: BoundaryContext,
+  ): PortResult<ToolDefinition>;
 }
 
 /** The catalog as compaction reads it: an Agent by its reference, and the newest of an id. */
@@ -212,25 +265,63 @@ export function pinAgentFrom(
 ): (request: RegisterAgentRunRequest) => Promise<PinResult> {
   return (request) => {
     const { agentRef, effort, sessionId, workflowRunId } = request;
-    const set = catalog.pinAgent(agentRef, {
+    const context = {
       correlationId: newId('cor'),
       tenantId: 'local',
       projectId: 'local',
       sessionId,
       workflowRunId,
-    });
+    };
+    const set = catalog.pinAgent(agentRef, context);
     if (!set.ok) return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' });
     if (set.value.agent.digest !== agentRef.digest)
       return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_MISMATCH' });
-    // The tools are offered by `offeredCapabilities` when given; the ceiling stays the requested.
-    const agent = pinnedAgentOf(
-      set.value,
-      effort,
+    const own = pinnedAgentOf(set.value, effort, registry, request.requestedCapabilities);
+    if (own === 'FORBIDDEN') return Promise.resolve({ ok: false, reasonCode: 'FORBIDDEN' });
+    // A narrower input limit only narrows (D100).
+    const limit = request.inputLimit;
+    const narrowed: PinnedAgent =
+      limit === undefined
+        ? own
+        : {
+            ...own,
+            budget: {
+              ...own.budget,
+              perCallInputLimit: Math.min(own.budget.perCallInputLimit, limit),
+              finalInputBudget: Math.min(own.budget.finalInputBudget, limit),
+            },
+          };
+    const { presentation } = request;
+    if (presentation === undefined) return Promise.resolve({ ok: true, agent: narrowed });
+    // What it is shown (D99), in every call, the final one too (D102): everything else stays its
+    // own, its end tools among it.
+    const same =
+      presentation.agentRef.id === agentRef.id &&
+      presentation.agentRef.version === agentRef.version;
+    const shownSet = same ? set : catalog.pinAgent(presentation.agentRef, context);
+    if (!shownSet.ok) return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' });
+    if (shownSet.value.agent.digest !== presentation.agentRef.digest)
+      return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_MISMATCH' });
+    const listed: ToolDefinition[] = [];
+    for (const ref of presentation.listedTools ?? []) {
+      const tool = catalog.tool?.(ref, context);
+      if (tool?.ok !== true)
+        return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' });
+      listed.push(tool.value);
+    }
+    const shown = presentationOf(
+      shownSet.value,
       registry,
-      request.offeredCapabilities ?? request.requestedCapabilities,
+      presentation.offeredCapabilities,
+      listed,
     );
-    return Promise.resolve(
-      agent === 'FORBIDDEN' ? { ok: false, reasonCode: 'FORBIDDEN' } : { ok: true, agent },
-    );
+    return Promise.resolve({
+      ok: true,
+      agent: {
+        ...narrowed,
+        instructions: shown.instructions,
+        toolSpecs: () => shown.toolSpecs,
+      },
+    });
   };
 }

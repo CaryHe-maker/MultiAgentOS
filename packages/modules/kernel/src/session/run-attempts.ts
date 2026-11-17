@@ -35,8 +35,15 @@ export interface PinnedAgent {
   readonly cacheHitWeight: number;
   /** The rendered Prompt of the Agent. */
   readonly instructions: string;
-  /** The tools of a call: the Units' and the end tools, or only those allowed in a final call. */
+  /**
+   * The tools of a call: the Units' and the end tools, or only those allowed in a final call. What
+   * the model is shown, which may be its caller's (D99); `ownToolNames` are the ones it may call.
+   */
   readonly toolSpecs: (final: boolean) => ModelToolSpec[];
+  /** The names of the tools this AgentRun's own Agent offers it (D99). */
+  readonly ownToolNames: readonly string[];
+  /** The names of its end tools a final call may use (D102). */
+  readonly finalToolNames: readonly string[];
 }
 
 /** Core starts an attempt through Execution once admission and authorization allowed it. */

@@ -10,6 +10,7 @@ import {
   DefinitionRefSchema,
   PinnedDefinitionRefSchema,
   PlaybookSchema,
+  PresentationSchema,
 } from '../catalog/definition-schemas.js';
 import { TokenUsageSchema, ThinkingEffortSchema } from '../executor/model-call.js';
 import { INTERRUPT_REASONS } from '../kernel-control/interrupt.js';
@@ -57,15 +58,29 @@ export const SpawnNodeSchema = closed({
    */
   cut: Type.Optional(Type.Boolean()),
   /**
-   * A task of a phase with `context: inherit` (Orchestration 3.9, D35): the task whose context it
-   * starts with, the AgentRun of that task that made the call, and the Agent the phase names
-   * (the task itself runs as the Agent of the task it comes from, so the provider's cache holds).
+   * A task that starts with its caller's context (Orchestration 3.9, D35, D53): the task whose
+   * context it starts with, the AgentRun of that task that made the call, and its own Agent. It
+   * runs as that Agent and is shown what the caller is shown, so the provider's cache holds (D99).
    */
   inherits: Type.Optional(
     closed({
       missionId: IdSchemas.missionScopeId,
       agentRunId: IdSchemas.agentRunId,
       as: Type.String({ maxLength: 64 }),
+      /**
+       * What the task is told where it becomes itself (D99), as it was when it started: its role's
+       * own instructions, which its requests do not carry as their system prompt, and the tools it
+       * is shown with its caller's context that are not its own.
+       */
+      role: Type.Optional(
+        closed({
+          instructions: Type.String({ maxLength: 100_000 }),
+          notOwnTools: Type.Array(Type.String({ maxLength: 64 }), { maxItems: 64 }),
+          finishRequires: Type.Optional(
+            Type.Array(Type.String({ maxLength: 64 }), { maxItems: 8 }),
+          ),
+        }),
+      ),
     }),
   ),
   /**
@@ -126,6 +141,10 @@ export const GraphNodeRecordSchema = closed({
   goal: Type.Optional(text(4000)),
   /** What the step's Agent reads with its goal: the template's worked examples (D32). */
   guide: Type.Optional(Type.String({ maxLength: 30_000 })),
+  /** Tools the step's Agent lists and never calls, from its template (D99). */
+  lists: Type.Optional(Type.Array(DefinitionRefSchema, { minItems: 1, maxItems: 8 })),
+  /** A per-call input limit below its Agent's own, from its template (D100). */
+  inputLimit: Type.Optional(count(1)),
   output: Type.Optional(Type.Boolean()),
   /** Of an AGENT node: the task it is a segment of. */
   mission: Type.Optional(NodeMissionSchema),
@@ -335,6 +354,14 @@ export const SessionLogRecordSchema = Type.Union(
       parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
       /** The task this AgentRun is a segment of (Orchestration 3.4). */
       missionId: Type.Optional(IdSchemas.missionScopeId),
+      /**
+       * What the model is shown, as registered (D99): a task that starts with this AgentRun's
+       * context, or a later segment of its task, is shown the same, so its requests begin as these
+       * did. Absent, the AgentRun's own Agent.
+       */
+      presentation: Type.Optional(PresentationSchema),
+      /** Its per-call input limit, when narrower than its Agent's (D100); later segments keep it. */
+      inputLimit: Type.Optional(count(1)),
     }),
     /**
      * A segment went to wait before its work was done (Orchestration 4): it ends, its task sleeps

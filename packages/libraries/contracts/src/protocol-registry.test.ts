@@ -124,9 +124,7 @@ const EXPECTED = {
     'JobOutputArgs',
     'JobListArgs',
     'JobKillArgs',
-    'ExplorerResult',
-    'WorkerResult',
-    'RunSubagentsNestedArgs',
+    'SubagentResult',
   ],
   catalog: [
     'AgentDefinition',

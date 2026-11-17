@@ -164,7 +164,7 @@ Core 在结果检查后向 UserInteraction 发出 MessagePublished(messageRef = 
 DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败只写诊断，不阻止启动，也不影响下一次定期回收。
 
 **定期回收**：由 Session 管理的定时器发出内部消息 `ARTIFACT_SWEEP_TICK`（[Interaction](Interaction.md) 第 5.1 节），在 Session 管理中按顺序开始，读取归属文件与删除正文的 I/O 只登记、在后台完成，上一次未完成时跳过本次。
-与它并发的写入不受影响：登记行在产物引用交出之前已追加；写入已存在的正文时 ArtifactStore 更新它的写入时间，回收开始之后被再次写入的正文不会被删除。
+与它并发的写入不受影响：登记行在正文写入之前、也就在产物引用交出之前追加。回收先记下开始时刻再读归属文件：读到了登记行的，正文按标记保留；没读到的，登记行晚于读取，正文更晚，写入时间在开始时刻之后，也不删。原来正文先写、登记后写，正文恰在回收开始前写入而登记行在读取之后才到时，正文被当作无主删除，正在用的上下文包读不到（2026-11-16 最终集 pyarchive 的 ARTIFACT_EXPIRED）；Workflow 遇到模型调用的上下文包读不到时，从日志重新组装一次。写入已存在的正文时 ArtifactStore 更新它的写入时间，回收开始之后被再次写入的正文不会被删除。
 
 **Session 删除与失败时的清理**：`deleteSession` 时，不论 Workflow 是否删除成功，Execution 都删除该 Session 的 `kernel-execution` 目录；
 新建 Session 失败时（Workflow 回复 `CREATE` 失败），Execution 同样删除已为它写入的归属文件（第一条输入的登记）。正文由下一次回收删除。

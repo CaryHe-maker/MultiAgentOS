@@ -87,9 +87,11 @@ const writeScopeField = { writeScope: Type.Array(text(500), { maxItems: 10 }) };
 const planField = () => Type.Optional(text(8000));
 
 /**
- * Parameters of `run_subagents` of the root task. The number of tasks is limited by
- * configuration, not here. `split: true` on a worker with a large part lets it start subtasks of
- * its own inside its writeScope: the system runs it as a lead (D88).
+ * Parameters of `run_subagents`, one form for every Agent that spawns (D99). The number of tasks
+ * is limited by configuration, not here. `split: true` on a worker with a large part lets it start
+ * subtasks of its own inside its writeScope: the system runs it as a lead (D88). Which Agents a
+ * caller may start comes from the spawn action of its own Agent (`agents`): a lead starts explorers
+ * and workers only, so neither `split` nor a specialist is open to it.
  */
 export const RunSubagentsArgsSchema = closed(
   {
@@ -118,52 +120,27 @@ export interface SpawnRequest {
 }
 
 /**
- * Parameters of `run_subagents` of a lead: explorers and workers only. Only the root starts a lead
- * or a specialist (D88, D93), so neither `split` nor a specialist is offered here.
+ * Parameters of `finish_subagent`, one form for every SubAgent: the request lists one tool of this
+ * name, the same for every task, so a task that starts with its caller's context sends the
+ * caller's tool list as it is (D99). What a role must give besides the summary comes from the end
+ * action of its Agent (`requires`): a worker gives status, changedFiles and validation.
  */
-export const RunSubagentsNestedArgsSchema = closed(
-  {
-    tasks: Type.Array(
-      closed({
-        ...subagentTaskFields,
-        ...writeScopeField,
-        agent: Type.Enum(['explorer', 'worker']),
-      }),
-      { minItems: 1, maxItems: 12 },
-    ),
-    plan: planField(),
-  },
-  'workflow.RunSubagentsNestedArgs.v1',
-);
-
-/** Parameters of `finish_subagent` of an explorer. */
-export const ExplorerResultSchema = closed(
+export const SubagentResultSchema = closed(
   {
     summary: longText(),
     report: Type.Optional(longText()),
     references: referencesField(),
+    status: Type.Optional(Type.Enum(['done', 'partial', 'blocked'])),
+    changedFiles: Type.Optional(Type.Array(text(500), { maxItems: 200 })),
+    validation: Type.Optional(
+      Type.Array(closed({ command: text(1000), exitCode: Type.Integer() }), { maxItems: 20 }),
+    ),
+    blockers: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
     openQuestions: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
   },
-  'workflow.ExplorerResult.v1',
+  'workflow.SubagentResult.v1',
 );
-export type ExplorerResult = Static<typeof ExplorerResultSchema>;
-
-/** Parameters of `finish_subagent` of a worker. */
-export const WorkerResultSchema = closed(
-  {
-    summary: longText(),
-    report: Type.Optional(longText()),
-    references: referencesField(),
-    changedFiles: Type.Array(text(500), { maxItems: 200 }),
-    status: Type.Enum(['done', 'partial', 'blocked']),
-    validation: Type.Array(closed({ command: text(1000), exitCode: Type.Integer() }), {
-      maxItems: 20,
-    }),
-    blockers: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
-  },
-  'workflow.WorkerResult.v1',
-);
-export type WorkerResult = Static<typeof WorkerResultSchema>;
+export type SubagentResult = Static<typeof SubagentResultSchema>;
 
 /** The part of the result of `finish_subagent` that the caller reads, whichever kind of Agent wrote it. */
 export interface SubagentReport {

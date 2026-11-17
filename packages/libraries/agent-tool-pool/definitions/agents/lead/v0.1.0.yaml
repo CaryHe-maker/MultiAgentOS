@@ -49,10 +49,14 @@ unitRefs:
 actions:
   end:
     - toolRef:
-        id: finish-worker
+        id: finish-subagent
         version: v0.1.0
       then: FINISH_SUBAGENT
       allowedInFinal: true
+      requires:
+        - status
+        - changedFiles
+        - validation
   onDegraded: RETURN_PARTIAL
   sleep:
     toolRef:
@@ -92,8 +96,11 @@ actions:
       version: v0.1.0
   spawn:
     toolRef:
-      id: lead-run-subagents
+      id: run-subagents
       version: v0.1.0
+    agents:
+      - explorer
+      - worker
 spawnable:
   defaultShare: 2400000
 capabilities:

@@ -12,6 +12,7 @@ thinking:
   allowedEfforts:
     - none
     - low
+    - high
 promptRef:
   id: explorer-system
   version: v0.1.0
@@ -37,7 +38,7 @@ unitRefs:
 actions:
   end:
     - toolRef:
-        id: finish-explorer
+        id: finish-subagent
         version: v0.1.0
       then: FINISH_SUBAGENT
       allowedInFinal: true

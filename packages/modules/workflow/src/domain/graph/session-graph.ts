@@ -42,6 +42,8 @@ interface NodeSpec {
   readonly agentRef?: DefinitionRef;
   readonly goal?: string;
   readonly guide?: string;
+  readonly lists?: GraphNodeRecord['lists'];
+  readonly inputLimit?: number;
   readonly output?: boolean;
   readonly spawn?: GraphNodeRecord['spawn'];
   readonly ask?: GraphNodeRecord['ask'];
@@ -59,6 +61,8 @@ function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphN
     ...(spec.agentRef === undefined ? {} : { agentRef: spec.agentRef }),
     ...(spec.goal === undefined ? {} : { goal: spec.goal }),
     ...(spec.guide === undefined ? {} : { guide: spec.guide }),
+    ...(spec.lists === undefined ? {} : { lists: spec.lists }),
+    ...(spec.inputLimit === undefined ? {} : { inputLimit: spec.inputLimit }),
     ...(spec.output === undefined ? {} : { output: spec.output }),
     ...(spec.spawn === undefined ? {} : { spawn: spec.spawn }),
     ...(spec.ask === undefined ? {} : { ask: spec.ask }),
@@ -252,6 +256,8 @@ export function compileTemplate(
               : { id: templateMissionId(rootMission, node.name), parentId: rootMission },
             ...(node.goal === undefined ? {} : { goal: node.goal }),
             ...(node.guide === undefined ? {} : { guide: node.guide }),
+            ...(node.lists === undefined ? {} : { lists: [...node.lists] }),
+            ...(node.inputLimit === undefined ? {} : { inputLimit: node.inputLimit }),
             ...(node.output === undefined ? {} : { output: node.output }),
           })
         : nodeOf(workflowRunId, 1, { name: node.name, kind: 'HUMAN' }),

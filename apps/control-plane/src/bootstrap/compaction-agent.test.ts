@@ -61,6 +61,63 @@ describe('the Agent a compaction is made as', () => {
         }
       });
 
+  it("shows a task its caller's prompt and tools, byte for byte, and keeps the rest its own (D99)", async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    const pin = pinAgentFrom(catalog, registry);
+    const bindingOf = (id: string) => {
+      const pinned = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
+      if (!pinned.ok) throw new Error(`cannot pin ${id}`);
+      return agentBindingOf(pinned.value, registry, 'standard', { commands: true });
+    };
+    const main = bindingOf('main');
+    const worker = bindingOf('worker');
+    const listed = [{ id: 'finish-subagent', version: 'v0.1.0' }];
+    const request = (binding: typeof main, presentation?: object, inputLimit?: number) =>
+      ({
+        requestId: newId('req'),
+        sessionId: newId('ses'),
+        workflowRunId: newId('wfr'),
+        agentRunId: newId('agr'),
+        nodeId: `nod_${'a'.repeat(32)}`,
+        agentRef: binding.ref,
+        effort: 'high',
+        workspaceViewId: 'main',
+        display: { label: binding.ref.id },
+        requestedCapabilities: [...binding.requestedCapabilities],
+        writeRoots: [...binding.writeRoots],
+        ...(presentation === undefined ? {} : { presentation }),
+        ...(inputLimit === undefined ? {} : { inputLimit }),
+      }) as unknown as Parameters<typeof pin>[0];
+    const shownAsRoot = {
+      agentRef: main.ref,
+      offeredCapabilities: [...main.requestedCapabilities],
+      listedTools: listed,
+    };
+    // Mission's root: its own tools, finish_subagent listed after them, and a smaller limit.
+    const root = await pin(request(main, shownAsRoot, 555_000));
+    const task = await pin(request(worker, shownAsRoot));
+    const alone = await pin(request(worker));
+    if (!root.ok || !task.ok || !alone.ok) throw new Error('cannot register');
+    expect(root.agent.toolSpecs(false).at(-1)?.name).toBe('finish_subagent');
+    expect(root.agent.instructions).toContain('finish_subagent is listed for the subtasks');
+    expect(root.agent.ownToolNames).not.toContain('finish_subagent');
+    expect(root.agent.budget.perCallInputLimit).toBe(555_000);
+    // The task sends what the root sends.
+    expect(task.agent.instructions).toBe(root.agent.instructions);
+    expect(task.agent.toolSpecs(false)).toEqual(root.agent.toolSpecs(false));
+    // Everything else is the worker's own.
+    expect(task.agent.id).toBe('worker');
+    expect(task.agent.capabilities).toEqual(alone.agent.capabilities);
+    expect(task.agent.budget).toEqual(alone.agent.budget);
+    // A final call lists the same tools; the end tools it may call then are its own (D102).
+    expect(task.agent.toolSpecs(true)).toEqual(root.agent.toolSpecs(false));
+    expect(task.agent.finalToolNames).toEqual(alone.agent.finalToolNames);
+    expect(task.agent.ownToolNames).toEqual(alone.agent.ownToolNames);
+    expect(task.agent.ownToolNames).not.toContain('run_subagents');
+  });
+
   it('is main when no Agent is named, and nothing when the catalog does not know the Agent', async () => {
     const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),

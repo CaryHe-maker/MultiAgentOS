@@ -71,8 +71,12 @@ export function completionResponse(
 export type ScriptedAgent =
   'main' | 'lead' | 'explorer' | 'worker' | 'planner' | 'code-viewer' | 'unknown';
 
-/** Which Agent a request is for, from the tools it offers (M2Design 3.9). */
+/**
+ * Which Agent a request is for, from the tools it offers (M2Design 3.9). Only main replies; the
+ * root of a long task lists finish_subagent for the tasks that start with its context (D99).
+ */
 export function agentOfTools(names: ReadonlySet<string>): ScriptedAgent {
+  if (names.has('reply')) return 'main';
   // A lead returns a result like any task and may start tasks of its own (Orchestration 9.4).
   if (names.has('finish_subagent'))
     return names.has('run_subagents') ? 'lead' : names.has('write_file') ? 'worker' : 'explorer';

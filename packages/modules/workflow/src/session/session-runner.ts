@@ -1,4 +1,5 @@
 import { settleOpenCalls } from './settle-stale.js';
+import { toolNamesOf } from './agent-binding.js';
 import { lastWorkspaceOf } from '../domain/workspace/workspace-binding.js';
 import { checkedItems, nextReferenceId } from '../domain/handover/handover.js';
 import {
@@ -10,6 +11,7 @@ import {
   type ArtifactRef,
   type BoundaryContext,
   canonicalJson,
+  sha256Hex,
   type DefinitionRef,
   type DelegationReserved,
   type GraphNodeRecord,
@@ -31,6 +33,7 @@ import {
   type SpawnNode,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
+  type Presentation,
   type ProtectedCapability,
   type ReasonCode,
   type SessionCommandFailure,
@@ -135,6 +138,12 @@ export interface AgentBinding {
   readonly writeRoots: readonly string[];
   readonly toolsDigest: string;
   readonly definitions: AgentDefinitions;
+  /** The Agent's own system prompt, which a task that inherits is told where it switches (D99). */
+  readonly instructions: string;
+  /** What its finishing call must give besides the summary (D99). */
+  readonly finishRequires: readonly string[];
+  /** The model name of every tool of its pinned set, by tool id. */
+  readonly toolNames: Readonly<Record<string, string>>;
 }
 
 export interface SessionRunnerDeps {
@@ -1665,13 +1674,11 @@ export class SessionRunner {
       asksForRounds: () =>
         scope.missionId !== undefined &&
         projectMissions(this.#records).get(scope.missionId)?.parentId !== undefined,
-      assembleInput: (status, final, withdrawnTools) => {
+      assembleInput: (status, final) => {
         // In a folder that is no git repository, git history cannot be read: the tool is not
-        // offered, rather than refused on every call (each worker tried it once before).
-        const withdrawn = [
-          ...withdrawnTools,
-          ...(this.#deps.runtime().git === false ? this.#gitTools() : []),
-        ];
+        // offered, rather than refused on every call (each worker tried it once before). It is
+        // known when the Session starts and never changes within it, so the cache holds.
+        const withdrawn = this.#deps.runtime().git === false ? this.#gitTools() : [];
         // What still runs in the background is said at every call (D65): the task may stop it.
         const now = (this.#deps.now ?? (() => new Date()))().getTime();
         const jobs =
@@ -1792,6 +1799,122 @@ export class SessionRunner {
     return found?.spawn === undefined ? undefined : found;
   }
 
+  /** The registration of an AgentRun, as the log has it. */
+  #registered(
+    agentRunId: string,
+  ): Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }> | undefined {
+    return this.#records.find(
+      (record): record is Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }> =>
+        record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === agentRunId,
+    );
+  }
+
+  /** The latest registration of a segment of a task, if it has had one. */
+  #lastSegmentOf(
+    missionId: string,
+  ): Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }> | undefined {
+    return [...this.#records]
+      .reverse()
+      .find(
+        (record): record is Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }> =>
+          record.type === 'AGENT_RUN_REGISTERED' && record.missionId === missionId,
+      );
+  }
+
+  /** What an AgentRun is shown, as registered: its own Agent when nothing else is said. */
+  #shownBy(record: Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }>): Presentation {
+    return (
+      record.presentation ?? {
+        agentRef: record.agentRef,
+        offeredCapabilities: [...this.#binding(record.agentRef.id).requestedCapabilities],
+      }
+    );
+  }
+
+  /**
+   * What the model of a new AgentRun is shown (D99), and its narrower input limit (D100). A later
+   * segment of a task, or a task taken up again, is shown what its task was shown, so its history
+   * goes on from the same prefix. A task that starts with its caller's context is shown what the
+   * caller was shown. Any other is shown its own Agent, with what its template step lists.
+   */
+  #shownFor(
+    node: GraphNodeRecord,
+    taskNode: GraphNodeRecord | undefined,
+    binding: AgentBinding,
+  ): {
+    readonly presentation: Presentation;
+    readonly inputLimit?: number;
+    readonly toolsDigest: string;
+  } {
+    const earlier =
+      (node.mission === undefined ? undefined : this.#lastSegmentOf(node.mission.id)) ??
+      (taskNode?.spawn?.continues === undefined
+        ? undefined
+        : this.#lastSegmentOf(taskNode.spawn.continues.missionId));
+    const inheritedFrom = taskNode?.spawn?.inherits?.agentRunId;
+    const caller = inheritedFrom === undefined ? undefined : this.#registered(inheritedFrom);
+    const callers = caller === undefined ? undefined : this.#shownBy(caller);
+    const presentation: Presentation =
+      earlier !== undefined
+        ? this.#shownBy(earlier)
+        : callers !== undefined && this.#canBeShown(callers, binding)
+          ? callers
+          : {
+              agentRef: binding.ref,
+              offeredCapabilities: [...binding.requestedCapabilities],
+              ...(node.lists === undefined ? {} : { listedTools: [...node.lists] }),
+            };
+    const inputLimit = earlier?.inputLimit ?? (earlier === undefined ? node.inputLimit : undefined);
+    const shownBinding = this.#binding(presentation.agentRef.id);
+    return {
+      presentation,
+      ...(inputLimit === undefined ? {} : { inputLimit }),
+      // The tool definitions the model sees, by digest: a change adds a REQUEST_CONTEXT record.
+      toolsDigest: sha256Hex(canonicalJson({ tools: shownBinding.toolsDigest, presentation })),
+    };
+  }
+
+  /** The names of the tools a presentation shows: its Agent's, then what it lists. */
+  #shownNames(presentation: Presentation): string[] {
+    const listed = (presentation.listedTools ?? []).flatMap((ref) =>
+      [...this.#deps.agents.values()].flatMap((each) => each.toolNames[ref.id] ?? []).slice(0, 1),
+    );
+    return [...toolNamesOf(this.#binding(presentation.agentRef.id).definitions), ...listed];
+  }
+
+  /**
+   * A task is shown its caller's tools only when they hold its own end tools (D99): it must be able
+   * to finish. Turn-chat's main lists no `finish_subagent`, so its tasks are shown their own Agent.
+   */
+  #canBeShown(presentation: Presentation, own: AgentBinding): boolean {
+    const shown = new Set(this.#shownNames(presentation));
+    return own.definitions.endTools.every((tool) => shown.has(tool.toolName));
+  }
+
+  /**
+   * What a task that starts with its caller's context is told of its role where it becomes itself
+   * (D99): its Agent's instructions, the tools it is shown that are not its own, and what its
+   * finishing call owes. It is shown what the caller is shown.
+   */
+  #roleOf(
+    callerRunId: string,
+    /** Its binding as it will run: at its depth, and without commands when lent none (D17). */
+    own: AgentBinding,
+  ): { instructions: string; notOwnTools: string[]; finishRequires?: string[] } {
+    const caller = this.#registered(callerRunId);
+    const callers = caller === undefined ? undefined : this.#shownBy(caller);
+    const mine = new Set(toolNamesOf(own.definitions));
+    const notOwnTools =
+      callers === undefined || !this.#canBeShown(callers, own)
+        ? []
+        : this.#shownNames(callers).filter((name) => !mine.has(name));
+    return {
+      instructions: own.instructions,
+      notOwnTools: [...new Set(notOwnTools)],
+      ...(own.finishRequires.length === 0 ? {} : { finishRequires: [...own.finishRequires] }),
+    };
+  }
+
   async #startAgent(workflowRunId: string, node: GraphNodeRecord): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
     if (this.#inputCheckpointId === undefined)
@@ -1807,39 +1930,10 @@ export class SessionRunner {
     const depth = projectMissions(this.#records).get(missionId)?.depth ?? 0;
     // A later segment of a spawned task works within what its first segment was given.
     const taskNode = this.#taskNodeOf(workflowRunId, node);
-    // A task that inherits is asked with the very prompt and tools of the task it comes from, or
-    // the provider's cache of that context is lost (D35); what it may not do is refused instead.
-    // It comes from a task that was started by a call, or from the root of the work (D53).
-    const segments =
-      taskNode?.spawn?.inherits === undefined
-        ? []
-        : [...graph.nodes.values()].filter(
-            (each) => each.mission?.id === taskNode.spawn?.inherits?.missionId,
-          );
-    const origin = segments.find((each) => each.spawn !== undefined) ?? segments[0];
-    // A task of a phase runs as the Agent of the task it comes from; a task that asked for the
-    // context itself (D53) runs as its own Agent, with its own prompt, tools and budget, and pays
-    // for the inherited context once, on its first call.
-    // Only a task that is one Agent and runs as another (a phase's worker run as its lead) works
-    // in its caller's binding; a lead started by a lead is a lead of its own level (D58).
-    const from =
-      origin?.agentRef?.id === agentId && taskNode?.spawn?.inherits?.as !== agentId
-        ? origin
-        : undefined;
-    const own = this.#bindingAt(agentId, depth, taskNode?.spawn?.commands !== false);
-    const lent = this.#bindingAt(agentId, Math.max(0, depth - 1), from?.spawn?.commands !== false);
-    // It asks for no more than the Agent its phase names may do: the Kernel grants a task only
-    // what its caller lent, and the tools beyond that are refused when called.
-    const named = this.#deps.agents.get(taskNode?.spawn?.inherits?.as ?? '');
-    const binding: AgentBinding =
-      from === undefined
-        ? own
-        : {
-            ...lent,
-            requestedCapabilities: lent.requestedCapabilities.filter(
-              (capability) => named?.requestedCapabilities.includes(capability) ?? true,
-            ),
-          };
+    // Every AgentRun is its own Agent: what it may do, its limits, its budget and how it ends
+    // (D99). What the model is shown is its caller's when it starts with its caller's context.
+    const binding = this.#bindingAt(agentId, depth, taskNode?.spawn?.commands !== false);
+    const shown = this.#shownFor(node, taskNode, binding);
     const place = placementOf(
       taskNode ?? node,
       {
@@ -1856,14 +1950,14 @@ export class SessionRunner {
     const link = spawn === undefined ? undefined : place.link;
     // A task that inherits thinks as hard as the task it comes from: the provider keeps a cache
     // per effort, so another effort would pay for the whole inherited context again (D35).
+    // It keeps its own effort when its Agent does not allow the caller's.
     const inheritedFrom = taskNode?.spawn?.inherits?.agentRunId;
+    const callerEffort =
+      inheritedFrom === undefined ? undefined : this.#registered(inheritedFrom)?.effort;
     const effort =
-      (from === undefined
-        ? undefined
-        : this.#records.find(
-            (record): record is Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }> =>
-              record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === inheritedFrom,
-          )?.effort) ?? place.effort;
+      callerEffort !== undefined && binding.allowedEfforts.includes(callerEffort)
+        ? callerEffort
+        : place.effort;
     await this.#append([
       {
         type: 'AGENT_RUN_REGISTERED',
@@ -1876,6 +1970,8 @@ export class SessionRunner {
           ? {}
           : { parentAgentRunId: link.parentAgentRunId }),
         missionId,
+        presentation: shown.presentation,
+        ...(shown.inputLimit === undefined ? {} : { inputLimit: shown.inputLimit }),
       },
       {
         type: 'REQUEST_CONTEXT',
@@ -1883,7 +1979,7 @@ export class SessionRunner {
         agentRunId,
         modelRef: binding.modelRef,
         thinking: effort,
-        toolsDigest: binding.toolsDigest,
+        toolsDigest: shown.toolsDigest,
         runtimeContext: { workingDirectory: this.#repositoryRoot, ...this.#deps.runtime() },
       },
     ]);
@@ -1899,7 +1995,8 @@ export class SessionRunner {
         workspaceViewId: 'main',
         display: { label: place.label },
         requestedCapabilities: [...binding.requestedCapabilities],
-        ...(from === undefined ? {} : { offeredCapabilities: [...lent.requestedCapabilities] }),
+        presentation: shown.presentation,
+        ...(shown.inputLimit === undefined ? {} : { inputLimit: shown.inputLimit }),
         writeRoots: [...place.writeRoots],
         ...(link === undefined ? {} : { delegationId: link.delegationId, taskName: link.taskName }),
         ...(node.mission === undefined
@@ -2877,15 +2974,6 @@ export class SessionRunner {
     );
     // A task that runs as its caller's Agent for a phase is not a lead; a lead that started with
     // its caller's context is, and splits its part (D58).
-    if (ownTask?.spawn?.inherits !== undefined && ownTask.spawn.inherits.as !== 'lead')
-      return this.#answerControl(
-        workflowRunId,
-        active,
-        toolCallId,
-        true,
-        'NOT_A_LEAD',
-        'Not started: you are a subtask, not the task whose context you were given. You start no subtasks: do your goal yourself and finish with your finishing call.',
-      );
     const followed = ownTask?.spawn?.specialist;
     let phaseInherits: string | undefined;
     if (followed !== undefined) {
@@ -3001,20 +3089,19 @@ export class SessionRunner {
         'Not started: a tester writes the acceptance tests beside the build, in the same call as the tasks that build. The build has come back, and each result shows the check its task ran after its last change, as the system saw it. Read those; for the whole, run the checks of the plan yourself once, or start an integrator when the whole fails in ways you cannot place.',
       );
     // Who starts with the caller's context (D35, D53): every task of a phase that says so, or a
-    // task that is a worker, explorer or lead.
-    const inherit = new Map<string, { readonly as: string; readonly runAs: string }>();
-    for (const task of checked.plan.tasks) {
-      if (phaseInherits !== undefined)
-        inherit.set(task.name, { as: phaseInherits, runAs: active.agentId });
-      // A worker, explorer or lead starts with its caller's context, which holds what the
-      // caller read and its call (D56, D58); a specialist and a task taken up again do not.
-      else if (
-        (task.agent === 'worker' || task.agent === 'explorer' || task.agent === 'lead') &&
-        task.continues === undefined &&
-        !specialists.has(task.name)
+    // task that is a worker, explorer or lead. Each runs as its own Agent, and is shown what its
+    // caller is shown, so its first request hits the cached prefix (D99).
+    const inherit = new Set<string>();
+    for (const task of checked.plan.tasks)
+      if (
+        phaseInherits !== undefined ||
+        // A worker, explorer or lead starts with its caller's context, which holds what the
+        // caller read and its call (D56, D58); a specialist and a task taken up again do not.
+        ((task.agent === 'worker' || task.agent === 'explorer' || task.agent === 'lead') &&
+          task.continues === undefined &&
+          !specialists.has(task.name))
       )
-        inherit.set(task.name, { as: task.agent, runAs: task.agent });
-    }
+        inherit.add(task.name);
     const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
     if (lent.kind === 'BLOCKED') return;
     // Left unanswered: the call is made again when the user has answered (D62).
@@ -3138,7 +3225,7 @@ export class SessionRunner {
      * The tasks that start with the caller's context, and the Agent each is (a phase with
      * `context: inherit`, D35, or a task with `context: "inherit"`, D53), by task name.
      */
-    inherit: ReadonlyMap<string, { readonly as: string; readonly runAs: string }> = new Map(),
+    inherit: ReadonlySet<string> = new Set(),
     /** The tasks of the call that were not started, and those whose goal the graph holds cut (D56). */
     told: { readonly notStarted: readonly string[]; readonly cut: readonly string[] } = {
       notStarted: [],
@@ -3151,29 +3238,33 @@ export class SessionRunner {
     const revisionNumber = projected.lastRevision + 1;
     const missionId = projected.nodes.get(active.nodeId)?.mission?.id;
     if (missionId === undefined) throw new Error('a caller of run_subagents belongs to no task');
+    const depth = projectMissions(this.#records).get(missionId)?.depth ?? 0;
     const revision = spawnRevision(
       workflowRunId,
       revisionNumber,
       { nodeId: active.nodeId, call, missionId },
       tasks.map((task) => {
-        const inherits = inherit.get(task.name);
+        const inherits = inherit.has(task.name);
         return {
           name: task.name,
-          // A task of a phase runs as the caller's Agent (same prompt, tools and cache, D35); a task
-          // that asked for the context runs as its own (D53).
-          agentRef: this.#refOf(inherits?.runAs ?? task.agent),
+          // Every task runs as its own Agent: what it may do and how it ends are its own (D99).
+          agentRef: this.#refOf(task.agent),
           goal: task.goal,
           dependsOn: task.dependsOn ?? [],
           spawn: {
             ...spawnNodeOf(task, shares.get(task.name)),
             ...(told.cut.includes(task.name) ? { cut: true } : {}),
-            ...(inherits === undefined
+            ...(!inherits
               ? {}
               : {
                   inherits: {
                     missionId,
                     agentRunId: active.state.agentRunId,
-                    as: inherits.as,
+                    as: task.agent,
+                    role: this.#roleOf(
+                      active.state.agentRunId,
+                      this.#bindingAt(task.agent, depth + 1, task.commands !== false),
+                    ),
                   },
                 }),
             ...specialistOf(specialists, task.name),

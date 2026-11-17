@@ -103,6 +103,57 @@ describe('what a compaction touches', () => {
     expect(range.replacedEntries).toBeGreaterThan(0);
   });
 
+  it('keeps the turn of an answer that stays, and every other answer of that turn (D101)', () => {
+    next = 1;
+    const call = turn(200);
+    const kept = result('call_a', 300, { category: 'PINNED' });
+    const sibling = result('call_b', 300);
+    const entries = [human(100), call, kept, sibling, ...rounds(6, 800)];
+    const range = planCompaction(entries, CONFIG).range;
+    if (range === undefined) throw new Error('no range');
+    expect(range.keptSeqs).toEqual(expect.arrayContaining([call.seq, kept.seq, sibling.seq]));
+    // What stays still makes a whole request: the turn, then each of its answers.
+    const shown = applyCompactions(entries, {
+      pruned: [],
+      revoked: new Set(),
+      compacted: [
+        {
+          type: 'CONTEXT_COMPACTED',
+          seq: 1_000,
+          compactionId: 'cmp_bbbbbbbb',
+          fromSeq: range.fromSeq,
+          toSeq: range.toSeq,
+          keptSeqs: range.keptSeqs,
+          summaryRef: ref(50, 'b'),
+        },
+      ] as never,
+    });
+    const at = shown.findIndex((entry) => entry.seq === call.seq);
+    expect(shown[at + 1]?.seq).toBe(kept.seq);
+    expect(shown[at + 2]?.seq).toBe(sibling.seq);
+  });
+
+  it('never cuts or replaces what a task inherited, and counts its own part after it (D100)', () => {
+    next = 1;
+    const inherited = [human(100), ...rounds(4, 3_000)].map((entry) => ({
+      ...entry,
+      category: 'INHERITED' as const,
+    }));
+    const own = Array.from({ length: 6 }, (_, index) => [
+      turn(200),
+      result(`own_${String(index)}`, 3_000),
+    ]).flat();
+    const plan = planCompaction([...inherited, ...own], CONFIG);
+    expect(plan.prunable.length).toBeGreaterThan(0);
+    const ids = new Set(inherited.map((entry) => entry.seq));
+    const inheritedCalls = new Set(
+      inherited.flatMap((entry) => (entry.kind === 'TOOL_RESULT' ? [entry.toolCallId] : [])),
+    );
+    expect(plan.prunable.some((each) => inheritedCalls.has(each.toolCallId))).toBe(false);
+    if (plan.range === undefined) throw new Error('no range');
+    expect(plan.range.fromSeq).toBeGreaterThan(Math.max(...ids));
+  });
+
   it('lets a user message go when the newer ones have used the room', () => {
     next = 1;
     const old = human(400);

@@ -178,6 +178,21 @@ export function requestedCapabilitiesOf(
   );
 }
 
+/**
+ * What the model is shown when it is not the AgentRun's own Agent (D99): the system prompt and the
+ * tools of `agentRef`, offered by `offeredCapabilities`, with `listedTools` after them, which that
+ * Agent lists and never calls. Nothing else of the AgentRun comes from it.
+ */
+export const PresentationSchema = Type.Object(
+  {
+    agentRef: pinnedRefOf('AGENT'),
+    offeredCapabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
+    listedTools: Type.Optional(Type.Array(DefinitionRefSchema, { minItems: 1, maxItems: 8 })),
+  },
+  { additionalProperties: false },
+);
+export type Presentation = Static<typeof PresentationSchema>;
+
 export const AgentDefinitionSchema = Type.Object(
   {
     ...header('AGENT'),
@@ -201,6 +216,16 @@ export const AgentDefinitionSchema = Type.Object(
               toolRef: DefinitionRefSchema,
               then: Type.Enum(['PUBLISH_REPLY', 'FINISH_SUBAGENT']),
               allowedInFinal: Type.Boolean(),
+              /**
+               * Fields of the tool's parameters this Agent must give although the form leaves them
+               * optional (D99): one form serves every role, and the role says what it owes.
+               */
+              requires: Type.Optional(
+                Type.Array(Type.String({ pattern: '^[a-z][A-Za-z0-9]{0,63}$' }), {
+                  minItems: 1,
+                  uniqueItems: true,
+                }),
+              ),
             },
             { additionalProperties: false },
           ),
@@ -215,9 +240,24 @@ export const AgentDefinitionSchema = Type.Object(
         askUser: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
         ),
-        /** The `run_subagents` tool of an Agent whose ceiling has `agent.spawn` (M2Design 3.6). */
+        /**
+         * The `run_subagents` tool of an Agent whose ceiling has `agent.spawn` (M2Design 3.6), and
+         * the Agents it may start (D99): without the list, every Agent the tool names. A task of
+         * another Agent is refused; `split` makes a worker a lead, so it needs `lead` in the list.
+         */
         spawn: Type.Optional(
-          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+          Type.Object(
+            {
+              toolRef: DefinitionRefSchema,
+              agents: Type.Optional(
+                Type.Array(Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$' }), {
+                  minItems: 1,
+                  uniqueItems: true,
+                }),
+              ),
+            },
+            { additionalProperties: false },
+          ),
         ),
         /** The `sleep` tool: the segment ends and the task waits to be woken (Orchestration 4.1). */
         sleep: Type.Optional(
@@ -568,6 +608,13 @@ export const TemplateNodeSchema = Type.Union([
        * system well, written as the behaviour wanted.
        */
       guide: Type.Optional(TextSchema(60_000)),
+      /**
+       * Tools the Agent of this step lists and never calls (D99): the tasks that start with its
+       * context are shown its tools byte for byte, so the finishing tool they need is listed here.
+       */
+      lists: Type.Optional(Type.Array(DefinitionRefSchema, { minItems: 1, maxItems: 8 })),
+      /** A per-call input limit below the Agent's own, for this template only (D100). */
+      inputLimit: Type.Optional(Type.Integer({ minimum: 1 })),
     },
     { additionalProperties: false },
   ),

@@ -28,7 +28,7 @@ export { compileTemplate } from './domain/graph/session-graph.js';
 export { callResultsOf } from './domain/spawn/spawn-graph.js';
 export { SessionLogStore, SessionStoreFailure } from './session/session-log-store.js';
 export { settleStaleRecords } from './session/settle-stale.js';
-export { agentBindingOf } from './session/agent-binding.js';
+export { agentBindingOf, requiring, startingOnly } from './session/agent-binding.js';
 export {
   SessionRunner,
   type AgentBinding,

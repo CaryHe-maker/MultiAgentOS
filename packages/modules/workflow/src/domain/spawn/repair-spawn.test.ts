@@ -1,6 +1,10 @@
-import { RunSubagentsArgsSchema, RunSubagentsNestedArgsSchema } from '@multiagentos/contracts';
+import { RunSubagentsArgsSchema } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
 import { GOAL_CHARS, repairSpawnArgs, taskSchemaOf } from './repair-spawn.js';
+import { startingOnly } from '../../session/agent-binding.js';
+
+/** The spawn form as a lead may use it: explorers and workers (D99). */
+const LEAD_FORM = startingOnly(RunSubagentsArgsSchema, ['explorer', 'worker']);
 
 const worker = (name: string, extra: object = {}) => ({
   name,
@@ -108,7 +112,7 @@ describe('the form of a task is the one of the spawn tool (D88, D89)', () => {
       { name: 'small', agent: 'worker', goal: 'the small part', writeScope: ['docs'] },
     ];
     expect(repairSpawnArgs({ tasks }, ROOT).notes).toEqual([]);
-    const nested = repairSpawnArgs({ tasks }, taskSchemaOf(RunSubagentsNestedArgsSchema));
+    const nested = repairSpawnArgs({ tasks }, taskSchemaOf(LEAD_FORM));
     expect(nested.notes.join('\n')).toContain('task big (index 0) was not started');
   });
 
@@ -117,7 +121,7 @@ describe('the form of a task is the one of the spawn tool (D88, D89)', () => {
       { name: 'fix', agent: 'fixer', goal: 'make the check pass', writeScope: ['src'] },
     ];
     expect(repairSpawnArgs({ tasks }, ROOT).notes).toEqual([]);
-    const nested = repairSpawnArgs({ tasks }, taskSchemaOf(RunSubagentsNestedArgsSchema));
+    const nested = repairSpawnArgs({ tasks }, taskSchemaOf(LEAD_FORM));
     expect(nested.notes.join('\n')).toContain('task fix (index 0) was not started: agent');
   });
 });

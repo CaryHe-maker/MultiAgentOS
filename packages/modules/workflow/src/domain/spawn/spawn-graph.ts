@@ -288,6 +288,7 @@ function inheritedOf(
     cut: started.seq,
     toolCallId: edge.call.toolCallId,
     as: inherits.as,
+    ...(inherits.role === undefined ? {} : { role: inherits.role }),
     siblings: started.nodes.filter((each) => each.nodeId !== node.nodeId).map((each) => each.name),
     // main of a chat sees the whole Session; a step of a template, or a task, its own work.
     from:

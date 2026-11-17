@@ -1,0 +1,25 @@
+schemaVersion: v1
+kind: TOOL
+id: finish-subagent
+version: v0.1.0
+description: Control tool that ends a subtask with its result, one form for every subtask (D99).
+purpose: CONTROL
+modelName: finish_subagent
+modelDescription: >-
+  Only for a subtask: call it when your part is done; it returns your result to the agent that
+  started you, and stops you; call it alone. summary (at most 2000 characters) is what the reader
+  always sees; report is the full detail, with the evidence in the text (file:first-last, page
+  addresses). references lists toolCallIds of your results the caller may want to read. A task that
+  changes files also gives status (done, partial or blocked), changedFiles (every file you
+  changed) and validation (the check commands you ran after your last change, each with its exit
+  code: the caller sees them and does not run them again), and blockers says what stopped you,
+  including a path you needed outside your writeScope. openQuestions lists what you could not
+  settle.
+parametersContract:
+  kind: contract
+  id: workflow.SubagentResult
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

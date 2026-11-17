@@ -1,5 +1,9 @@
 import { Type, type Static } from 'typebox';
-import { PROTECTED_CAPABILITIES, pinnedRefOf } from '../catalog/definition-schemas.js';
+import {
+  PROTECTED_CAPABILITIES,
+  PresentationSchema,
+  pinnedRefOf,
+} from '../catalog/definition-schemas.js';
 import { WorkflowRunFailureSchema } from '../kernel-control/run-outcome.js';
 import { LOCAL_QUESTION_KINDS, localQuestionProperties } from '../kernel-control/human-request.js';
 import { ThinkingEffortSchema } from '../executor/model-call.js';
@@ -32,14 +36,21 @@ export const RegisterAgentRunRequestSchema = closed(
     /** May only narrow the ceiling, or registration is CAPABILITY_NOT_SUBSET (Kernel/Core 5a.1). */
     requestedCapabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
     /**
-     * The capabilities the tools are offered by, when they are more than the AgentRun may use: a
-     * task that inherits the context of its caller is offered the caller's tools, so the request
-     * has the prefix the provider cached, and a call beyond its own ceiling is refused
-     * (Orchestration 3.9, D35). The requested ones when absent.
+     * What the model is shown, when it is not this AgentRun's own Agent (D99): the system prompt
+     * and the tools of `agentRef`, offered by `offeredCapabilities`, with `listedTools` after them.
+     * A task that starts with its caller's context is shown what its caller was shown, so its
+     * request begins with the prefix the provider cached. It shows no more than that: the
+     * ceiling, the limits, the budget and the end tools stay this AgentRun's own, and a call of a
+     * tool that is not its own is refused. `listedTools` are tools an Agent shows and never calls
+     * (Mission's root lists `finish_subagent` for the tasks that start with its context); the
+     * prompt is told so. Absent, the AgentRun is shown its own Agent.
      */
-    offeredCapabilities: Type.Optional(
-      Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
-    ),
+    presentation: Type.Optional(PresentationSchema),
+    /**
+     * A per-call input limit below the Agent's own (D100): Mission gives its root a smaller one
+     * than Turn-chat does. It may only narrow `perCallInputLimit` and `finalInputBudget`.
+     */
+    inputLimit: Type.Optional(count(1)),
     /** Relative to the repository root; main has `['.']`, and none without `workspace.write`. */
     writeRoots: Type.Array(text(1024)),
     /**

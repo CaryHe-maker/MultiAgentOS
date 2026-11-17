@@ -1,5 +1,5 @@
 import {
-  ExplorerResultSchema,
+  SubagentResultSchema,
   MEDIA_TYPES,
   ReplyArgsSchema,
   RepositoryListInputSchema,
@@ -7,7 +7,6 @@ import {
   SendMessageArgsSchema,
   SleepArgsSchema,
   UpdateTodosArgsSchema,
-  WorkerResultSchema,
   newId,
   type ArtifactRef,
   type SessionLogRecord,
@@ -21,6 +20,7 @@ import { FileSessionStore } from '@multiagentos/persistence';
 import {
   SessionLogStore,
   SessionRunner,
+  requiring,
   type AgentDefinitions,
   type AgentUnit,
 } from '@multiagentos/workflow';
@@ -70,7 +70,7 @@ const explorer: AgentDefinitions = {
   endTools: [
     {
       toolName: 'finish_subagent',
-      parameters: ExplorerResultSchema,
+      parameters: SubagentResultSchema,
       allowedInFinal: true,
       action: 'FINISH_SUBAGENT',
     },
@@ -99,7 +99,7 @@ const worker: AgentDefinitions = {
   endTools: [
     {
       toolName: 'finish_subagent',
-      parameters: WorkerResultSchema,
+      parameters: requiring(SubagentResultSchema, ['status', 'changedFiles', 'validation']),
       allowedInFinal: true,
       action: 'FINISH_SUBAGENT',
     },
@@ -120,6 +120,9 @@ const binding = (
   requestedCapabilities: capabilities,
   writeRoots: capabilities.includes('workspace.write') ? ['.'] : [],
   toolsDigest: digest,
+  instructions: '',
+  finishRequires: [],
+  toolNames: {},
   definitions,
 });
 
@@ -405,7 +408,8 @@ describe('run_subagents', () => {
     const withdrawn = assembled.map(
       (request) => (request.input as { withdrawnTools?: string[] }).withdrawnTools,
     );
-    expect(withdrawn).toEqual([undefined, undefined, ['run_subagents']]);
+    // The tool stays in the request, so the cached prefix holds; a call of it is refused (D102).
+    expect(withdrawn).toEqual([undefined, undefined, undefined]);
     // Two refused calls are not two rounds without progress: the run was not forced to wrap up.
     expect(ofType(records, 'AGENT_WRAP_UP')).toHaveLength(0);
   });

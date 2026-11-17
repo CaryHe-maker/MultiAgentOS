@@ -199,13 +199,13 @@ real('a part handed to a pre-orchestrated template (Orchestration 3.9)', () => {
       expect((fixer?.['mission'] as Record<string, unknown>)['parentId']).toBe(
         (root?.['mission'] as Record<string, unknown>)['id'],
       );
-      // The fix phase of fix-verify says `context: inherit` (D35): the fixer runs as the Agent of
-      // the specialist and starts with its context.
+      // The fix phase of fix-verify says `context: inherit` (D35): the fixer runs as its own
+      // Agent, a worker, and is shown what the specialist is shown (D99).
       expect((fixer?.['spawn'] as Record<string, unknown>)['inherits']).toMatchObject({
         missionId: (root?.['mission'] as Record<string, unknown>)['id'],
         as: 'worker',
       });
-      expect((fixer?.['agentRef'] as Record<string, unknown>)['id']).toBe('lead');
+      expect((fixer?.['agentRef'] as Record<string, unknown>)['id']).toBe('worker');
       // The provider keeps a cache per effort: the fixer runs with the effort of the root.
       const registered = log.filter((record) => record['type'] === 'AGENT_RUN_REGISTERED');
       const effortOf = (node: Record<string, unknown> | undefined) =>
@@ -385,8 +385,11 @@ real('a call of run_subagents with a task that breaks a rule (D53, D56)', () => 
       // What the root read is in its context: it need not read the file again.
       expect(told).toContain('broken-before-the-fix');
       expect(told).toContain('Your goal: write fixed into src/value.txt');
-      expect(JSON.stringify(first?.tools)).not.toContain('run_subagents');
+      // It is shown the root's tools, finish_subagent among them, so the cached prefix holds (D99);
+      // where it becomes itself it is told that run_subagents is not its own.
+      expect(JSON.stringify(first?.tools)).toBe(JSON.stringify(provider.requests[0]?.tools));
       expect(JSON.stringify(first?.tools)).toContain('finish_subagent');
+      expect(told).toMatch(/Not yours, and refused if you call them: [^\n]*run_subagents/u);
       // Its last check after its last change goes with its result, shown there (D54): the root
       // reads it instead of looking it up or running it again.
       const result = said.slice(said.lastIndexOf('Result of task fixer'));
@@ -560,7 +563,9 @@ real('a worker that may split runs as a lead, and only the root starts one (D88)
         )?.tools ?? [],
       );
       expect(partTools).toContain('run_subagents');
-      expect(partTools).not.toContain('"split"');
+      // It is shown the root's tools (D99), split among them, and told it uses no split.
+      expect(partTools).toBe(JSON.stringify(provider.requests[0]?.tools ?? []));
+      expect(told).toContain('You start no lead or specialist, and use no split.');
       // The root was offered workers that may split, never a lead.
       const offered = JSON.stringify(provider.requests[0]?.tools ?? []);
       expect(offered).toContain('split');

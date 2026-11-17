@@ -225,7 +225,7 @@ async function callModel(
     apiKey,
     trackedFetch(inner, scope, progress, replay, tap),
   );
-  const end = specs.find((spec) => spec.purpose === 'CONTROL')?.name;
+  const end = input.finishTool ?? specs.find((spec) => spec.purpose === 'CONTROL')?.name;
   const { limits } = environment;
   let result: GenerateResult;
   const callOptions = {

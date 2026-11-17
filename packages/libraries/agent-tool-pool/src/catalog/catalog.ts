@@ -27,6 +27,7 @@ import {
   type PinnedDefinitionSet,
   type PortResult,
   type TemplateDefinition,
+  type ToolDefinition,
 } from '@multiagentos/contracts';
 import type { CatalogIssue, CatalogIssueCode } from '../domain/catalog-issue.js';
 import { CatalogLoadError } from '../domain/catalog-issue.js';
@@ -164,15 +165,12 @@ const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
   COMMAND: 'executor.RunCommandArgs.v1',
 };
 /** The arguments of each end action, as the model writes them. */
-/** What a spawn tool may take: the root's, with `split`, and the one below it (D88). */
-const SPAWN_CONTRACTS: readonly string[] = [
-  'workflow.RunSubagentsArgs.v1',
-  'workflow.RunSubagentsNestedArgs.v1',
-];
+/** What a spawn tool takes: one form for every Agent that spawns; the Agent narrows it (D99). */
+const SPAWN_CONTRACTS: readonly string[] = ['workflow.RunSubagentsArgs.v1'];
 const END_CONTRACTS: Readonly<Record<'PUBLISH_REPLY' | 'FINISH_SUBAGENT', readonly string[]>> = {
   PUBLISH_REPLY: ['workflow.ReplyArgs.v1'],
-  // Each spawnable Agent declares the result it returns (M2Design 3.7).
-  FINISH_SUBAGENT: ['workflow.ExplorerResult.v1', 'workflow.WorkerResult.v1'],
+  // One form for every SubAgent; what a role owes besides the summary is its `requires` (D99).
+  FINISH_SUBAGENT: ['workflow.SubagentResult.v1'],
 };
 /** Kernel's refusals mean the same for every Unit, so no definition may change them. */
 const FIXED_CODES = [
@@ -590,6 +588,24 @@ function checkAgent(
         'AGENT_INVALID',
         `end tool ${end.toolRef.id} must be CONTROL with ${END_CONTRACTS[end.then].join(' or ')}`,
       );
+    // What a role owes must be a field the form leaves optional, or it says nothing.
+    if (
+      tool !== undefined &&
+      end.requires !== undefined &&
+      registry.has(contractOf(tool.parametersContract))
+    ) {
+      const form = registry.resolveContract(tool.parametersContract) as {
+        readonly properties?: Readonly<Record<string, unknown>>;
+        readonly required?: readonly string[];
+      };
+      for (const field of end.requires)
+        if (form.properties?.[field] === undefined || (form.required ?? []).includes(field))
+          report(
+            origin,
+            'AGENT_INVALID',
+            `end tool ${end.toolRef.id} requires ${field}, which is not an optional field of its parameters`,
+          );
+    }
   }
   if (body.actions.todos !== undefined) {
     const tool = get('TOOL', body.actions.todos.toolRef);
@@ -657,11 +673,16 @@ function checkSpawn(
       tool !== undefined &&
       (tool.purpose !== 'CONTROL' || !SPAWN_CONTRACTS.includes(contractOf(tool.parametersContract)))
     )
-      report(
-        origin,
-        'AGENT_INVALID',
-        'the spawn tool must be CONTROL with RunSubagentsArgs or RunSubagentsNestedArgs',
-      );
+      report(origin, 'AGENT_INVALID', 'the spawn tool must be CONTROL with RunSubagentsArgs');
+    // The names a task may run as (D88, D39): what a call can ask for, and `lead` for `split`.
+    const startable = ['explorer', 'worker', 'lead', ...SPECIALIST_AGENTS];
+    for (const agent of body.actions.spawn.agents ?? [])
+      if (!startable.includes(agent))
+        report(
+          origin,
+          'AGENT_INVALID',
+          `actions.spawn.agents names ${agent}, which no task runs as`,
+        );
   }
   const finishes = body.actions.end.some((end) => end.then === 'FINISH_SUBAGENT');
   if (finishes !== (body.spawnable !== undefined))
@@ -790,6 +811,11 @@ export class DefinitionCatalog {
 
   template(ref: DefinitionRef, context: BoundaryContext): PortResult<TemplateDefinition> {
     return this.getDefinition('TEMPLATE', ref, context);
+  }
+
+  /** A tool by exact version: what an Agent lists and never calls (D99). */
+  tool(ref: DefinitionRef, context: BoundaryContext): PortResult<ToolDefinition> {
+    return this.getDefinition('TOOL', ref, context);
   }
 
   /** Everything one AgentRun runs with, by exact version. */

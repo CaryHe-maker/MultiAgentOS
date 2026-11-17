@@ -1,5 +1,6 @@
 import {
   entryBytes,
+  entryTokens,
   planCompaction,
   prune,
   type ArtifactRef,
@@ -78,8 +79,13 @@ export interface CompactionPorts {
   ): Promise<readonly ContextHistoryEntry[] | undefined>;
   /** How big the next request of this projection is: the provider's own count when it still holds. */
   sizeOf(target: CompactionTarget, entries: readonly ContextHistoryEntry[]): number;
-  /** The most input one call of the target may have (`perCallInputLimit`). */
+  /**
+   * The most input of its own one call of the target may have (`perCallInputLimit`): the part it
+   * inherited comes on top of it (D100).
+   */
   perCallInputLimit(target: CompactionTarget): number;
+  /** The most one whole request of the target may hold (D100). */
+  capTokens(target: CompactionTarget): number;
   prune(
     compactionId: string,
     target: CompactionTarget,
@@ -175,13 +181,24 @@ export class CompactionProcess {
     let entries = await this.#ports.requestSource(id, target);
     if (entries === undefined || cancelled()) return { kind: 'CANCELLED' };
 
-    const limit = this.#ports.perCallInputLimit(target);
+    // A task that started with its caller's context holds it as it is (D100): it is neither cut
+    // nor summarised, and the task's own budget comes on top of it, up to the cap of a request.
     const startTokens = request.currentTokens ?? this.#ports.sizeOf(target, entries);
+    // Its share of the size, counted at the rate the whole is counted.
+    const estimate = (list: readonly ContextHistoryEntry[]) =>
+      list.reduce((total, entry) => total + entryTokens(entry), 0);
+    const all = estimate(entries);
+    const frozenEstimate = estimate(entries.filter((entry) => entry.category === 'INHERITED'));
+    const frozen = all <= 0 ? 0 : Math.floor((frozenEstimate * startTokens) / all);
+    const cap = this.#ports.capTokens(target);
+    const limit = Math.min(this.#ports.perCallInputLimit(target) + frozen, cap);
     const startBytes = Math.max(totalBytes(entries), 1);
+    const own = this.#ports.perCallInputLimit(target);
     const goal =
-      request.goalTokens ?? (trigger === 'AUTO' ? config.triggerRatio * limit : undefined);
+      request.goalTokens ??
+      (trigger === 'AUTO' ? Math.min(config.triggerRatio * own + frozen, cap) : undefined);
     const planConfig = {
-      keepTokens: Math.floor(config.keepRatio * limit),
+      keepTokens: Math.floor(config.keepRatio * own),
       keepHumanBytes: config.keepHumanBytes,
       pruneMinBytes: config.pruneMinBytes,
       minReplacedTokens: Math.floor(config.summaryMaxTokens / 8),

@@ -129,7 +129,10 @@ export interface AssemblyInfo {
   readonly agentRunId: string;
   readonly kind: 'COMPLETED' | 'OVERSIZE';
   readonly tokenCount: number;
+  /** The task's own budget, without the part it inherited (D100). */
   readonly tokenBudget: number;
+  /** The tokens of the inherited part, which the own budget does not count (D100). */
+  readonly frozenTokens: number;
 }
 
 /** The roots a sandboxed command may write: what a scan before and after looks at. */
@@ -623,6 +626,7 @@ export class RunExecution {
             kind: 'COMPLETED',
             tokenCount: fact.result.output.tokenCount,
             tokenBudget: perCallInputLimit,
+            frozenTokens: fact.result.output.frozenTokens ?? 0,
           }
         : fact.outcome === 'REJECTED' && fact.reasonCode === 'LIMIT_EXCEEDED'
           ? {
@@ -630,6 +634,7 @@ export class RunExecution {
               kind: 'OVERSIZE',
               tokenCount: perCallInputLimit,
               tokenBudget: perCallInputLimit,
+              frozenTokens: 0,
             }
           : undefined;
     if (info === undefined) return undefined;

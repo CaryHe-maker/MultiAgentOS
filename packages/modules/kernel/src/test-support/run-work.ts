@@ -35,6 +35,8 @@ export const testPinnedAgent = (overrides: Partial<PinnedAgent> = {}): PinnedAge
   cacheHitWeight: 1,
   instructions: 'You are a test agent.',
   toolSpecs: () => [],
+  ownToolNames: [],
+  finalToolNames: [],
   ...overrides,
 });
 

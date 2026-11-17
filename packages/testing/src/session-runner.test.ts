@@ -72,6 +72,9 @@ const binding = (id: string, agentDefinitions: AgentDefinitions) => ({
   requestedCapabilities: ['repo.read'] as const,
   writeRoots: [],
   toolsDigest: digest,
+  instructions: '',
+  finishRequires: [],
+  toolNames: {},
   definitions: agentDefinitions,
 });
 const solo: TemplateDefinition = {

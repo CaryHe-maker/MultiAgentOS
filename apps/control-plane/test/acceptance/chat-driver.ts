@@ -233,8 +233,17 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
   };
 }
 
-/** Which Agent a request is for, from the tools it offers (M2Design 3.9). */
+/**
+ * Which Agent a request is for. A task that starts with its caller's context is shown the caller's
+ * tools (D99), and told who it is where it becomes itself: the last such note names its Agent.
+ * Any other request is known by the tools it offers (M2Design 3.9).
+ */
 export function agentOfRequest(request: ChatRequest): ScriptedAgent {
+  const all = request.messages.map((message) => textOf(message)).join('\n');
+  const switched = [...all.matchAll(/you are a different task: "[^"]+", an? ([a-z-]+) that/gu)].at(
+    -1,
+  )?.[1];
+  if (switched === 'lead' || switched === 'worker' || switched === 'explorer') return switched;
   return agentOfTools(new Set((request.tools ?? []).map((each) => each.function.name)));
 }
 

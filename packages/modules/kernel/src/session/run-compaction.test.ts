@@ -87,6 +87,7 @@ function ports(script: Script) {
     },
     sizeOf: (_target, list) => list.reduce((total, entry) => total + entryTokens(entry), 0),
     perCallInputLimit: () => script.limit ?? 50_000,
+    capTokens: () => Number.MAX_SAFE_INTEGER,
     prune: (_id, _target, candidates) => {
       log.push(`prune ${String(candidates.length)}`);
       return Promise.resolve(script.prune ?? { kind: 'OK', items: [] });

@@ -59,7 +59,7 @@ const history = {
   segment: Type.Literal('HISTORY'),
   seq: count(1),
   turnId: Type.Optional(IdSchemas.turnId),
-  category: Type.Enum(['PINNED', 'NORMAL']),
+  category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
 };
 const HistoryItemSchema = Type.Union([
   closed({
@@ -85,6 +85,8 @@ export const AssembleContextPackSchema = Type.Refine(
     contextPackId: IdSchemas.contextPackId,
     tokenCount: count(),
     tokenBudget: count(1),
+    /** The tokens of the INHERITED history items, which the task's own budget does not count (D100). */
+    frozenTokens: Type.Optional(count()),
     createdAt: TimestampSchema,
     operation: Type.Literal('ASSEMBLE'),
     prefixSha256: Sha256Schema,

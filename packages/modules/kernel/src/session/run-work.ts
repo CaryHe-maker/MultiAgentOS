@@ -1667,16 +1667,24 @@ export class RunWork {
     // One way to find the Agent of every target (`compactionAgentFrom`). The target says which:
     // main is the Agent of the Session's Turn-chat, an AgentRun is the Agent it was registered as.
     // Which AgentRun pays for it is the one thing that is not the Agent's.
+    // An AgentRun that is registered is compacted as it was registered: what it is shown and its
+    // own budget (D99, D100), so the summary request begins as its requests do. Main without one
+    // (`/compact` before any run) is the Agent of the Turn-chat.
     if (target.kind === 'MAIN') {
+      const live = [...this.#agentRuns.values()].find(
+        (each) => each.parent === undefined && each.agent.id === 'main',
+      );
+      if (live !== undefined) return { agent: live.agent };
       const agent = this.#deps.compactionAgent();
       return agent === undefined ? undefined : { agent };
     }
     const record = this.#agentRuns.get(target.agentRunId);
     if (record === undefined) return undefined;
-    const agent = this.#deps.compactionAgent(record.agentRef);
-    if (agent === undefined) return undefined;
     // A SubAgent pays from its own ledger; a top-level AgentRun from the input's.
-    return { agent, ...(record.parent === undefined ? {} : { agentRunId: target.agentRunId }) };
+    return {
+      agent: record.agent,
+      ...(record.parent === undefined ? {} : { agentRunId: target.agentRunId }),
+    };
   }
 
   #targetOf(agentRunId: string): CompactionTarget {
@@ -1721,7 +1729,8 @@ export class RunWork {
           };
     if (
       !this.#compactedInRound.has(info.agentRunId) &&
-      (info.kind === 'OVERSIZE' || info.tokenCount >= compaction.triggerRatio * info.tokenBudget)
+      (info.kind === 'OVERSIZE' ||
+        info.tokenCount - info.frozenTokens >= compaction.triggerRatio * info.tokenBudget)
     )
       return {
         kind: 'RUN',

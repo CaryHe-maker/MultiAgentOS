@@ -16,6 +16,13 @@ nodes:
       version: v0.1.0
     role: owner
     output: true
+    # The tasks that start with main's context are shown its tools byte for byte; their finishing
+    # tool is listed here, and main never calls it (D99).
+    lists:
+      - id: finish-subagent
+        version: v0.1.0
+    # Mission's root holds less per call than Turn-chat's main: compacted at 500k (D100).
+    inputLimit: 555000
     goal: 'You own this goal from start to delivery; nobody answers you between steps. You have a
       team: subtasks that work at the same time, each in its own context. You are judged by how
       soon the goal is delivered and what it costs, not by how much you write yourself. Read only
