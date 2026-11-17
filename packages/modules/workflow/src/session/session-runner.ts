@@ -1738,13 +1738,11 @@ export class SessionRunner {
       asksForRounds: () =>
         scope.missionId !== undefined &&
         projectMissions(this.#records).get(scope.missionId)?.parentId !== undefined,
-      assembleInput: (status, final, withdrawnTools) => {
+      assembleInput: (status, final) => {
         // In a folder that is no git repository, git history cannot be read: the tool is not
-        // offered, rather than refused on every call (each worker tried it once before).
-        const withdrawn = [
-          ...withdrawnTools,
-          ...(this.#deps.runtime().git === false ? this.#gitTools() : []),
-        ];
+        // offered, rather than refused on every call (each worker tried it once before). It is
+        // known when the Session starts and never changes within it, so the cache holds.
+        const withdrawn = this.#deps.runtime().git === false ? this.#gitTools() : [];
         // What still runs in the background is said at every call (D65): the task may stop it.
         const now = (this.#deps.now ?? (() => new Date()))().getTime();
         const jobs =
@@ -1974,6 +1972,7 @@ export class SessionRunner {
         requestedCapabilities: [...binding.requestedCapabilities],
         ...(from === undefined ? {} : { offeredCapabilities: [...lent.requestedCapabilities] }),
         writeRoots: [...place.writeRoots],
+        ...(node.inputLimit === undefined ? {} : { inputLimit: node.inputLimit }),
         ...(link === undefined ? {} : { delegationId: link.delegationId, taskName: link.taskName }),
         ...(node.mission === undefined
           ? {}

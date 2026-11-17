@@ -568,6 +568,8 @@ export const TemplateNodeSchema = Type.Union([
        * system well, written as the behaviour wanted.
        */
       guide: Type.Optional(TextSchema(60_000)),
+      /** A per-call input limit below the Agent's own, for this template only (D100). */
+      inputLimit: Type.Optional(Type.Integer({ minimum: 1 })),
     },
     { additionalProperties: false },
   ),

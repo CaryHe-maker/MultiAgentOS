@@ -405,7 +405,8 @@ describe('run_subagents', () => {
     const withdrawn = assembled.map(
       (request) => (request.input as { withdrawnTools?: string[] }).withdrawnTools,
     );
-    expect(withdrawn).toEqual([undefined, undefined, ['run_subagents']]);
+    // The tool stays in the request, so the cached prefix holds; a call of it is refused (D102).
+    expect(withdrawn).toEqual([undefined, undefined, undefined]);
     // Two refused calls are not two rounds without progress: the run was not forced to wrap up.
     expect(ofType(records, 'AGENT_WRAP_UP')).toHaveLength(0);
   });

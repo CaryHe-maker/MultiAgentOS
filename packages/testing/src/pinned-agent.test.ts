@@ -37,12 +37,13 @@ describe('pinnedAgentOf', () => {
     ).toBe('FORBIDDEN');
   });
 
-  it('offers only the end tools allowed in a final call', async () => {
+  it('lists the same tools in a final call, and names the end tools it may call then (D102)', async () => {
     const agent = pinnedAgentOf(await pinned('explorer'), 'none', createProtocolRegistry(), [
       'repo.read',
     ]);
     if (agent === 'FORBIDDEN') throw new Error('forbidden');
-    expect(agent.toolSpecs(false).map((spec) => spec.name)).toContain('read_file');
-    expect(agent.toolSpecs(true).map((spec) => spec.name)).toEqual(['finish_subagent']);
+    expect(agent.toolSpecs.map((spec) => spec.name)).toContain('read_file');
+    expect(agent.toolSpecs.map((spec) => spec.name)).toContain('finish_subagent');
+    expect(agent.finalToolNames).toEqual(['finish_subagent']);
   });
 });

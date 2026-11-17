@@ -340,6 +340,7 @@ Kernel 的中断入口（[Core](../Kernel/Core.md) 第 5c 节）发出 `RunInter
 | `entryAgentRef` | — | 删除；入口由模板决定 |
 | `maxNestedInstructions` | 8 | 每个投影至多加载的子目录 `AGENTS.md` 份数（第 8.2 节） |
 | `maxSubagentsPerCall`、`maxDependencyDepth` | 8、2 | 一次 `run_subagents` 的任务数与依赖深度上限（第 7a 节） |
+| `staggerWorkersMs` | 5000 | 同一次派生、开头相同的 worker 先启动一个，其余最多等它第一次模型回复这么久（[Orchestration](../Orchestration.md) D104）；0 为同时启动 |
 | （已删除）`maxTasks`、`maxSpawnCalls` | — | 子任务数改由 Kernel 按整次运行计数并在上限时问用户（`kernel.tasks`，Orchestration D62） |
 
 ## 12. 不变量与测试

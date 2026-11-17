@@ -175,11 +175,11 @@ function continuedText(task: TaskScope): string {
   return lines.join('\n');
 }
 
-/** What a task that inherits a context is told, as the answer to the call that started it. */
+/** What a task that inherits a context is told where it becomes itself (D100). */
 function inheritedText(task: TaskScope): string {
   const inherited = task.inherited;
   const lines = [
-    `From here on you are a different task: "${task.name}", a ${inherited?.as ?? 'worker'} that the task above started with this call. Everything above is what that task had read and done up to the call. You have it so that you need not read it again; it is not your work to continue.`,
+    `From here on you are a different task: "${task.name}", a ${inherited?.as ?? 'worker'} that the task above started with its last call. Everything above is what that task had read and done up to that call. You have it so that you need not read it again; it is not your work to continue.`,
     'What changes for you:',
     '- You do NOT follow the playbook or the phases above, and you do not finish that task. You do only the goal below.',
     inherited?.as === 'lead'
@@ -252,32 +252,43 @@ function projectInherited(
   const open = (turn?.toolCalls ?? [])
     .map((call) => call.toolCallId)
     .filter((id) => !answered.has(id));
+  // Every call of that turn is answered as part of what the task inherits; who the task is now
+  // comes after, as an entry of its own (D100), not as the answer to a call.
   const told: ContextHistoryEntry[] = open.map((toolCallId) => ({
     seq: inherited.cut,
-    category: toolCallId === inherited.toolCallId ? ('PINNED' as const) : ('NORMAL' as const),
+    category: 'INHERITED' as const,
     kind: 'FEEDBACK' as const,
     toolCallId,
     text:
       toolCallId === inherited.toolCallId
-        ? // A task taken up again is told what its owner was told; its new goal comes later.
-          inheritedText(task.continued?.first ?? task)
+        ? 'Started. The task you are from here on is told next.'
         : 'This call belongs to the task above; its result is not yours.',
   }));
+  // A task taken up again is told what its owner was told; its new goal comes later.
+  const switched: ContextHistoryEntry = {
+    seq: inherited.cut,
+    category: 'INHERITED',
+    kind: 'SWITCH',
+    text: inheritedText(task.continued?.first ?? task),
+  };
   const plain = Object.fromEntries(
     Object.entries(task).filter(([key]) => key !== 'inherited'),
   ) as unknown as TaskScope;
   const own = projectOwn(records, { ...scope, task: plain }, options);
-  return applyCompactions(
-    [
-      ...aboveEntries,
-      ...told,
-      // Its task is told by the answer above, and it knows the plan from the context it has.
-      ...own.entries.filter(
+  // What it inherited stays as it was, byte for byte, so the request keeps the cached prefix
+  // (D100): its own compactions fold only what it did itself, after the switch.
+  return [
+    ...aboveEntries.map((entry) => ({ ...entry, category: 'INHERITED' as const })),
+    ...told,
+    switched,
+    ...applyCompactions(
+      // Its task is told by the switch above, and it knows the plan from the context it has.
+      own.entries.filter(
         (entry) => entry.seq >= inherited.cut && entry.kind !== 'TASK' && entry.kind !== 'PLAN',
       ),
-    ],
-    own.compaction,
-  );
+      own.compaction,
+    ),
+  ];
 }
 
 export function projectHistory(

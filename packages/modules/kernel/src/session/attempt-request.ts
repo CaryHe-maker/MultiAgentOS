@@ -52,7 +52,7 @@ import {
   type SubagentReport,
   type TokenCalibration,
 } from '@multiagentos/contracts';
-import type { AttemptSpec } from './run-attempts.js';
+import type { AttemptSpec, PinnedAgent } from './run-attempts.js';
 import type { ArtifactRefusal, SessionArtifacts } from './session-artifacts.js';
 
 export interface ExecutionLimit {
@@ -115,6 +115,22 @@ function messageTextOf(argumentsText: string): string {
   const parsed = parseToolArguments(argumentsText);
   const said = (parsed as { readonly text?: unknown } | null | undefined)?.text;
   return typeof said === 'string' ? said : argumentsText;
+}
+
+/** Room kept below the model's window besides the output: estimates are not exact (D100). */
+export const CAP_MARGIN_TOKENS = 20_000;
+
+/**
+ * The most one request of this AgentRun may hold as a whole (D100): the model's window less the
+ * output it may write and a margin. A task that started with its caller's context may hold that
+ * context besides its own budget, up to this.
+ */
+export function capTokensOf(
+  agent: Pick<PinnedAgent, 'contextWindowTokens' | 'budget'>,
+  final: boolean,
+): number {
+  const output = final ? agent.budget.finalMaxOutputTokens : agent.budget.maxOutputTokens;
+  return Math.max(1, agent.contextWindowTokens - output - CAP_MARGIN_TOKENS);
 }
 
 export class RequestBuildError extends Error {
@@ -423,10 +439,12 @@ export class AttemptRequestBuilder {
     return {
       final: input.final,
       tokenBudget: input.final ? agent.budget.finalInputBudget : agent.budget.perCallInputLimit,
+      capTokens: capTokensOf(agent, input.final),
       instructions: agent.instructions,
-      toolSpecs: agent
-        .toolSpecs(input.final)
-        .filter((spec) => !(input.withdrawnTools ?? []).includes(spec.name)),
+      toolSpecs: agent.toolSpecs.filter(
+        (spec) => !(input.withdrawnTools ?? []).includes(spec.name),
+      ),
+      ...(input.final ? { finishTools: [...agent.finalToolNames] } : {}),
       history,
       status: input.status,
       ...(identity.calibration === undefined ? {} : { tokenCalibration: identity.calibration }),
@@ -493,6 +511,7 @@ export class AttemptRequestBuilder {
       case 'HUMAN':
         return { ...base, kind: 'HUMAN', text: await this.#text(entry.contentRef) };
       case 'NOTE':
+      case 'SWITCH':
         return { ...base, kind: 'NOTE', text: entry.text };
       case 'SUMMARY':
         return { ...base, kind: 'SUMMARY', text: await this.#text(entry.contentRef) };
@@ -684,7 +703,12 @@ ${shown}`,
       input.contextPackRef,
       AssembleContextPackSchema,
     );
-    const expected = input.final ? budget.finalInputBudget : budget.perCallInputLimit;
+    // The pack's budget is the task's own and the part it inherited, at most the cap (D100).
+    const own = input.final ? budget.finalInputBudget : budget.perCallInputLimit;
+    const expected = Math.min(
+      own + (contextPack.frozenTokens ?? 0),
+      capTokensOf(spec.agent, input.final),
+    );
     if (contextPack.tokenBudget !== expected) throw new RequestBuildError('INVALID_INPUT');
     const maxOutputTokens = input.final ? budget.finalMaxOutputTokens : budget.maxOutputTokens;
     const inputEstimate = estimatePackTokens(contextPack);
@@ -704,7 +728,13 @@ ${shown}`,
         spec,
         identity,
         'MODEL',
-        { contextPack, final, ...(finalMode === undefined ? {} : { finalMode }) },
+        {
+          contextPack,
+          final,
+          ...(finalMode === undefined ? {} : { finalMode }),
+          // The end tools a final call may call: every tool is listed in it (D102).
+          ...(final ? { finishTools: [...spec.agent.finalToolNames] } : {}),
+        },
         { ...this.#baseLimits('MODEL', identity), maxOutputTokens },
       ),
       reservation: { estimatedTokens, final, cacheHitWeight, inputEstimate },

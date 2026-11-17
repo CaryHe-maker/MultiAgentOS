@@ -106,7 +106,7 @@ export interface SessionKernelDeps {
   readonly registry: ProtocolRegistry;
   /** The definitions one AgentRun runs with (Interface/Definitions 3). */
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
-  /** The Agent a compaction is made as, by reference; none means main (`compactionAgentFrom`). */
+  /** Main as the catalog has it, for a compaction with no AgentRun of main (`compactionAgentFrom`). */
   readonly compactionAgent: RunWorkDeps['compactionAgent'];
   /**
    * The instruction of the summary request of a compaction (Prompt `compaction-system`). Without

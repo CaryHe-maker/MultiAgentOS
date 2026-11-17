@@ -161,11 +161,8 @@ export interface RunWorkDeps {
   readonly repositoryRoot: string;
   readonly repositoryExclusions: readonly string[];
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
-  /** The Agent a compaction is made as, by reference; none means main (`compactionAgentFrom`). */
-  readonly compactionAgent: (ref?: {
-    readonly id: string;
-    readonly version: string;
-  }) => PinnedAgent | undefined;
+  /** Main as the catalog has it, for a compaction with no AgentRun of main (`compactionAgentFrom`). */
+  readonly compactionAgent: () => PinnedAgent | undefined;
   /** The share and the budget of an Agent a task names; absent: nothing can be delegated. */
   readonly agentShare?: (
     ref: ReserveDelegationRequest['tasks'][number]['agentRef'],
@@ -1664,19 +1661,24 @@ export class RunWork {
   compactionAgent(
     target: CompactionTarget,
   ): { readonly agent: PinnedAgent; readonly agentRunId?: string } | undefined {
-    // One way to find the Agent of every target (`compactionAgentFrom`). The target says which:
-    // main is the Agent of the Session's Turn-chat, an AgentRun is the Agent it was registered as.
-    // Which AgentRun pays for it is the one thing that is not the Agent's.
+    // An AgentRun that is registered is compacted as it was registered: its tools and its own
+    // budget, a narrower input limit included (D100), so the summary request begins as its
+    // requests do. Main without one (`/compact` before any run) is the Agent of the Turn-chat.
     if (target.kind === 'MAIN') {
+      const live = [...this.#agentRuns.values()].find(
+        (each) => each.parent === undefined && each.agent.id === 'main',
+      );
+      if (live !== undefined) return { agent: live.agent };
       const agent = this.#deps.compactionAgent();
       return agent === undefined ? undefined : { agent };
     }
     const record = this.#agentRuns.get(target.agentRunId);
     if (record === undefined) return undefined;
-    const agent = this.#deps.compactionAgent(record.agentRef);
-    if (agent === undefined) return undefined;
     // A SubAgent pays from its own ledger; a top-level AgentRun from the input's.
-    return { agent, ...(record.parent === undefined ? {} : { agentRunId: target.agentRunId }) };
+    return {
+      agent: record.agent,
+      ...(record.parent === undefined ? {} : { agentRunId: target.agentRunId }),
+    };
   }
 
   #targetOf(agentRunId: string): CompactionTarget {
@@ -1721,7 +1723,8 @@ export class RunWork {
           };
     if (
       !this.#compactedInRound.has(info.agentRunId) &&
-      (info.kind === 'OVERSIZE' || info.tokenCount >= compaction.triggerRatio * info.tokenBudget)
+      (info.kind === 'OVERSIZE' ||
+        info.tokenCount - info.frozenTokens >= compaction.triggerRatio * info.tokenBudget)
     )
       return {
         kind: 'RUN',

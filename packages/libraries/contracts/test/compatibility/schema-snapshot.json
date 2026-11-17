@@ -3102,6 +3102,10 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 60000
+                  },
+                  "inputLimit": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "additionalProperties": false
@@ -4072,7 +4076,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -4130,7 +4135,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -4248,7 +4254,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -4460,7 +4467,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -4498,7 +4506,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -4566,7 +4575,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -4700,7 +4710,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -4848,7 +4859,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -4919,7 +4931,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -4989,7 +5002,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -5112,7 +5126,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -5171,7 +5186,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -5182,6 +5198,38 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 2000
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "text"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL",
+                      "INHERITED"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "SWITCH"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8000
                   }
                 },
                 "additionalProperties": false
@@ -5376,6 +5424,10 @@
           "type": "integer",
           "minimum": 1
         },
+        "frozenTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
         "prefixSha256": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
@@ -5421,7 +5473,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -5479,7 +5532,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -5597,7 +5651,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -5809,7 +5864,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -5847,7 +5903,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -5915,7 +5972,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -6049,7 +6107,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -6197,7 +6256,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -6268,7 +6328,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -6338,7 +6399,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -6461,7 +6523,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -6520,7 +6583,8 @@
             "category": {
               "enum": [
                 "PINNED",
-                "NORMAL"
+                "NORMAL",
+                "INHERITED"
               ]
             },
             "kind": {
@@ -6531,6 +6595,38 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 2000
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "seq",
+            "category",
+            "kind",
+            "text"
+          ],
+          "properties": {
+            "seq": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "category": {
+              "enum": [
+                "PINNED",
+                "NORMAL",
+                "INHERITED"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "const": "SWITCH"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8000
             }
           },
           "additionalProperties": false
@@ -6566,6 +6662,10 @@
             "tokenBudget": {
               "type": "integer",
               "minimum": 1
+            },
+            "frozenTokens": {
+              "type": "integer",
+              "minimum": 0
             },
             "createdAt": {
               "type": "string",
@@ -6823,7 +6923,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "role": {
@@ -6969,7 +7070,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "role": {
@@ -7034,7 +7136,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "role": {
@@ -10405,6 +10508,10 @@
                   },
                   "uniqueItems": true
                 },
+                "inputLimit": {
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "writeRoots": {
                   "type": "array",
                   "items": {
@@ -11185,7 +11292,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -11243,7 +11351,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -11361,7 +11470,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -11573,7 +11683,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -11611,7 +11722,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -11679,7 +11791,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -11813,7 +11926,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -11961,7 +12075,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -12032,7 +12147,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -12102,7 +12218,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -12225,7 +12342,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -12284,7 +12402,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -12295,6 +12414,38 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 2000
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "text"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL",
+                              "INHERITED"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "SWITCH"
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 8000
                           }
                         },
                         "additionalProperties": false
@@ -12545,7 +12696,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -12603,7 +12755,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -12721,7 +12874,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -12933,7 +13087,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -12971,7 +13126,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -13039,7 +13195,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -13173,7 +13330,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -13321,7 +13479,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -13392,7 +13551,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -13462,7 +13622,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -13585,7 +13746,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -13644,7 +13806,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "kind": {
@@ -13655,6 +13818,38 @@
                                     "type": "string",
                                     "minLength": 1,
                                     "maxLength": 2000
+                                  }
+                                },
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "required": [
+                                  "seq",
+                                  "category",
+                                  "kind",
+                                  "text"
+                                ],
+                                "properties": {
+                                  "seq": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                  },
+                                  "category": {
+                                    "enum": [
+                                      "PINNED",
+                                      "NORMAL",
+                                      "INHERITED"
+                                    ]
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "const": "SWITCH"
+                                  },
+                                  "text": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 8000
                                   }
                                 },
                                 "additionalProperties": false
@@ -23077,6 +23272,10 @@
           "type": "integer",
           "minimum": 1
         },
+        "capTokens": {
+          "type": "integer",
+          "minimum": 1
+        },
         "instructions": {
           "type": "string",
           "maxLength": 100000
@@ -23121,6 +23320,14 @@
             "$id": "context.ModelToolSpec.v1"
           }
         },
+        "finishTools": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "maxItems": 8
+        },
         "history": {
           "type": "array",
           "items": {
@@ -23141,7 +23348,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -23172,7 +23380,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -23287,7 +23496,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -23431,7 +23641,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -23468,7 +23679,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -23502,7 +23714,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -25279,6 +25492,10 @@
                     "tokenBudget": {
                       "type": "integer",
                       "minimum": 1
+                    },
+                    "frozenTokens": {
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "prefixSha256": {
                       "type": "string",
@@ -27274,6 +27491,10 @@
                   "type": "integer",
                   "minimum": 1
                 },
+                "capTokens": {
+                  "type": "integer",
+                  "minimum": 1
+                },
                 "instructions": {
                   "type": "string",
                   "maxLength": 100000
@@ -27318,6 +27539,14 @@
                     "$id": "context.ModelToolSpec.v1"
                   }
                 },
+                "finishTools": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "maxItems": 8
+                },
                 "history": {
                   "type": "array",
                   "items": {
@@ -27338,7 +27567,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -27369,7 +27599,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -27484,7 +27715,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -27628,7 +27860,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -27665,7 +27898,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -27699,7 +27933,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -28139,6 +28374,10 @@
                       "type": "integer",
                       "minimum": 1
                     },
+                    "frozenTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time"
@@ -28395,7 +28634,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "role": {
@@ -28541,7 +28781,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "role": {
@@ -28606,7 +28847,8 @@
                                   "category": {
                                     "enum": [
                                       "PINNED",
-                                      "NORMAL"
+                                      "NORMAL",
+                                      "INHERITED"
                                     ]
                                   },
                                   "role": {
@@ -28632,6 +28874,14 @@
                     "AUTO",
                     "FORCED"
                   ]
+                },
+                "finishTools": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "maxItems": 8
                 },
                 "compaction": {
                   "type": "object",
@@ -30709,6 +30959,10 @@
                   "type": "integer",
                   "minimum": 1
                 },
+                "frozenTokens": {
+                  "type": "integer",
+                  "minimum": 0
+                },
                 "prefixSha256": {
                   "type": "string",
                   "pattern": "^[a-f0-9]{64}$"
@@ -31616,6 +31870,10 @@
               "type": "integer",
               "minimum": 1
             },
+            "frozenTokens": {
+              "type": "integer",
+              "minimum": 0
+            },
             "createdAt": {
               "type": "string",
               "format": "date-time"
@@ -31872,7 +32130,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "role": {
@@ -32018,7 +32277,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "role": {
@@ -32083,7 +32343,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "role": {
@@ -32109,6 +32370,14 @@
             "AUTO",
             "FORCED"
           ]
+        },
+        "finishTools": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "maxItems": 8
         },
         "compaction": {
           "type": "object",
@@ -34697,6 +34966,10 @@
           },
           "uniqueItems": true
         },
+        "inputLimit": {
+          "type": "integer",
+          "minimum": 1
+        },
         "writeRoots": {
           "type": "array",
           "items": {
@@ -34814,7 +35087,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -34872,7 +35146,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -34990,7 +35265,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35202,7 +35478,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35240,7 +35517,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35308,7 +35586,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35442,7 +35721,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35590,7 +35870,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35661,7 +35942,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35731,7 +36013,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35854,7 +36137,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35913,7 +36197,8 @@
                   "category": {
                     "enum": [
                       "PINNED",
-                      "NORMAL"
+                      "NORMAL",
+                      "INHERITED"
                     ]
                   },
                   "kind": {
@@ -35924,6 +36209,38 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 2000
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "seq",
+                  "category",
+                  "kind",
+                  "text"
+                ],
+                "properties": {
+                  "seq": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "category": {
+                    "enum": [
+                      "PINNED",
+                      "NORMAL",
+                      "INHERITED"
+                    ]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "const": "SWITCH"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8000
                   }
                 },
                 "additionalProperties": false
@@ -38314,7 +38631,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -38372,7 +38690,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -38490,7 +38809,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -38702,7 +39022,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -38740,7 +39061,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -38808,7 +39130,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -38942,7 +39265,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -39090,7 +39414,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -39161,7 +39486,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -39231,7 +39557,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -39354,7 +39681,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -39413,7 +39741,8 @@
                           "category": {
                             "enum": [
                               "PINNED",
-                              "NORMAL"
+                              "NORMAL",
+                              "INHERITED"
                             ]
                           },
                           "kind": {
@@ -39424,6 +39753,38 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 2000
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "seq",
+                          "category",
+                          "kind",
+                          "text"
+                        ],
+                        "properties": {
+                          "seq": {
+                            "type": "integer",
+                            "minimum": 1
+                          },
+                          "category": {
+                            "enum": [
+                              "PINNED",
+                              "NORMAL",
+                              "INHERITED"
+                            ]
+                          },
+                          "kind": {
+                            "type": "string",
+                            "const": "SWITCH"
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 8000
                           }
                         },
                         "additionalProperties": false
@@ -40347,7 +40708,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -40405,7 +40767,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -40523,7 +40886,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -40735,7 +41099,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -40773,7 +41138,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -40841,7 +41207,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -40975,7 +41342,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -41123,7 +41491,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -41194,7 +41563,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -41264,7 +41634,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -41387,7 +41758,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -41446,7 +41818,8 @@
                       "category": {
                         "enum": [
                           "PINNED",
-                          "NORMAL"
+                          "NORMAL",
+                          "INHERITED"
                         ]
                       },
                       "kind": {
@@ -41457,6 +41830,38 @@
                         "type": "string",
                         "minLength": 1,
                         "maxLength": 2000
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "seq",
+                      "category",
+                      "kind",
+                      "text"
+                    ],
+                    "properties": {
+                      "seq": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "category": {
+                        "enum": [
+                          "PINNED",
+                          "NORMAL",
+                          "INHERITED"
+                        ]
+                      },
+                      "kind": {
+                        "type": "string",
+                        "const": "SWITCH"
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8000
                       }
                     },
                     "additionalProperties": false
@@ -42253,6 +42658,10 @@
             "tokenBudget": {
               "type": "integer",
               "minimum": 1
+            },
+            "frozenTokens": {
+              "type": "integer",
+              "minimum": 0
             },
             "prefixSha256": {
               "type": "string",
@@ -43124,6 +43533,10 @@
                     "tokenBudget": {
                       "type": "integer",
                       "minimum": 1
+                    },
+                    "frozenTokens": {
+                      "type": "integer",
+                      "minimum": 0
                     },
                     "prefixSha256": {
                       "type": "string",
@@ -45154,6 +45567,10 @@
                             "tokenBudget": {
                               "type": "integer",
                               "minimum": 1
+                            },
+                            "frozenTokens": {
+                              "type": "integer",
+                              "minimum": 0
                             },
                             "prefixSha256": {
                               "type": "string",
@@ -51925,6 +52342,10 @@
                   "guide": {
                     "type": "string",
                     "maxLength": 30000
+                  },
+                  "inputLimit": {
+                    "type": "integer",
+                    "minimum": 1
                   },
                   "output": {
                     "type": "boolean"

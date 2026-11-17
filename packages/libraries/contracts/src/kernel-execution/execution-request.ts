@@ -94,13 +94,13 @@ export type ExecutionLimits = Static<typeof ExecutionLimitsSchema>;
 const ResolvedHistoryEntrySchema = Type.Union([
   closed({
     seq: count(1),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Enum(['HUMAN', 'NOTE']),
     text: Type.String(),
   }),
   closed({
     seq: count(1),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('MODEL_TURN'),
     text: Type.Optional(Type.String()),
     toolCalls: Type.Array(ModelToolCallSchema),
@@ -108,7 +108,7 @@ const ResolvedHistoryEntrySchema = Type.Union([
   }),
   closed({
     seq: count(1),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('TOOL_RESULT'),
     toolCallId: ToolCallIdSchema,
     toolName: text(64),
@@ -119,7 +119,7 @@ const ResolvedHistoryEntrySchema = Type.Union([
   }),
   closed({
     seq: count(1),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('PROJECT_INSTRUCTIONS'),
     path: text(512),
     text: Type.String(),
@@ -127,7 +127,7 @@ const ResolvedHistoryEntrySchema = Type.Union([
   }),
   closed({
     seq: count(1),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('FEEDBACK'),
     text: Type.String(),
     toolCallId: Type.Optional(ToolCallIdSchema),
@@ -135,7 +135,7 @@ const ResolvedHistoryEntrySchema = Type.Union([
   /** The summary of a compaction, in words; it is shown to the model as material, not as an order. */
   closed({
     seq: count(1),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('SUMMARY'),
     text: Type.String(),
   }),
@@ -147,9 +147,18 @@ export const AssembleExecutorInputSchema = Type.Refine(
   closed(
     {
       final: Type.Boolean(),
+      /**
+       * What the request may hold besides the INHERITED part (D100): a task that started with its
+       * caller's context is not charged for it. The pack's own budget is this plus that part, at
+       * most `capTokens`.
+       */
       tokenBudget: count(1),
+      /** The most the whole request may hold: the model's window less the output and a margin. */
+      capTokens: Type.Optional(count(1)),
       instructions: Type.String({ maxLength: 100000 }),
       toolSpecs: Type.Array(ModelToolSpecSchema),
+      /** Of a final call: the end tools it may call, which its status names (D102). */
+      finishTools: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: 8 })),
       history: Type.Array(ResolvedHistoryEntrySchema),
       status: StatusFactsSchema,
       /**
@@ -182,6 +191,11 @@ export const ModelExecutorInputSchema = closed(
     contextPack: AssembleContextPackSchema,
     final: Type.Boolean(),
     finalMode: Type.Optional(Type.Enum(['AUTO', 'FORCED'])),
+    /**
+     * Of a final call: the end tools it may call (D102). The request lists every tool, so these,
+     * not every control tool, are the answers that count; a forced call is forced to the first.
+     */
+    finishTools: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: 8 })),
     /** A summary request: no tool may be called, and these sections must be in the answer. */
     compaction: Type.Optional(closed({ requiredSections: Type.Array(text(100), { minItems: 1 }) })),
   },

@@ -118,6 +118,13 @@ phase 2 要让一个任务可以由很多 Agent 有结构地协作完成，例�
 | D96 | `writeScope` 在派生工具的参数结构里必填（2026-11-17）：它原来是可选字段（explorer 不能写），只在工具说明与手册里用文字说"worker 必填"，28 次运行里有 5 次根任务第一次派任务时所有任务都漏写，整次被退回再重写（b1-pyregex、L8、L6、L2、K12），每次在关键路径上多一轮。现在根任务的 `RunSubagentsArgs` 与 lead 的 `RunSubagentsNestedArgs` 里 `writeScope` 是必填字段，worker 与专家写可改的路径，explorer 写 `[]`；工具说明与 Mission 手册相应改写。模型仍漏写时，修补步骤（D56）按 `[]` 处理，交给原来的校验：worker 与专家以 `WRITE_SCOPE_REQUIRED` 拒绝，explorer 照常启动。不由系统替 worker 猜一个范围：它是写入权限，也决定任务之间是否重叠。改 Contracts、Workflow 的 repair-spawn、AgentToolPool 的两个派生工具与 mission 模板，测试 |
 | D97 | 根任务写成文字的回答就是它的回复（2026-11-17）：29 次运行里有 4 次，根任务交付前的最后一轮把交付总结写成了普通文字、没有放进 `reply`，被 `NO_ACTION` 退回，2–5 秒后把同样的内容装进 `reply` 再写一遍（b1-pyawk、b1-pyregex、L7、tu-k9）。主流的主循环（dsh 的 `dsh-agent-loop`、Claude Code、OpenCode、Codex CLI、Gemini CLI 的主对话）都以"回复里没有工具调用"为回合结束、文字即答案。现在 main 的回复没有工具调用、有非空文字、而且是模型自己正常结束的（`STOP`；因长度上限 64000 token 截断的 `LENGTH`、被内容过滤停下的 `CONTENT_FILTER`、原因不明的 `OTHER` 都可能停在半句，照旧退回）时，若此刻可以结束——是根任务、没有运行中或等待启动的子任务、没有未答复的请求、自己的后台命令都已结束——就以结局 `REPLIED` 把这段文字当作 `reply` 发布（发布输入不带 `toolCallId`，Kernel 取模型输出的文字）；任一条件不满足时照旧以 `NO_ACTION` 退回，任务继续。只有文字的判断改为非空白文字（`hasText`）。子任务仍必须以 `finish_subagent` 交付：它要交回 `changedFiles`、`status`、`validation` 等结构化字段。改 Contracts（发布输入）、Kernel 的发布、ExecutorSet 的模型调用、Workflow 的 agent-cycle 与 session-runner，测试 |
 | D98 | **Mission 基线1.1**（2026-11-17，Cary 定，git 标签 `mission-baseline-1.1`）：Mission 基线1（D93）加上 D94（轮次申请总能唤醒、不计入唤醒上限）、D95（任一子任务结束使唤醒计数复位；转入后台的命令说明接下来怎样）、D96（`writeScope` 必填）、D97（根任务自己结束的文字回答在可以结束时就是回复），冻结后用于最终集。D95 与 D97 还没在真实运行里触发过，按 Cary 的决定保留；拆分前先规划成多个文件的指引、`edit_file` 漏 `newString` 与 `list_files` 的 `depth` 非整数的容错都不加。冻结后不再为最终集调参（Phase3Plan 第 3 节） |
+| D99 | 子任务发调用者的系统提示与工具列表（2026-11-17，已撤回，见 D105）：为了让 root 派出的 worker、explorer 第一次请求命中 root 已缓存的前缀，曾让每个 AgentRun 以自己的 Agent 判定、但发给模型的系统提示与工具列表逐字节是调用者的（登记时的 `presentation`），合并了 `finish_subagent` 与 `run_subagents` 的参数结构，Mission 的根任务列出 `finish_subagent`。实测（2026-11-17，DeepSeek）：消息逐字相同，工具列表末尾加一个或去一个，只命中开头 384 个 token；系统提示不同，命中 0。效果与 D104 相同，结构复杂得多，所以撤回，代码不在主线 |
+| D100 | 子任务只为自己的那段上下文计数与压缩（2026-11-17，Cary 定）：继承来的部分（到角色切换为止，`INHERITED`）原样保留，不裁剪、不摘要；子任务的限额只算它自己加的部分（lead、worker 256k、到 230k 压缩，explorer 128k、到 115k），整段请求不超过"模型窗口 − 输出上限 − 2 万"；压缩只摘要角色切换之后的部分，前缀不动。压完仍放不下，子任务直接结束、退化报告交给父任务。角色切换是继承部分之后的一条独立条目（`SWITCH`），不再是派生调用的回答。Mission 的根任务输入上限 555k（模板根节点 `inputLimit`），约 500k 时压缩；Turn-chat 不变。最终集 sqlengine 的 INTERNAL 即由此起：继承来的 explorer 刚注册就把父任务的整段历史压缩掉，留下一个找不到调用的工具回答 |
+| D101 | 压缩时调用与它的回答一起留、一起摘要（2026-11-17，Cary 定）：一条要保留的工具回答，连同它所属的那一轮模型输出以及那一轮的其他回答一起保留 |
+| D102 | 一个 AgentRun 的工具列表在它的整个运行中不变（2026-11-17，Cary 定）：派生工具被撤下（连续两次被拒）时原来从请求的工具列表里删掉；现在它留在列表里，调用时以 TOOL_REJECTED 拒绝。最后一轮也发同一份工具列表，状态里写明现在只能调用哪个结束工具，Workflow 照旧只接受结束工具；技术重试时的强制调用指定这个 AgentRun 自己的结束工具。不是 git 仓库时不提供 git 工具不变（整个 Session 里不变）。统计（410 次运行）：AgentRun 内工具列表或系统提示变过 47 次，最后一轮只提供结束工具 45 次（其后那次请求合计未命中约 414 万 token），撤下派生工具 0 次。实测：`tool_choice: auto` 与不传命中相同；思考模式下 `required` 与指定某个工具都以 400 拒绝 |
+| D103 | 一个步骤的后续段照第一段那样被告知它的步骤（2026-11-17；d99-pyawk2）：唤醒时新建的段原来只带 `goal`，没有带 `guide`（Mission 的决策表与工具手册），根任务第一次唤醒后的那一段第一次请求只命中系统提示与工具（d99-pyawk2 未命中 70k，b1-pyawk 34k）。现在后续段带上 `guide` 与 `inputLimit` |
+| D104 | 先放一个（2026-11-17，Cary 定；stg-pyawk3）：同一次 `run_subagents` 派出的、以 worker 运行并继承调用者上下文、不依赖其他任务的任务，发给模型的开头相同（worker 的系统提示与工具、调用者的视图），借出时不允许执行命令的另成一组；每组先启动一个，其余在它第一次模型回复返回、它结束或等满 `workflow.staggerWorkersMs`（缺省 5000）时启动。lead、explorer、专家、阶段任务与有依赖的任务照常立即启动。同时启动时 DeepSeek 来不及写缓存，每个 worker 第一次请求都整段未命中（最终集 survey-av-fusion 8 个 worker 各 65k）；先放一个后其余每个只未命中 1–1.5k |
+| D105 | 主线方向（2026-11-17，Cary 定）：Mission 基线1.1 + D104，加上缺陷 B 的修复与 D100–D103；D99 撤回 |
 | D46 | 删除 M1 的 `analyze` 路径与只为它存在的机制（2026-11-14，Cary 决定"全删，冻结测试换载体"；落实 D38；M2Design v1.38）：内置模板 `analyze`，Agent planner、code-viewer 与它们的 `finish`、`handoff` 工具，仓库概览 `repository-orient`，报告发布 `report-publish` 与 `AnalysisReport`，交接条目，条件边与 `SKIPPED(NOT_TAKEN)`，从未被模板使用的有界循环与节点迭代号，仓库模板与 `mas run <模板>`（`mas run` 只收目标），执行类别 `TEST`，以及只在测试里调用的统一校验函数 `validateExtension` 与 `spawnedIn`。日志里专家的纲领由 `spawn.submission` 改名为 `spawn.specialist`，去掉总是空的 `params`。两份冻结测试中经 `analyze` 运行的用例改用 `mission` 作为载体，断言不放宽（M2FrozenTests 第 7 节）。旧 Session 的日志不再能读（开发期的数据） |
 | D45 | 额度按实际会花的计算（2026-11-14，Cary 决定；M2Design 7.3 规则 10）：收尾保留、调用余量、最小份额（初始份额与每次补的大小）与每次预留，输入都按 `kernel.budget.reserveShare`（缺省 0.3）计算；上限仍按声明的值，所以初始份额小、补的次数多、能花的总量不变。原来按最坏情况，worker 开账就占 86 万，tester 想并行派 3 个写测试的子任务因额度被拒 |
 | D22 | 编排不写死（2026-11-12）：缺省是负责人自主分解；系统只写死底线（权限、写入范围与借出、额度、深度与唤醒上限、子任务没结束不能交付、checkpoint）；固定工作流降为范式，按固定图执行保留为预编排模式（见 D29；[Phase2Plan](Phase2Plan.md) 第 1、2 节） |
@@ -332,9 +339,12 @@ M2ReleasePlan RP3-ORCH-1"预置工作流供 Turn-chat 调用"的落实方式（�
 
 - 图上，继承的任务节点的 `agentRef` 是 root 的 Agent，`spawn.inherits` 记下它继承的任务、发出调用的 AgentRun 和阶段声明的 Agent
   （`as`）；纲领检查按 `as` 判断这次调用属于哪个阶段。
-- 上下文投影：root 在派生记录之前的视图原样作为前缀（与 root 自己发给模型的前缀逐条相同），随后是派生那一轮里各个调用的答复，
-  其中派生调用的答复就是子任务的任务说明（"从这里起你是另一个任务……"：不再按纲领行动、不派子任务、只能写哪些路径、目标），
-  再往后是子任务自己的历史。子任务自己的压缩记录作用在整段上。
+- 上下文投影：root 在派生记录之前的视图原样作为前缀（与 root 自己发给模型的前缀逐条相同），随后是派生那一轮里各个调用的答复
+  （派生调用答"已开始，你接下来是谁见下"），再一条角色切换（`SWITCH`，"从这里起你是另一个任务……"：不再按纲领行动、不派子任务、
+  只能写哪些路径、目标、怎么结束）。到这条为止都是 `INHERITED`：原样保留，不裁剪、不摘要，也不计入子任务自己的额度（D100）。
+  再往后是子任务自己的历史，它自己的压缩只作用在这一段。
+- 普通的 worker、explorer 与 split 出来的 lead 也继承调用者的上下文（D53、D56、D58），按它们自己的 Agent 运行：系统提示与工具
+  是自己的，所以第一次请求不命中调用者的缓存。同一次派生里开头相同的几个 worker 先启动一个，其余稍后启动，共用它写进的缓存（D104）。
 - Kernel：登记 AgentRun 时 `offeredCapabilities`（提供哪些工具）与 `requestedCapabilities`（能力上限）分开。继承的任务按 root
   的能力提供工具，上限是阶段声明的 Agent 的能力与借出的写入范围；`run_subagents` 由 Workflow 以 `NOT_A_LEAD` 拒绝。
 - 思考强度：继承的任务用 root 那个 AgentRun 的思考强度，任务里写的 `effort` 不生效。模型提供方按思考强度分别缓存，

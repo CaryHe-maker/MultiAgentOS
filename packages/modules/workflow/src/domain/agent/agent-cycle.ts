@@ -308,7 +308,6 @@ export interface AgentContext {
   readonly assembleInput: (
     status: ContextAssembleInput['status'],
     final: boolean,
-    withdrawnTools: readonly string[],
   ) => ContextAssembleInput;
   /**
    * What the log adds to a tool's arguments and the model cannot give. Undefined leaves them as
@@ -358,6 +357,10 @@ const CORE_REFUSALS: ReadonlySet<string> = new Set([
   'WRITE_SCOPE_DELEGATED',
 ]);
 
+/** What a call of a withdrawn run_subagents is told (D102). */
+const SPAWN_WITHDRAWN =
+  'Not executed: run_subagents is no longer yours in this run, after two calls in a row were refused. Do the rest of the work yourself.';
+
 const NORMAL_BUDGET: BudgetView = { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' };
 const FEEDBACK = {
   NO_ACTION:
@@ -394,11 +397,6 @@ function nextStep(state: AgentState, code: FeedbackCode): string {
     ? ` If that was your answer, send the same answer again inside a call of ${finish}; to keep working, call a tool.`
     : ` Call one of the tools you have, or finish with a call of ${finish}.`;
 }
-
-const withdrawnOf = (state: AgentState): readonly string[] =>
-  state.spawnWithdrawn && state.definitions.spawnTool !== undefined
-    ? [state.definitions.spawnTool.toolName]
-    : [];
 
 /**
  * Why a call's arguments were refused, so the model corrects them instead of guessing. `lead` is
@@ -636,7 +634,7 @@ function nextRound(
     next,
     'CONTEXT',
     next.definitions.contextAssemble,
-    context.assembleInput(status, final, withdrawnOf(next)),
+    context.assembleInput(status, final),
     'context',
     [...records, ...wrapUpRecords],
   );
@@ -740,7 +738,7 @@ function reassemble(
     state,
     'CONTEXT',
     state.definitions.contextAssemble,
-    context.assembleInput(status, state.final, withdrawnOf(state)),
+    context.assembleInput(status, state.final),
     'context',
     records,
   );
@@ -752,6 +750,9 @@ function reassemble(
  * fourth refusal is the one that ends the round's work.
  */
 const OVERFLOW_LIMIT = 4;
+
+/** A SubAgent, which reports to its parent when it degrades. */
+const subtask = (state: AgentState): boolean => state.definitions.onDegraded === 'RETURN_PARTIAL';
 
 function failed(
   state: AgentState,
@@ -765,7 +766,7 @@ function failed(
   if (code === 'CONTEXT_OVERFLOW' && pending.role === 'MODEL') {
     const overflows = state.overflows + 1;
     if (overflows < OVERFLOW_LIMIT) return reassemble({ ...state, overflows }, context, records);
-    return state.final
+    return state.final || subtask(state)
       ? degrade({ ...state, overflows }, 'CONTEXT_LIMIT', records)
       : nextRound(wrapUp({ ...state, overflows: 0 }, 'CONTEXT_LIMIT'), context, records);
   }
@@ -773,8 +774,10 @@ function failed(
   // still holds everything it was made of. No round is spent; it is not the model's doing.
   if (code === 'ARTIFACT_EXPIRED' && pending.role === 'MODEL' && !state.packRebuilt)
     return reassemble({ ...state, packRebuilt: true }, context, records);
+  // Still too big once its own part was compacted: a subtask ends here and its parent gets the
+  // report (D100); a last round would be just as big. The root has its final call.
   if (code === 'LIMIT_EXCEEDED' && (pending.role === 'CONTEXT' || pending.role === 'MODEL'))
-    return state.final
+    return state.final || subtask(state)
       ? degrade(state, 'CONTEXT_LIMIT', records)
       : nextRound(wrapUp(state, 'CONTEXT_LIMIT'), context, records);
   // A final answer that was not one finishing call is asked for once more, more plainly, before
@@ -1359,7 +1362,13 @@ function actOn(
     if (inline.has(call.toolCallId)) continue;
     const tool = state.definitions.tools.find((candidate) => candidate.modelName === call.toolName);
     if (tool === undefined) {
-      records.push(feedback(state, 'UNKNOWN_TOOL', call.toolCallId));
+      // A withdrawn run_subagents stays in the request, so the cached prefix holds (D102), and a
+      // call of it is refused here.
+      records.push(
+        state.spawnWithdrawn && call.toolName === state.definitions.spawnTool?.toolName
+          ? feedback(state, 'TOOL_REJECTED', call.toolCallId, SPAWN_WITHDRAWN)
+          : feedback(state, 'UNKNOWN_TOOL', call.toolCallId),
+      );
       continue;
     }
     accepted += 1;
@@ -1811,7 +1820,7 @@ export function resumeAfterPause(
       next,
       'CONTEXT',
       next.definitions.contextAssemble,
-      context.assembleInput(status, next.final, withdrawnOf(next)),
+      context.assembleInput(status, next.final),
       'context',
     );
   }

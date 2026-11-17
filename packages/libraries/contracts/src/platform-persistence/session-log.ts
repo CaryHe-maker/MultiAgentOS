@@ -126,6 +126,8 @@ export const GraphNodeRecordSchema = closed({
   goal: Type.Optional(text(4000)),
   /** What the step's Agent reads with its goal: the template's worked examples (D32). */
   guide: Type.Optional(Type.String({ maxLength: 30_000 })),
+  /** A per-call input limit below its Agent's own, from its template (D100). */
+  inputLimit: Type.Optional(count(1)),
   output: Type.Optional(Type.Boolean()),
   /** Of an AGENT node: the task it is a segment of. */
   mission: Type.Optional(NodeMissionSchema),

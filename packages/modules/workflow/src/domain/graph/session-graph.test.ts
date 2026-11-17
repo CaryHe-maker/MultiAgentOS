@@ -6,6 +6,7 @@ import {
   chatGrowthPoint,
   chatGrowthRevision,
   compileTemplate,
+  continuationRevision,
   initialChatRevision,
   projectGraph,
   type GraphRevision,
@@ -212,5 +213,42 @@ describe('replay', () => {
         },
       ),
     );
+  });
+});
+
+describe('a later segment of a step', () => {
+  it('is told its step as the first segment was: goal, guide and input limit', () => {
+    const compiled = compileTemplate(
+      run,
+      {
+        schemaVersion: 'v1',
+        kind: 'TEMPLATE',
+        id: 'mission',
+        version: 'v0.1.0',
+        description: 'one step',
+        owner: { agent: main },
+        nodes: [
+          {
+            name: 'deliver',
+            kind: 'AGENT',
+            agent: main,
+            role: 'owner',
+            output: true,
+            goal: 'deliver it',
+            guide: 'a table of decisions',
+            inputLimit: 555_000,
+          },
+        ],
+        edges: [],
+      } as unknown as TemplateDefinition,
+      ROOT,
+    );
+    expect(compiled.errors).toEqual([]);
+    const step = compiled.revision.nodes.find((node) => node.name === 'deliver');
+    if (step === undefined) throw new Error('no step');
+    const next = continuationRevision(run, 2, step).nodes[0];
+    expect(next?.goal).toBe('deliver it');
+    expect(next?.guide).toBe('a table of decisions');
+    expect(next?.inputLimit).toBe(555_000);
   });
 });

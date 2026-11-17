@@ -10,7 +10,13 @@ import { Sha256Schema, closed, count, text } from '../platform-common/schema-hel
 const entry = {
   /** `seq` of the log record the entry comes from. */
   seq: count(1),
-  category: Type.Enum(['PINNED', 'NORMAL']),
+  /**
+   * PINNED stays through a compaction, NORMAL may be summarised. INHERITED is the context a task
+   * started with, its caller's, up to and including the entry that says who it is now (D100): it
+   * stays as it is, byte for byte, so the request keeps the prefix the provider cached; it is
+   * neither cut nor summarised, and what the task may hold of its own is counted without it.
+   */
+  category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
 };
 
 /**
@@ -166,6 +172,11 @@ export const ContextHistoryEntrySchema = Type.Union(
     }),
     /** Runtime context, interruption and repair records: generated text, no artifact. */
     closed({ ...entry, kind: Type.Literal('NOTE'), text: text(2000) }),
+    /**
+     * Where a task that starts with its caller's context becomes itself (D100): who it is now,
+     * what it may do, its goal and how it finishes. The last INHERITED entry.
+     */
+    closed({ ...entry, kind: Type.Literal('SWITCH'), text: text(8000) }),
   ],
   { $id: 'context.ContextHistoryEntry.v1' },
 );
@@ -253,6 +264,8 @@ export const ContextAssembleOutputSchema = Type.Refine(
       contextPackId: IdSchemas.contextPackId,
       tokenCount: count(),
       tokenBudget: count(1),
+      /** The tokens of the INHERITED part, not counted against the task's own budget (D100). */
+      frozenTokens: Type.Optional(count()),
       prefixSha256: Sha256Schema,
       projectionDigest: Sha256Schema,
       headDigest: Sha256Schema,

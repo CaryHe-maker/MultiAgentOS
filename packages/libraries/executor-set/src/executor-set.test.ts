@@ -310,6 +310,7 @@ describe('model-call', () => {
     over: {
       final?: boolean;
       finalMode?: 'AUTO' | 'FORCED';
+      finishTools?: string[];
       replayKeep?: number;
       history?: ResolvedHistoryEntry[];
     } = {},
@@ -333,6 +334,7 @@ describe('model-call', () => {
         contextPack: pack,
         final: over.final ?? false,
         ...(over.finalMode === undefined ? {} : { finalMode: over.finalMode }),
+        ...(over.finishTools === undefined ? {} : { finishTools: over.finishTools }),
       },
       environment({ scope, limits: { deadline, maxOutputBytes: 100_000, maxOutputTokens: 100 } }),
     );
@@ -397,18 +399,23 @@ describe('model-call', () => {
     const free = await run(() => answer(toolCall('reply', '{}')), {
       final: true,
       finalMode: 'AUTO',
+      finishTools: ['reply'],
     });
     expect(free.body['tool_choice']).toBe('auto');
     const forced = await run(() => answer(toolCall('reply', '{}')), {
       final: true,
       finalMode: 'FORCED',
+      finishTools: ['reply'],
     });
     expect(forced.body['tool_choice']).toMatchObject({ function: { name: 'reply' } });
     expect(forced.body['thinking']).toEqual({ type: 'disabled' });
   });
 
   it('fails retryably when a final call does not end properly', async () => {
-    const { outcome } = await run(() => answer(toolCall('read_file', '{}')), { final: true });
+    const { outcome } = await run(() => answer(toolCall('read_file', '{}')), {
+      final: true,
+      finishTools: ['reply'],
+    });
     expect(outcome).toMatchObject({
       reasonCode: 'PROVIDER_TOOL_CHOICE_IGNORED',
       retryable: true,

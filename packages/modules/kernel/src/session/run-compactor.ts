@@ -28,7 +28,11 @@ import {
 } from '@multiagentos/contracts';
 import type { Settlement, SchedulerDuties } from '../interfaces/index.js';
 import type { RunLedgers } from '../monitor/index.js';
-import type { AttemptRequestBuilder, ExecutionConfig } from './attempt-request.js';
+import {
+  capTokensOf,
+  type AttemptRequestBuilder,
+  type ExecutionConfig,
+} from './attempt-request.js';
 import {
   CompactionProcess,
   type Change,
@@ -122,6 +126,10 @@ const usageOf = (usage: TokenUsage | undefined): CompactionUsage => ({
   outputTokens: usage?.outputTokens ?? 0,
   cachedInputTokens: usage?.inputCacheHitTokens ?? 0,
 });
+
+/** What a summary of a task that started with its caller's context is told besides (D100). */
+const INHERITED_SUFFIX =
+  '\n\nSummarise only what comes after the note that says you are a different task from here on: everything before it stays in your context as it is, so leave it out of the summary.';
 
 /**
  * Everything the compaction process needs of the rest of Kernel (Kernel/Core 6a, Execution 6a):
@@ -231,6 +239,10 @@ export class RunCompactor implements Compacting {
       sizeOf: (target, entries) => this.#sizeOf(target, entries),
       perCallInputLimit: (target) =>
         deps.agentOf(target)?.agent.budget.perCallInputLimit ?? Number.MAX_SAFE_INTEGER,
+      capTokens: (target) => {
+        const found = deps.agentOf(target);
+        return found === undefined ? Number.MAX_SAFE_INTEGER : capTokensOf(found.agent, false);
+      },
       prune: (compactionId, target, candidates) => this.#prune(candidates),
       summarize: (compactionId, target, request) => this.#summarize(target, request),
       record: (compactionId, target, change) => this.#record(compactionId, target, change),
@@ -246,7 +258,7 @@ export class RunCompactor implements Compacting {
   }
 
   #head(agent: PinnedAgent): { digest: string; tokens: number } {
-    const toolSpecs = agent.toolSpecs(false);
+    const toolSpecs = agent.toolSpecs;
     return {
       digest: sha256Hex(canonicalJson({ instructions: agent.instructions, toolSpecs })),
       tokens:
@@ -487,9 +499,12 @@ export class RunCompactor implements Compacting {
     if (found === undefined) return { kind: 'INTERRUPTED' };
     const { agent } = found;
     const { compaction, prompt } = deps;
-    const instruction = request.strict
-      ? `${prompt.instruction}${prompt.strictSuffix}`
-      : prompt.instruction;
+    // What a task inherited stays in its context as it is (D100): a summary of the history as it
+    // is takes in only what came after the entry that says who it is now.
+    const inherited = request.entries.some((entry) => entry.category === 'INHERITED');
+    const instruction = `${request.strict ? `${prompt.instruction}${prompt.strictSuffix}` : prompt.instruction}${
+      inherited && request.mode === 'PREFIX' ? INHERITED_SUFFIX : ''
+    }`;
     // What a summary that did not come about ran into, for whoever looks at the audit afterwards:
     // the outcome and its code, never any content.
     const problem = (stage: string, detail: Readonly<Record<string, unknown>>): void =>
@@ -512,7 +527,7 @@ export class RunCompactor implements Compacting {
               estimateItemTokens({ role: 'system', content: instruction }),
           );
     const estimatedTokens =
-      Math.min(Math.ceil(inputTokens * RESERVE_MARGIN), agent.budget.perCallInputLimit) +
+      Math.min(Math.ceil(inputTokens * RESERVE_MARGIN), capTokensOf(agent, false)) +
       compaction.summaryMaxTokens;
     const reservation = await this.#reserve(
       estimatedTokens,
@@ -527,8 +542,9 @@ export class RunCompactor implements Compacting {
     const assemble: AssembleExecutorInput = {
       final: false,
       tokenBudget: agent.budget.perCallInputLimit,
+      capTokens: capTokensOf(agent, false),
       instructions: agent.instructions,
-      toolSpecs: agent.toolSpecs(false),
+      toolSpecs: [...agent.toolSpecs],
       history,
       status: {
         round: 1,

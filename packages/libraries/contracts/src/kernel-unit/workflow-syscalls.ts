@@ -40,6 +40,11 @@ export const RegisterAgentRunRequestSchema = closed(
     offeredCapabilities: Type.Optional(
       Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
     ),
+    /**
+     * A per-call input limit below the Agent's own (D100): Mission gives its root a smaller one
+     * than Turn-chat does. It may only narrow `perCallInputLimit` and `finalInputBudget`.
+     */
+    inputLimit: Type.Optional(count(1)),
     /** Relative to the repository root; main has `['.']`, and none without `workspace.write`. */
     writeRoots: Type.Array(text(1024)),
     /**

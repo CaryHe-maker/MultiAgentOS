@@ -1,9 +1,8 @@
 /**
- * The Agent a compaction is made as is the Agent an AgentRun of it was registered as, as far as the
- * request goes: the summary request begins as that AgentRun's requests do (same instructions, same
- * tools, same model), which is what lets it hit the prompt cache of the requests before it. The
- * compaction finds its Agent in the catalog; the registration got it by the same catalog and the
- * same rules (M2Design 9.6).
+ * Main as the catalog has it, for a compaction with no AgentRun of main, is main as a start
+ * registers it, as far as the request goes: the summary request begins as main's requests do
+ * (same instructions, same tools, same model), which is what lets it hit the prompt cache of the
+ * requests before it (M2Design 9.6). A compaction with an AgentRun is made as that AgentRun.
  */
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
@@ -21,55 +20,41 @@ const context = { correlationId: newId('cor'), tenantId: 'local', projectId: 'lo
 describe('the Agent a compaction is made as', () => {
   for (const preset of ['standard', 'readonly'] as const)
     for (const commands of [true, false])
-      it(`is the Agent as registered, for every Agent of the catalog (${preset}, commands ${String(commands)})`, async () => {
+      it(`is main as registered (${preset}, commands ${String(commands)})`, async () => {
         const catalog = await DefinitionCatalog.load(
           new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
         );
         const compaction = compactionAgentFrom(catalog, registry, { preset, commands });
         const pin = pinAgentFrom(catalog, registry);
-        const agents = catalog.list().filter((each) => each.kind === 'AGENT');
-        expect(agents.map((each) => each.id)).toContain('main');
-        for (const each of agents) {
-          const pinned = catalog.pinAgent({ id: each.id, version: each.version }, context);
-          if (!pinned.ok) throw new Error(`cannot pin ${each.id}`);
-          const binding = agentBindingOf(pinned.value, registry, preset, { commands });
-          const registered = await pin({
-            requestId: newId('req'),
-            sessionId: newId('ses'),
-            workflowRunId: newId('wfr'),
-            agentRunId: newId('agr'),
-            nodeId: `nod_${'a'.repeat(32)}`,
-            agentRef: binding.ref,
-            effort: binding.effort,
-            workspaceViewId: 'main',
-            display: { label: each.id },
-            requestedCapabilities: [...binding.requestedCapabilities],
-            writeRoots: [...binding.writeRoots],
-          } as unknown as Parameters<typeof pin>[0]);
-          if (!registered.ok) throw new Error(`cannot register ${each.id}`);
-          const derived = compaction({ id: each.id, version: each.version });
-          expect(derived, each.id).toBeDefined();
-          if (derived === undefined) continue;
-          // What the request is made of, word for word.
-          expect(derived.instructions, each.id).toBe(registered.agent.instructions);
-          expect(derived.toolSpecs(false), each.id).toEqual(registered.agent.toolSpecs(false));
-          expect(derived.toolSpecs(true), each.id).toEqual(registered.agent.toolSpecs(true));
-          expect(derived.modelScope, each.id).toEqual(registered.agent.modelScope);
-          expect(derived.budget, each.id).toEqual(registered.agent.budget);
-          expect(derived.contextWindowTokens, each.id).toBe(registered.agent.contextWindowTokens);
-          expect(derived.cacheHitWeight, each.id).toBe(registered.agent.cacheHitWeight);
-        }
+        const main = catalog.list().find((each) => each.kind === 'AGENT' && each.id === 'main');
+        if (main === undefined) throw new Error('no main');
+        const pinned = catalog.pinAgent({ id: main.id, version: main.version }, context);
+        if (!pinned.ok) throw new Error('cannot pin main');
+        const binding = agentBindingOf(pinned.value, registry, preset, { commands });
+        const registered = await pin({
+          requestId: newId('req'),
+          sessionId: newId('ses'),
+          workflowRunId: newId('wfr'),
+          agentRunId: newId('agr'),
+          nodeId: `nod_${'a'.repeat(32)}`,
+          agentRef: binding.ref,
+          effort: binding.effort,
+          workspaceViewId: 'main',
+          display: { label: 'main' },
+          requestedCapabilities: [...binding.requestedCapabilities],
+          writeRoots: [...binding.writeRoots],
+        } as unknown as Parameters<typeof pin>[0]);
+        if (!registered.ok) throw new Error('cannot register main');
+        const derived = compaction();
+        if (derived === undefined) throw new Error('no compaction agent');
+        // What the request is made of, word for word.
+        expect(derived.instructions).toBe(registered.agent.instructions);
+        expect(derived.toolSpecs).toEqual(registered.agent.toolSpecs);
+        expect(derived.finalToolNames).toEqual(registered.agent.finalToolNames);
+        expect(derived.modelScope).toEqual(registered.agent.modelScope);
+        expect(derived.budget).toEqual(registered.agent.budget);
+        expect(derived.contextWindowTokens).toBe(registered.agent.contextWindowTokens);
+        expect(derived.cacheHitWeight).toBe(registered.agent.cacheHitWeight);
+        expect(derived.id).toBe('main');
       });
-
-  it('is main when no Agent is named, and nothing when the catalog does not know the Agent', async () => {
-    const catalog = await DefinitionCatalog.load(
-      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
-    );
-    const compaction = compactionAgentFrom(catalog, registry, {
-      preset: 'standard',
-      commands: true,
-    });
-    expect(compaction()?.id).toBe('main');
-    expect(compaction({ id: 'no-such-agent', version: 'v9.9.9' })).toBeUndefined();
-  });
 });

@@ -339,7 +339,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 
 | 步骤 | Core 的动作 |
 |---|---|
-| 检查点 | 受理普通调用的 `context-assemble` 时，请 Execution 估算组装后的输入（实测加估算，Execution 第 6a 节）；超过 `compaction.triggerRatio × perCallInputLimit`，或该 AgentRun 上一次 `model-call` 以 `CONTEXT_OVERFLOW` 返回，即开始压缩，挂起这次组装；对象为 main、模板节点或 SubAgent |
+| 检查点 | 受理普通调用的 `context-assemble` 时，请 Execution 估算组装后的输入（实测加估算，Execution 第 6a 节）；它自己的部分（不计继承来的 `INHERITED` 部分，Orchestration D100）超过 `compaction.triggerRatio × perCallInputLimit`、整段超过“模型窗口 − 输出上限 − 2 万”，或该 AgentRun 上一次 `model-call` 以 `CONTEXT_OVERFLOW` 返回，即开始压缩；压缩所用的 Agent 是这个 AgentRun 登记时的样子（工具与收窄后的额度），没有 AgentRun 的 main 才由目录取得，挂起这次组装；对象为 main、模板节点或 SubAgent |
 | 用户触发 | 受理 `compactContext`：运行为 Turn-chat 且处于 AWAITING_INPUT，对象为 main 的投影；main 的 Agent 由目录取得（M2Design 第 9.6 节"压缩所用的 Agent"），不需要这个进程里已有 main 的 AgentRun |
 | 额度 | 写摘要之前请 Monitor 预留（Monitor 第 3.5 节）；额度检查的结果先记下：不足时只修剪，修剪后仍超出时挂起的组装以 `BUDGET_WRAP_UP` 返回；用户触发时发出 `CompactionFailed(BUDGET_INSUFFICIENT)` |
 | 材料 | 审计 `COMPACTION_STARTED`；Outbox 发出 `CompactionSourceQuery`，按 `compactionId` 等待 `reportCompactionSource` |

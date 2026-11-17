@@ -89,6 +89,7 @@ async function call(
   options: {
     final?: boolean;
     finalMode?: 'AUTO' | 'FORCED';
+    finishTools?: string[];
     compaction?: { requiredSections: string[] };
     environment?: Partial<ExecutorEnvironment>;
   } = {},
@@ -100,6 +101,7 @@ async function call(
       contextPack: options.final === true ? finalPack : pack,
       final: options.final === true,
       ...(options.finalMode === undefined ? {} : { finalMode: options.finalMode }),
+      ...(options.finishTools === undefined ? {} : { finishTools: options.finishTools }),
       ...(options.compaction === undefined ? {} : { compaction: options.compaction }),
     },
     environmentFor('MODEL', MODEL_SCOPE, options.environment),
@@ -177,9 +179,13 @@ describe('MODEL (ExecutorSet 7)', () => {
   });
 
   it('offers the end tool freely on a final call, and forces it on the retry', async () => {
-    const free = await call(() => chatCompletion([]), { final: true });
+    const free = await call(() => chatCompletion([]), { final: true, finishTools: ['reply'] });
     expect(free.recorded.body?.['tool_choice']).toBe('auto');
-    const forced = await call(() => chatCompletion([]), { final: true, finalMode: 'FORCED' });
+    const forced = await call(() => chatCompletion([]), {
+      final: true,
+      finalMode: 'FORCED',
+      finishTools: ['reply'],
+    });
     expect(forced.recorded.body?.['tool_choice']).toEqual({
       type: 'function',
       function: { name: 'reply' },
@@ -190,7 +196,7 @@ describe('MODEL (ExecutorSet 7)', () => {
   it('completes a final call that answers with exactly one end tool', async () => {
     const { outcome } = await call(
       () => chatCompletion([{ id: 'c', name: 'reply', arguments: '{"text":"s"}' }]),
-      { final: true },
+      { final: true, finishTools: ['reply'] },
     );
     expect(outcome).toMatchObject({
       outcome: 'COMPLETED',
@@ -213,7 +219,10 @@ describe('MODEL (ExecutorSet 7)', () => {
   ])(
     'turns a final call answered with %s into a retryable failure with its usage',
     async (_, calls) => {
-      const { outcome } = await call(() => chatCompletion(calls), { final: true });
+      const { outcome } = await call(() => chatCompletion(calls), {
+        final: true,
+        finishTools: ['reply'],
+      });
       expect(outcome).toEqual({
         outcome: 'FAILED',
         reasonCode: 'PROVIDER_TOOL_CHOICE_IGNORED',

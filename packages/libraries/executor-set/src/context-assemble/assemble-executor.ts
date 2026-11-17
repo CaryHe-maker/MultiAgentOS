@@ -93,7 +93,11 @@ function roundNotice(round: number, maxRounds: number): string | undefined {
 /** The round at which a task that could split and has not is told so, once (D73). */
 const NO_SPLIT_ROUND = 10;
 
-function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]): string {
+function renderStatus(
+  status: StatusFacts,
+  toolSpecs: readonly ModelToolSpec[],
+  finishTools?: readonly string[],
+): string {
   const {
     round,
     maxRounds,
@@ -148,7 +152,8 @@ function renderStatus(status: StatusFacts, toolSpecs: readonly ModelToolSpec[]):
         : 'Your background commands are still running; parts that do not depend on their results can start now.',
     );
   if (final) {
-    const finish = toolSpecs.filter((spec) => spec.purpose === 'CONTROL').map((spec) => spec.name);
+    // A final call lists every tool (D102); the ones it may call now are its end tools.
+    const finish = finishTools ?? [];
     const reason = wrapUpReason === undefined ? '' : ` because ${WRAP_UP_TEXT[wrapUpReason]}`;
     const handover = wrapUpReason === 'ROUND_LIMIT' ? ROUND_LIMIT_HANDOVER : '';
     lines.push(
@@ -297,7 +302,8 @@ function drafts(group: Group): readonly Draft[] | undefined {
 
 const tokensOf = (items: readonly Draft[]) =>
   items.reduce((total, item) => total + draftTokens(item), 0);
-const isPinned = (draft: Draft) => 'category' in draft && draft.category === 'PINNED';
+/** What the final-call safeguard never drops: PINNED entries and what a task inherited (D100). */
+const isPinned = (draft: Draft) => 'category' in draft && draft.category !== 'NORMAL';
 const seqOf = (draft: Draft) => ('seq' in draft ? draft.seq : 0);
 
 /**
@@ -346,7 +352,7 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
     role: 'user',
     content: asking
       ? (input.compaction?.instruction ?? '')
-      : renderStatus(input.status, input.toolSpecs),
+      : renderStatus(input.status, input.toolSpecs, input.finishTools),
     reason: asking ? 'summary request' : 'run status',
   };
 
@@ -354,24 +360,34 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
   let total = tokensOf(head) + tokensOf(history.flat()) + draftTokens(status);
   const calibration = input.tokenCalibration;
   const measured = () => calibratedTokens(total, calibration);
-  if (measured() > input.tokenBudget) {
+  // A task that started with its caller's context is not charged for it (D100): its own budget
+  // comes on top of that part, and the whole stays under the cap of a request. The part is counted
+  // at the rate the whole is: calibrating it alone would leave it as estimated whenever it is much
+  // smaller than the request it is part of.
+  const frozenEstimate = tokensOf(
+    history.flat().filter((draft) => 'category' in draft && draft.category === 'INHERITED'),
+  );
+  const frozenTokens =
+    total <= 0 ? frozenEstimate : Math.floor((frozenEstimate * measured()) / total);
+  const budget = Math.min(input.tokenBudget + frozenTokens, input.capTokens ?? Infinity);
+  if (measured() > budget) {
     if (!input.final) return rejected('LIMIT_EXCEEDED');
-    for (let index = 0; index < history.length - 1 && measured() > input.tokenBudget; index += 1) {
+    for (let index = 0; index < history.length - 1 && measured() > budget; index += 1) {
       const group = history[index] ?? [];
       const dropped = group.filter((draft) => !isPinned(draft));
       total -= tokensOf(dropped);
       elided.push(...dropped.map(seqOf));
       history[index] = group.filter(isPinned);
     }
-    if (measured() > input.tokenBudget) return rejected('LIMIT_EXCEEDED');
-  } else if (!asking && !input.final && measured() >= input.tokenBudget * CONTEXT_WARNING_SHARE) {
-    const warning = renderContextWarning(measured(), input.tokenBudget);
+    if (measured() > budget) return rejected('LIMIT_EXCEEDED');
+  } else if (!asking && !input.final && measured() >= budget * CONTEXT_WARNING_SHARE) {
+    const warning = renderContextWarning(measured(), budget);
     const warned = {
       ...status,
       content: status.content === '' ? warning : `${status.content}\n${warning}`,
     };
     total += draftTokens(warned) - draftTokens(status);
-    if (measured() > input.tokenBudget) return rejected('LIMIT_EXCEEDED');
+    if (measured() > budget) return rejected('LIMIT_EXCEEDED');
     status = warned;
   }
 
@@ -390,7 +406,8 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
   const pack: AssembleContextPack = {
     contextPackId,
     tokenCount,
-    tokenBudget: input.tokenBudget,
+    tokenBudget: budget,
+    ...(frozenTokens === 0 ? {} : { frozenTokens }),
     createdAt: environment.now().toISOString(),
     operation: 'ASSEMBLE',
     prefixSha256,
@@ -403,7 +420,8 @@ function assemble(input: AssembleExecutorInput, environment: ExecutorEnvironment
     output: {
       contextPackId,
       tokenCount,
-      tokenBudget: input.tokenBudget,
+      tokenBudget: budget,
+      ...(frozenTokens === 0 ? {} : { frozenTokens }),
       prefixSha256,
       projectionDigest,
       headDigest: prefixSha256,

@@ -1,6 +1,6 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.41 定稿（2026-11-17）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.42 定稿（2026-11-17）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收与待决事项（交付计划见 [M2ReleasePlan](M2ReleasePlan.md)）。
 > 字段级接口、Schema 清单与定义实例写在 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
@@ -439,7 +439,7 @@ run_subagents({             // 根任务的形式；lead 的只能派 explorer �
 | 整次运行启动的子任务数 ≤ `kernel.tasks.perRun`（缺省 60），由 Kernel 在借出份额时计数；到了上限先问用户（`tasks.extend`），同意再允许 `perRun` 个，拒绝才以 `TASK_QUOTA_REACHED` 拒绝（Orchestration D62；此前是每个 Turn 12 个任务、4 次调用） | `TASK_QUOTA_ASKED` / `TASK_QUOTA_REACHED` |
 | 各任务的 `budget.tokens` 之和 ≤ 调用方当前可委派的额度（由 Kernel 的 `reserveDelegation` 判定，第 7.3 节） | `BUDGET_INSUFFICIENT`（写明可委派的余额与各任务的份额） |
 
-调用方连续 2 次校验失败时，Workflow 从它之后的工具列表中收回 `run_subagents`，并以 FEEDBACK 告知它自行完成；长任务的根不收回（Orchestration D56），子任务数到上限也不收回（D62）。
+调用方连续 2 次校验失败时，Workflow 收回 `run_subagents`：它仍留在工具列表里（前缀缓存因此保留，[Orchestration](Orchestration.md) D102），之后的调用以 `TOOL_REJECTED` 拒绝，并以 FEEDBACK 告知它自行完成；长任务的根不收回（Orchestration D56），子任务数到上限也不收回（D62）。
 
 **执行语义**
 
@@ -1322,7 +1322,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 - **provider 拒绝**：估算偏差使 provider 以上下文超长拒绝时，`model-call` 返回 `CONTEXT_OVERFLOW`，触发压缩并重新组装，连续三次压缩仍被拒才按超出上限处理（第 9.6 节）。
 - **接近上限的预警**：上下文达到 `perCallInputLimit` 的 85% 时，STATUS 写明已用比例与 token 数，要求模型只读必要内容、尽快结束；到达上限时按下一条进入最后一轮。预警在 STATUS 中，不改变缓存前缀，写入日志的 `CONTEXT_ASSEMBLED` 带这次的 token 数。
 - **收尾调用的保险**：收尾调用是该 AgentRun 的最后一次调用，不再压缩。组装超出 `finalInputBudget` 时，从最早的 `NORMAL` 条目开始去掉，
-  以完整的模型轮为单位（工具调用与它的结果不拆开），直到装下为止；`PINNED` 条目与最近一轮永不去掉。去掉的条目记入 `CONTEXT_ASSEMBLED`，结果可以复现。
+  以完整的模型轮为单位（工具调用与它的结果不拆开），直到装下为止；`PINNED`、`INHERITED` 条目与最近一轮永不去掉。去掉的条目记入 `CONTEXT_ASSEMBLED`，结果可以复现。
   仍然装不下时，不调用模型，按 M1 的降级规则结束（第 7.3 节"必有报告"）。
 - **没有压缩时**（没有配置摘要指令，即 `compactionPrompt` 缺省）：普通调用超出 `perCallInputLimit` 时，`context-assemble` 以 `LIMIT_EXCEEDED` 拒绝，
   Workflow 让该 AgentRun 进入最后一轮（按上一条组装），回复中提示用户用 `/new` 开始新的对话。
@@ -1334,7 +1334,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 | 模型 | `deepseek-flash`；思考强度按 Agent 缺省值，可由 `run_subagents` 的 `effort` 在允许范围内改变；`/thinking` 可以查看最近的思考内容 |
 | 回传 | 带工具的请求中，回传之前各轮的 `reasoning_content`，否则 API 可能返回 400（实测：服务端记得的工具调用可以不回传，其余返回 400，不依赖这一点）：<br>- 回传条件为同一模型，且该轮没有出错；<br>- 被暂停或中止打断的思考不回传；<br>- 缺少思考内容的历史轮补空字符串（第 14.1 节的实测）；<br>- 该轮是否被打断、是否出错，在写入日志时记录，之后不再改变；只有切换模型会改变较早各轮是否回传（第 9.2 节）；<br>- 被压缩的轮连同思考内容一起由摘要取代 |
 | 记录 | 思考内容存为 Artifact，`MODEL_TURN` 记录它的引用；思考内容不显示，也不流式输出 |
-| 收尾调用 | 只提供结束控制工具，`tool_choice = auto`，保持思考开启；结果不合法时，以关闭思考加强制工具选择重试一次（M1 的方式）；仍不合法则降级 |
+| 收尾调用 | 工具列表与其他调用相同（[Orchestration](Orchestration.md) D102），状态写明只能调用结束控制工具，只接受这些；`tool_choice = auto`，保持思考开启；结果不合法时，以关闭思考加强制工具选择重试一次（M1 的方式）；仍不合法则降级 |
 
 ### 9.5 项目指令的信任
 
@@ -1373,6 +1373,8 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 | 条目 | 处理 | 理由 |
 |---|---|---|
 | `PINNED`（main 中当前 Turn 的人类输入；SubAgent 的目标、父任务交给它的引用、依赖任务的结果、验收标准） | 永不取代，永不修剪 | 当前任务的定义 |
+| `INHERITED`（子任务继承来的调用者上下文，到角色切换那一条为止） | 永不取代，永不修剪，也不计入子任务自己的额度（[Orchestration](Orchestration.md) D100） | 原样保留才保得住调用者已缓存的前缀；压缩只摘要角色切换之后的部分 |
+| 一条保留的工具回答 | 它所属的那一轮模型输出与那一轮的其他回答一并保留（D101） | 请求里不能有没有调用的回答，也不能有没有回答的调用 |
 | 用户消息（`HUMAN`：开放输入与运行中插话） | **原样保留**，总量不超过 `keepHumanBytes`（缺省 16384）：在被压缩范围内，从最新一条往最旧累计，超过上限的更旧的并入摘要；单条超过 `keepHumanBytes` 的一半的不保留原文，整条并入摘要 | 摘要是模型写的，会改写也会漏；用户的要求一旦被改写，之后的工作会悄悄偏离，用户很难发现。用户消息通常只占上下文的百分之几，原样留下几乎没有代价；超大的粘贴（日志、代码）不值得留 |
 | `ask_user` 的答复（`HUMAN_ANSWER`） | 并入摘要，摘要指令要求在"关键决定"里逐字写出用户的回答 | 它是某次工具调用的结果，保留它就必须保留发出提问的那一轮模型输出，两者不能拆开；第一版不做 |
 | 模型输出（`MODEL_TURN`） | 并入摘要 | 量大，结论会在摘要里；原文在日志里 |
@@ -1386,7 +1388,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 
 | 触发 | 时机 | 说明 |
 |---|---|---|
-| 自动 | Kernel 受理普通调用的 `context-assemble` 时，估算组装后的输入超过 `triggerRatio × perCallInputLimit`（缺省 0.9） | 这是检查点：此时该 AgentRun 处在两次模型调用之间；因此总是用户的下一个请求发出之后、或一个多轮运行的某一轮之前才压缩，不会在一个 Turn 结束之后预先压缩 |
+| 自动 | Kernel 受理普通调用的 `context-assemble` 时，估算组装后它自己的输入超过 `triggerRatio × perCallInputLimit`（缺省 0.9），或整段超过“模型窗口 − 输出上限 − 2 万”。继承上下文的任务不计继承来的部分（`INHERITED`），那部分原样保留、不裁剪不摘要，压缩只作用在角色切换之后；压完仍放不下的子任务直接结束，退化报告交给父任务（[Orchestration](Orchestration.md) D100） | 这是检查点：此时该 AgentRun 处在两次模型调用之间；因此总是用户的下一个请求发出之后、或一个多轮运行的某一轮之前才压缩，不会在一个 Turn 结束之后预先压缩 |
 | 溢出 | `model-call` 以 `CONTEXT_OVERFLOW` 返回后，Workflow 按固定规则重新提交 `context-assemble`；Kernel 记住溢出时的规模，依次以它的 85%、70%、50% 为压缩目标 | 三次压缩之后仍溢出（第四次）时不再压缩，按第 9.3 节的收尾路径结束 |
 | 用户 | `/compact`（`compactContext`），只在 Turn-chat 的 AWAITING_INPUT 时受理 | 立即执行；对象为 main 的投影；修剪之后总是继续写摘要 |
 
@@ -1397,7 +1399,7 @@ SubAgent 的投影函数的参数中没有父 AgentRun 的步骤，隔离由类�
 - 实测值来自日志，估算因此仍是日志的纯函数，进程重启后结果相同。额度预留不用这个估算（第 9.3 节"两种规模估算"）。
 
 **对象**：Turn-chat 中为 main 的投影（整个 Session，跨 WorkflowRun）；模板中的 AGENT 节点与 SubAgent（explorer、worker）为该 AgentRun 的投影（参考 OpenCode 与 DeepSeek Harness：子 Agent 是完整的会话，使用同一套压缩）。
-**压缩所用的 Agent**：所有对象走同一条路径，由目录得到 Agent（系统指令、工具、模型、单次输入上限），工具范围按 `requestedCapabilitiesOf(Agent 的能力, 预设, 命令是否提供)` 计算，这个函数与 Workflow 注册 AgentRun 时用的是同一个，所以摘要请求的开头与该 Agent 平时的请求逐字相同，能命中缓存。对象说的是哪个 Agent：main 是目录里 main 的当前定义，不需要任何 AgentRun，所以刚打开 Session、还没有运行过任何 Turn 时也能压缩；SubAgent 与模板节点是它注册时记下的 Agent 引用。AgentRun 的状态、上限、轮数，压缩一概不读；只有付钱的账本随对象而定（SubAgent 用自己的账本）。
+**压缩所用的 Agent**：一个已登记的 AgentRun 按它登记时的样子压缩：系统指令、工具、模型与它自己的单次输入上限（Mission 根任务收窄后的 555k 也在内，[Orchestration](Orchestration.md) D100），所以摘要请求的开头与它平时的请求逐字相同，能命中缓存。这个进程里还没有 main 的 AgentRun 时（刚打开 Session 就 `/compact`），用目录里 main 的当前定义，工具范围按 `requestedCapabilitiesOf(Agent 的能力, 预设, 命令是否提供)` 计算，这个函数与 Workflow 注册 AgentRun 时用的是同一个。AgentRun 的状态与轮数，压缩一概不读；付钱的账本随对象而定（SubAgent 用自己的账本）。
 SubAgent 的压缩从它自己的账本支出，不动用它的收尾保留 F；额度不足以写摘要时进入最后一轮，以 `finish_subagent` 整理交给 main 的结果（第 7.3 节"压缩的额度"）。
 SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任务的结果与验收标准。
 
@@ -1900,4 +1902,5 @@ M2 的交付计划、任务、门与退出条件写在 [M2ReleasePlan](M2Release
 | v1.38 | 2026-11-14 | 删除 M1 的 `analyze` 路径与只为它存在的机制（Cary 2026-11-14 决定"全删，冻结测试换载体"；[Orchestration](Orchestration.md) D38、D39）：内置模板 `analyze`、Agent planner 与 code-viewer、工具 `finish`（finish-analysis）与 `handoff-to-code-viewer`、仓库概览 `repository-orient`（`REPOSITORY_ORIENT`）、报告发布 `report-publish`（`REPORT_PUBLISH`、`AnalysisReport`）、交接条目 `HANDOFF`、条件边与 `SKIPPED(NOT_TAKEN)`、有界循环与节点迭代号、仓库模板 `.multiagentos/workflows/` 与 `mas run <模板>`、从未实现的 `/run`、未接入运行的统一校验函数 `validateExtension`、执行类别 `TEST`；第 1、2.2、2.3、3.1–3.3、3.5、3.8、3.9、7.5、8.1、10.2、12、13 节相应修改；第 3.9 节补上 lead 与专家；R 组 F1–F5 与两份冻结测试改用 Turn-chat 或 Mission 运行（M2FrozenTests） |
 | v1.39 | 2026-11-16 | **Mission 基线1**（Cary 2026-11-16 决定，[Orchestration](Orchestration.md) D93）：以 L9 那次运行的配置为基线，删除其余配置。任务没有验收条件：删除 `run_subagents` 的 `acceptance`、结果里的 `AcceptanceAnswer` 与"每条都要回应"的检查（第 3.7 节规则 2）、汇合结果里的未满足条目；lead 不再由模型直接选：根任务给 worker 写 `split: true`，系统按 lead 运行；lead 的派生工具只能派 explorer 与 worker（第 3.6 节）；继承上下文不再有开关；对照用的替代定义与环境变量全部删除 |
 | v1.40 | 2026-11-17 | 第 3.6 节：`run_subagents` 的 `writeScope` 改为必填（[Orchestration](Orchestration.md) D96），explorer 写 `[]`；漏写时修补步骤按 `[]` 处理，由原来的校验决定是否以 `WRITE_SCOPE_REQUIRED` 拒绝 |
+| v1.42 | 2026-11-17 | 继承来的部分原样保留，子任务只为自己的部分计数与压缩，整段不超过模型窗口减输出与余量，角色切换是一条独立条目；Mission 的根任务输入上限 555k；压缩时调用与回答一起留或一起摘要；工具列表在运行中不变（撤下的派生工具与最后一轮）；步骤的后续段带上它的 guide；同一次派生、开头相同的 worker 先启动一个（[Orchestration](Orchestration.md) D100–D105；D99 撤回） |
 | v1.41 | 2026-11-17 | main 的回复只有文字、且此刻可以结束时，这段文字就是它的 `reply`（[Orchestration](Orchestration.md) D97），与其他 Agent 的主循环一致；还有运行中或等待启动的子任务、未答复的请求或运行中的后台命令时照旧退回。子任务仍以 `finish_subagent` 交付 |

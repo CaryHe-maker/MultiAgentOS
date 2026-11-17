@@ -42,6 +42,7 @@ interface NodeSpec {
   readonly agentRef?: DefinitionRef;
   readonly goal?: string;
   readonly guide?: string;
+  readonly inputLimit?: number;
   readonly output?: boolean;
   readonly spawn?: GraphNodeRecord['spawn'];
   readonly ask?: GraphNodeRecord['ask'];
@@ -59,6 +60,7 @@ function nodeOf(workflowRunId: string, revision: number, spec: NodeSpec): GraphN
     ...(spec.agentRef === undefined ? {} : { agentRef: spec.agentRef }),
     ...(spec.goal === undefined ? {} : { goal: spec.goal }),
     ...(spec.guide === undefined ? {} : { guide: spec.guide }),
+    ...(spec.inputLimit === undefined ? {} : { inputLimit: spec.inputLimit }),
     ...(spec.output === undefined ? {} : { output: spec.output }),
     ...(spec.spawn === undefined ? {} : { spawn: spec.spawn }),
     ...(spec.ask === undefined ? {} : { ask: spec.ask }),
@@ -191,6 +193,10 @@ export function continuationRevision(
     kind: 'AGENT',
     ...(yielded.agentRef === undefined ? {} : { agentRef: yielded.agentRef }),
     ...(yielded.goal === undefined ? {} : { goal: yielded.goal }),
+    // The step's guide and input limit go on with it: a later segment is told its step as the
+    // first one was, so its history begins as the first segment's did and the cached prefix holds.
+    ...(yielded.guide === undefined ? {} : { guide: yielded.guide }),
+    ...(yielded.inputLimit === undefined ? {} : { inputLimit: yielded.inputLimit }),
     ...(yielded.mission === undefined ? {} : { mission: yielded.mission }),
   });
   return {
@@ -252,6 +258,7 @@ export function compileTemplate(
               : { id: templateMissionId(rootMission, node.name), parentId: rootMission },
             ...(node.goal === undefined ? {} : { goal: node.goal }),
             ...(node.guide === undefined ? {} : { guide: node.guide }),
+            ...(node.inputLimit === undefined ? {} : { inputLimit: node.inputLimit }),
             ...(node.output === undefined ? {} : { output: node.output }),
           })
         : nodeOf(workflowRunId, 1, { name: node.name, kind: 'HUMAN' }),

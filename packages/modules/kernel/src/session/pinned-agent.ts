@@ -101,7 +101,6 @@ export function pinnedAgentOf(
     ...taskTools,
     ...ends.map((end) => end.tool),
   ].map(specOf);
-  const final = ends.filter((end) => end.allowedInFinal).map((end) => specOf(end.tool));
 
   return {
     id: agent.id,
@@ -116,8 +115,10 @@ export function pinnedAgentOf(
     contextWindowTokens: model.limits.contextWindowTokens,
     cacheHitWeight: model.pricing.offPeak.inputCacheHit / model.pricing.offPeak.inputCacheMiss,
     instructions: prompt.template,
-    // A final call offers only the end tools allowed in it (ExecutorSet 6.1).
-    toolSpecs: (isFinal) => (isFinal ? final : ordinary),
+    // Every call lists the same tools, the final one too, so the cached prefix holds (D102); a
+    // final call is told which end tools it may call, and Workflow takes only those then.
+    toolSpecs: ordinary,
+    finalToolNames: ends.filter((end) => end.allowedInFinal).map((end) => end.tool.modelName),
   };
 }
 
@@ -165,20 +166,19 @@ export interface CompactionCatalog extends AgentCatalog {
 }
 
 /**
- * The Agent a compaction of a context is made as: what the Agent is, from the catalog, with what a
- * start asks for under the preset (one function, shared with Workflow's registration). It is the one
- * way every compaction finds its Agent, whatever its target: a reference names it (the Agent an
- * AgentRun was registered as), and no reference means main, the Agent of the Session's Turn-chat.
- * Nothing of an AgentRun is read: not whether there is one, nor how it ended.
+ * The Agent a compaction of main's context is made as when this process has no AgentRun of main
+ * (`/compact` right after a Session is opened): main as the catalog has it, with what a start asks
+ * for under the preset (one function, shared with Workflow's registration). Every other
+ * compaction is made as the AgentRun it is for was registered (Kernel/Core 6a).
  */
 export function compactionAgentFrom(
   catalog: CompactionCatalog,
   registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
   options: { readonly preset: 'standard' | 'readonly'; readonly commands: boolean },
-): (ref?: { readonly id: string; readonly version: string }) => PinnedAgent | undefined {
+): () => PinnedAgent | undefined {
   const made = new Map<string, PinnedAgent | undefined>();
-  return (ref) => {
-    const named = ref ?? catalog.latest('AGENT', 'main');
+  return () => {
+    const named = catalog.latest('AGENT', 'main');
     if (named === undefined) return undefined;
     const key = `${named.id}@${named.version}`;
     if (made.has(key)) return made.get(key);
@@ -229,8 +229,22 @@ export function pinAgentFrom(
       registry,
       request.offeredCapabilities ?? request.requestedCapabilities,
     );
-    return Promise.resolve(
-      agent === 'FORBIDDEN' ? { ok: false, reasonCode: 'FORBIDDEN' } : { ok: true, agent },
-    );
+    if (agent === 'FORBIDDEN') return Promise.resolve({ ok: false, reasonCode: 'FORBIDDEN' });
+    // A narrower input limit only narrows (D100).
+    const limit = request.inputLimit;
+    return Promise.resolve({
+      ok: true,
+      agent:
+        limit === undefined
+          ? agent
+          : {
+              ...agent,
+              budget: {
+                ...agent.budget,
+                perCallInputLimit: Math.min(agent.budget.perCallInputLimit, limit),
+                finalInputBudget: Math.min(agent.budget.finalInputBudget, limit),
+              },
+            },
+    });
   };
 }

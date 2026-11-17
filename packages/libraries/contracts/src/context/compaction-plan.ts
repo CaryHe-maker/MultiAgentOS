@@ -61,6 +61,8 @@ export function entryBytes(entry: ContextHistoryEntry): number {
       return textSize(entry.text) + ENTRY_OVERHEAD_BYTES;
     case 'TASK':
       return textSize(entry.goal) + ENTRY_OVERHEAD_BYTES;
+    case 'SWITCH':
+      return textSize(entry.text) + ENTRY_OVERHEAD_BYTES;
     case 'SUBAGENT_RESULT':
       return (
         sizeOf(entry.outputRef) +
@@ -112,6 +114,31 @@ export interface CompactionPlan {
 }
 
 const NOTHING: CompactionPlan = { keepFrom: 0, prunable: [] };
+
+/** An entry that answers a call of the model turn before it. */
+const isAnswer = (entry: ContextHistoryEntry): boolean =>
+  (entry.kind === 'TOOL_RESULT' || entry.kind === 'FEEDBACK' || entry.kind === 'HUMAN_ANSWER') &&
+  entry.toolCallId !== undefined;
+
+/**
+ * A call and its answer stay together or go together (D101): an answer that stays keeps the
+ * model turn it answers, and with it every other answer of that turn, or the request would hold
+ * an answer without its call, or a call without its answer. Answers follow their turn.
+ */
+function keepTurnsWhole(
+  older: readonly ContextHistoryEntry[],
+  inRange: (entry: ContextHistoryEntry) => boolean,
+  kept: Set<number>,
+): void {
+  const turns: ContextHistoryEntry[][] = [];
+  for (const entry of older) {
+    if (entry.kind === 'MODEL_TURN') turns.push([entry]);
+    else if (isAnswer(entry)) turns.at(-1)?.push(entry);
+  }
+  for (const members of turns)
+    if (members.some((entry) => inRange(entry) && kept.has(entry.seq)))
+      for (const entry of members) if (inRange(entry)) kept.add(entry.seq);
+}
 
 export function planCompaction(
   entries: readonly ContextHistoryEntry[],
@@ -169,6 +196,7 @@ export function planCompaction(
 
   const kept = new Set<number>();
   for (const entry of older) if (inRange(entry) && entry.category === 'PINNED') kept.add(entry.seq);
+  keepTurnsWhole(older, inRange, kept);
   // The newest user messages stay, within the budget, and none that is too long to be worth it.
   let humanBytes = 0;
   for (const entry of [...older].reverse()) {

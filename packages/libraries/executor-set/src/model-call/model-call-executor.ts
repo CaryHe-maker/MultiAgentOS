@@ -39,6 +39,7 @@ export interface ModelCallExecutorOptions {
 }
 
 /** Seconds or an HTTP date; anything else means no hint (ExecutorSet 7). */
+
 export function retryAfterMsOf(header: string | undefined, now: Date): number | undefined {
   if (header === undefined) return undefined;
   const seconds = Number(header);
@@ -225,7 +226,8 @@ async function callModel(
     apiKey,
     trackedFetch(inner, scope, progress, replay, tap),
   );
-  const end = specs.find((spec) => spec.purpose === 'CONTROL')?.name;
+  // A final call names the end tools it may call (D102); a forced one is forced to the first.
+  const end = input.finishTools?.[0];
   const { limits } = environment;
   let result: GenerateResult;
   const callOptions = {
@@ -334,11 +336,7 @@ function completedCall(
   );
   const toolCalls = rawCalls.slice(0, MAX_TOOL_CALLS).map(parseCall);
   const usage = usageOf(result);
-  const ends = new Set(
-    toolSpecsOf(input.contextPack)
-      .filter((spec) => spec.purpose === 'CONTROL')
-      .map((spec) => spec.name),
-  );
+  const ends = new Set(input.finishTools ?? []);
   const only = toolCalls[0];
   if (
     input.final &&
