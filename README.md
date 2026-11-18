@@ -7,8 +7,10 @@ MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执
 
 当前版本 **M2 V1.1**，有两种模式：
 
-- **Turn-chat**（`mas`）：在一个本地仓库上持续对话，Agent 可以读、写、运行命令（在沙盒中）、联网；把一件独立的事交给子任务（`subagent` 从它的提示开始，`subagent_fork` 从这段对话开始）；Session 可以保存、切换、回退、Fork 和继续，长对话自动压缩；写入、命令与联网都先询问。
-- **Mission**：把一个目标作为长任务做到交付。根任务规划、把可以并行的部分派给子任务（worker、lead、explorer 与专家），子任务之间可以发消息、等待彼此，检查结果后交付；中途不等用户。在对话里用 `/mission <目标>` 交给它（chat 写好任务要求交出去，Mission 代替 chat 工作到交付，期间它问的问题、你写的话都在你和它之间；交付后接着和 chat 谈，chat 看得到它的结果），chat 也可以自己决定把大目标交给它；`mas run "<目标>"` 是给脚本与评测的入口，结束后退出。
+- **Turn-chat**（`mas`）：在一个本地仓库上持续对话，Agent（chat）可以读、写、运行命令（在沙盒中）、联网；把一件独立的事交给子任务（`subagent` 从它的提示开始，`subagent_fork` 从这段对话开始），把一个大目标交给 Mission；Session 可以保存、切换、回退、Fork 和继续，长对话自动压缩；写入、命令与联网都先询问。
+- **Mission**：把一个目标作为长任务做到交付。根任务规划、把可以并行的部分派给子任务（worker、lead、explorer 与专家），子任务之间可以发消息、等待彼此，检查结果后交付。两个入口：
+  - 在对话里用 `/mission <目标>`（chat 也可以自己决定）：chat 把目标写成任务要求交出去（Mission 不看这段对话），然后由 **Mission 代替 chat 工作，直到它结束**。期间活动区的根就是 Mission；你写的话、暂停后 `/continue` 带的说明都交给它；它问的问题由你回答，答完它接着做。它交付时，答复直接作为这一轮的回答显示给你；之后你再写话，chat 带着 Mission 的结果接着谈。Mission 拿 chat 这一轮能借出的全部额度，不够时像平时一样问你要不要追加，结束时没用完的还给对话。
+  - `mas run "<目标>"`：给脚本与评测的入口，中途不等用户，结束后退出。
 
 以下在 Ubuntu 24.04 上执行，需要 Node.js 24（`>=24.19.0 <25`）、pnpm 11.25.0 与 DeepSeek 的 API key。
 
@@ -32,6 +34,15 @@ node apps/control-plane/dist/bin.js log --repo /home/me/projects/my-app
 ```
 
 第一次需要读仓库时，终端会询问是否允许；`/help` 列出 `/mission`、`/new`、`/resume`、`/sessions`、`/undo`、`/compact` 等指令。完整说明见 [M2Usage](docs/M2/M2Usage.md)。
+
+## M2 V1.1 相对 V1.0
+
+- **chat 按单 Agent 的写法重写**：系统提示与全部工具说明按 DeepSeek Harness 的风格与长度用本项目自己的话写，思考要简短；派生改为一次一个子任务的 `subagent`、`subagent_fork`（以 `chat-sub` 运行）与 `mission`（Orchestration D112、D113）。
+- **Mission 可以从对话里用**：`/mission <目标>`（D114），Mission 代替 chat 工作到它结束、拿 chat 这一轮的全部额度（D115）。
+- **派生时额度不够先问用户**：`mission`、`subagent`、`run_subagents` 借不到初始份额时，先问要不要追加，同意就派出，拒绝才拒绝这次调用（D115）。
+- **工具更快、结果不变**：检索与列目录共用一份文件集合，命令前后的扫描并行、同一文件的摘要只算一次；在一万个文件的仓库上每次检索与每条命令的固定开销减少一半以上。
+- **`kernel.sandbox.unisolatedWrites`**：本身就是隔离环境的机器（评测容器）可以放开未隔离命令的写入范围（D79）。
+- Mission 的规划、派生与检查规则没有改（仍是基线1.2），下面的大任务成绩是 V1.0 测的，V1.1 没有在大任务上重跑；小任务成绩是 V1.1 测的。
 
 ## 实验结果
 
@@ -61,6 +72,7 @@ node apps/control-plane/dist/bin.js log --repo /home/me/projects/my-app
 - pyarchive 用同一版本重跑一次得满分、12.8 分钟（比 `dsh` 快 8.1 分钟）；换上这一次，5 道的平均分也高于 `dsh`（0.936 对 0.931），总用时少约 35%。
 
 这说明系统存在偶然的低效：同一版本在同一道题上会拆出不同的方案，单次运行可能慢一倍或低一些分（[M2Limitations](docs/M2/M2Limitations.md) 第 7 条）。但在绝大部分任务上，Mission 相对 `dsh` 的优势是稳定的：用时都更少，分数持平或更高。上面第一张表是正式口径，这张表只用来说明这种偶然性，不替换正式成绩。开发集上的大任务（awk、Python 子集、GNU 文本工具）Mission 都不低于 `dsh` 的分数，用时少 20%–49%。
+
 ### Turn-chat：小任务
 
 Turn-chat（M2 V1.1 的 chat）在 Terminal-Bench 2 与 SWE-Bench Pro 的小任务上，两边都没有派子任务（单 Agent 对单 Agent）；费用都按 DeepSeek 的低峰价格：
@@ -137,7 +149,7 @@ packages/
   testing/                Fakes、Contract tests、架构测试和 fixtures
 docs/
   Architecture/         长期概念与架构
-  M2/                   M2 V1.0 的设计、使用、限制、评测、机制与接口
+  M2/                   M2 V1.1 的设计、使用、限制、评测、机制与接口
   Requirements/         当前依赖
   Meetings/             原始会议记录
   History/              已归档的文档：M1，以及 M2 开发过程中的旧计划与实测
