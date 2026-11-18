@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { composeSystem } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
 import { scriptedAgents, textOf, tool, until, type ScriptedChat } from './chat-driver.js';
+import { jsonLines } from '../support/jsonl.js';
 
 const TIMEOUT = 120_000;
 const OFFLINE_KEY = 'sk-acceptance-offline-key-0000';
@@ -113,10 +114,7 @@ async function sessionLog(dataDir: string): Promise<Record<string, unknown>[]> {
     join(dataDir, 'sessions', id ?? '', 'workflow', 'log.v1.jsonl'),
     'utf8',
   );
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  return jsonLines(text);
 }
 
 real('going back to a checkpoint in the middle of a long task (Orchestration 7.5)', () => {

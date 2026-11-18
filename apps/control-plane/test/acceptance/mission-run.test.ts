@@ -14,6 +14,7 @@ import { composeSystem } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
 import { answeringTerminal } from '../support/answering-terminal.js';
 import { scriptedAgents, textOf, tool, type ScriptedChat } from './chat-driver.js';
+import { jsonLines } from '../support/jsonl.js';
 
 const TIMEOUT = 120_000;
 const OFFLINE_KEY = 'sk-acceptance-offline-key-0000';
@@ -41,10 +42,7 @@ async function sessionLog(dataDir: string): Promise<Record<string, unknown>[]> {
     join(dataDir, 'sessions', id ?? '', 'workflow', 'log.v1.jsonl'),
     'utf8',
   );
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  return jsonLines(text);
 }
 
 /** `mas run` with the arguments given, in a fresh repository, as the CLI starts it. */

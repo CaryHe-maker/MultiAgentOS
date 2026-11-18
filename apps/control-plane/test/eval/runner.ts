@@ -6,6 +6,7 @@
 import { cp, mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { jsonLines } from '../support/jsonl.js';
 import { createHash } from 'node:crypto';
 import type { ModelDefinition } from '@multiagentos/contracts';
 import {
@@ -181,18 +182,6 @@ async function runMission(
     };
   }
   return { exitCode: outcome, printed, questions: questions() };
-}
-
-/**
- * The records of a JSONL file the run may still be writing: a line counts once its newline is
- * there, as the log store reads it, so a line being appended is not read half written.
- */
-function jsonLines(text: string): Record<string, unknown>[] {
-  return text
-    .slice(0, text.lastIndexOf('\n') + 1)
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 async function readLog(dataDir: string): Promise<Record<string, unknown>[]> {

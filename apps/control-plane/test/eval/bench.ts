@@ -42,6 +42,7 @@ import { defaultSystemConfig } from '../../src/config/system-config.js';
 import { openChat, until, type ChatRequest, type ScriptedChat } from '../acceptance/chat-driver.js';
 import { metricsOf } from './metrics.js';
 import { versionOf } from './runner.js';
+import { jsonLines } from '../support/jsonl.js';
 
 const argv = process.argv.slice(2);
 const arg = (name: string, fallback?: string): string | undefined => {
@@ -360,10 +361,7 @@ async function main(): Promise<void> {
     sessionId === undefined
       ? undefined
       : join(dataDir, 'sessions', sessionId, 'workflow', 'log.v1.jsonl');
-  const log = (await readFile(logFile ?? '', 'utf8').catch(() => ''))
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const log = jsonLines(await readFile(logFile ?? '', 'utf8').catch(() => ''));
   const metrics = metricsOf(log, {
     ...(pricing === undefined ? {} : { model: { pricing } }),
     authorizationQuestions: seen.questions.length,

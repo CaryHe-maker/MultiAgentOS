@@ -22,6 +22,7 @@ import {
   type Chat,
   type ProviderTurn,
 } from './chat-driver.js';
+import { jsonLines } from '../support/jsonl.js';
 
 const TIMEOUT = 120_000;
 const AWAITING = '等待输入';
@@ -67,25 +68,20 @@ const turnEnded = (chat: Chat) =>
   until(() => chat.lives.at(-1)?.status.includes(AWAITING) === true, 'the end of the Turn');
 const sessionsIn = (dataDir: string) => readdir(join(dataDir, 'sessions'));
 const readLog = async (dataDir: string, sessionId: string) =>
-  (await readFile(join(dataDir, 'sessions', sessionId, 'workflow', 'log.v1.jsonl'), 'utf8'))
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  jsonLines(
+    await readFile(join(dataDir, 'sessions', sessionId, 'workflow', 'log.v1.jsonl'), 'utf8'),
+  );
 const readSnapshotIndex = async (dataDir: string, sessionId: string) =>
-  (
+  jsonLines(
     await readFile(
       join(dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshot-index.jsonl'),
       'utf8',
-    ).catch(() => '')
-  )
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    ).catch(() => ''),
+  );
 const rootOfRef = async (dataDir: string, sessionId: string) => {
-  const lines = (await readFile(join(dataDir, 'kernel-core', 'session-refs.jsonl'), 'utf8'))
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as { sessionId: string; repositoryRoot: string });
+  const lines = jsonLines<{ sessionId: string; repositoryRoot: string }>(
+    await readFile(join(dataDir, 'kernel-core', 'session-refs.jsonl'), 'utf8'),
+  );
   return lines.filter((line) => line.sessionId === sessionId).at(-1)?.repositoryRoot;
 };
 const requestText = (provider: ReturnType<typeof scriptedChat>) =>

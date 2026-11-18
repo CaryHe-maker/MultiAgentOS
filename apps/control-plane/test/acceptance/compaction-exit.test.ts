@@ -21,6 +21,7 @@ import {
   listSessions,
   until,
 } from './chat-driver.js';
+import { jsonLines } from '../support/jsonl.js';
 
 /** run_subagents returns at once: main sleeps until its tasks end (D14). */
 const waitForTasks = () => tool('sleep', { until: [{ kind: 'children', mode: 'all' }] });
@@ -235,11 +236,9 @@ describe('L4: a summary that does not come', () => {
         if ((await auditOf(dataDir)).includes('COMPACTION_FAILED')) break;
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
-      const problems = (await auditOf(dataDir))
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line) as Record<string, unknown>)
-        .filter((entry) => entry['type'] === 'COMPACTION_SUMMARY_PROBLEM');
+      const problems = jsonLines(await auditOf(dataDir)).filter(
+        (entry) => entry['type'] === 'COMPACTION_SUMMARY_PROBLEM',
+      );
       expect(
         problems.map((entry) => [entry['stage'], entry['reasonCode'], entry['strict']]),
       ).toEqual([

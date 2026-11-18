@@ -22,6 +22,7 @@ import {
   type Chat,
   type ChatRequest,
 } from './chat-driver.js';
+import { jsonLines } from '../support/jsonl.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TIMEOUT = 60_000;
@@ -523,10 +524,7 @@ describe('S: who asked the system to stop', () => {
         join(place.dataDir, 'kernel-core', 'shutdown-requests.jsonl'),
         'utf8',
       );
-      const lines = record
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line) as { type: string; source: string });
+      const lines = jsonLines<{ type: string; source: string }>(record);
       expect(lines.map((line) => [line.type, line.source])).toContainEqual([
         'SHUTDOWN_REQUESTED',
         'EXIT_COMMAND',
