@@ -245,12 +245,10 @@ export class SessionCore {
       }
       case 'answerHuman': {
         const { request } = forward;
-        const { input, humanRequestId, template } = request;
+        const { input, humanRequestId } = request;
         // The same input counts once, whatever request carries it (Kernel/Core 6).
         return this.#inRun(request, (work, actor, run) =>
-          work.once(request.requestId, input, () =>
-            actor.answerHuman(run, humanRequestId, input, template),
-          ),
+          work.once(request.requestId, input, () => actor.answerHuman(run, humanRequestId, input)),
         );
       }
       case 'pauseRun': {

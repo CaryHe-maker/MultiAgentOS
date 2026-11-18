@@ -806,7 +806,6 @@ export class SessionActor {
     origin:
       | { readonly origin: 'initial' }
       | { readonly origin: 'requested'; readonly humanRequestId: string },
-    template?: DefinitionRef,
   ): Promise<void> {
     // Every input of the user is a checkpoint (Orchestration 7.2): an undo goes back to it, and the
     // work it opens is named by it. The actor holds every message meanwhile, so no Unit runs
@@ -834,7 +833,6 @@ export class SessionActor {
       inputId: input.inputId,
       contentRef,
       checkpointId,
-      ...(template === undefined ? {} : { template }),
       ...(input.delegateTo === undefined ? {} : { delegateTo: input.delegateTo }),
       ...origin,
     });
@@ -918,23 +916,13 @@ export class SessionActor {
    * The answer to a human request: open input opens the work of the next input, the answer to a local question
    * goes to the AgentRun that asked. Which one it is, the request says (M2Design 4.2).
    */
-  async answerHuman(
-    run: Run,
-    humanRequestId: string,
-    input: UserInput,
-    template?: DefinitionRef,
-  ): Promise<Decision> {
+  async answerHuman(run: Run, humanRequestId: string, input: UserInput): Promise<Decision> {
     const question = run.control.questions.get(humanRequestId);
-    if (question === undefined) return this.answerOpenInput(run, humanRequestId, input, template);
+    if (question === undefined) return this.answerOpenInput(run, humanRequestId, input);
     return this.answerLocalQuestion(run, humanRequestId, question.kind, input);
   }
 
-  async answerOpenInput(
-    run: Run,
-    humanRequestId: string,
-    input: UserInput,
-    template?: DefinitionRef,
-  ): Promise<Decision> {
+  async answerOpenInput(run: Run, humanRequestId: string, input: UserInput): Promise<Decision> {
     if (run.control.phase !== 'AWAITING_INPUT' || run.control.humanRequestId !== humanRequestId)
       return { accepted: false, reasonCode: 'HUMAN_REQUEST_NOT_PENDING' };
     this.#cancelUndo(run, 'NEW_INPUT');
@@ -944,13 +932,7 @@ export class SessionActor {
       humanRequestId,
       resolution: 'ANSWERED',
     });
-    await this.#openInput(
-      run,
-      input,
-      contentRef,
-      { origin: 'requested', humanRequestId },
-      template,
-    );
+    await this.#openInput(run, input, contentRef, { origin: 'requested', humanRequestId });
     return { accepted: true, control: run.control };
   }
 
