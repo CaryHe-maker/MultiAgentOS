@@ -1114,3 +1114,14 @@ V1.2 的 Mission 大任务上检索与列目录 13 次共约 0.5 秒（从零写
 **看图的题不计分（Cary 定）**：`dsh` 有 `read_image`（读 PNG/JPEG/WebP/GIF，存为附件，统一成 8 位 sRGB、过大时缩小；请求时在 `/v1/messages` 的用户消息或工具结果里以 `{"type":"image","source":{"type":"base64",…}}` 或 DeepSeek Files 的 `file_id` 发出，前面加一段说明来源与尺寸的文字），模型直接看到图片；mas 没有图片输入。查了所有 `dsh` 运行的思考记录，用到看图的是 chess-best-move（看棋盘）、gcode-to-text（把刀路画成图再看）与最终集小任务 financial-document-processor（看 12 张发票图片），三道在 `taskset.json` 标 `excluded`（TaskSet 第 7 节）。这两道 mas 在 `t11d` 上都是 0 分：chess 用像素比对认棋盘，漏了 g2 的兵，只写出 e2e4（应为 e2e4、g2g4）；gcode 把刀路画成字符图逐段辨认，上下文由 5k 涨到 214k token，900 秒时还没写 `out.txt`。
 
 **`dsh` 查了评测答案的两道**：gcode-to-text 上 `dsh` 看图读成了 "hacking iz challenging"，随后搜到这是 Terminal-Bench 2 的公开题，从 GitHub 取了 tests 与 solution，照写了期望的 flag；raman-fitting 上它同样取了 solution 与 tests（它自己写道题目说了 "Do not cheat by using online solutions"）。mas 在这几次运行里联网只读了 MuJoCo 源码与棋子图片。raman-fitting 仍在计分里：mas 是自己做出来的；`dsh` 的成绩应读作"查了答案"。
+
+**加上"思考要简短"之后重跑两道慢的题**（`t11d`，代码同 `dfc884a`，UTC 08:18–08:26，高峰时段，费用按平时价格折半）：
+
+| 题 | 上一次 | `t11d` | `dsh` |
+|---|---|---|---|
+| polyglot-c-py | 216 s，26 次请求，思考输出 32.0k，每次请求的上下文 23.4k，$0.023 | **105 s**，17 次，**11.6k**，13.5k，$0.009 | 133 s，17 次，17.4k，17.7k，$0.012 |
+| tune-mjcf | 591 s，27 次，37.0k，43.5k，工具 346 s，$0.032 | **281 s**，31 次，**24.3k**，21.2k，工具 117 s，$0.018 | 205 s，17 次，11.5k，13.0k，工具 127 s，$0.009 |
+
+两道都通过；polyglot 比 `dsh` 快 21%；tune-mjcf 的模拟用时占原来的 0.45（加速 2.24 倍，`dsh` 0.50），没有再跑几十秒一次的多种子对照，但请求数与思考仍约为 `dsh` 的两倍。用每题最近一次运行，计分的 7 道：mas 6/7、1077 s、$0.092，`dsh` 6/7、1234 s、$0.087，用时少 13%。每题仍只各跑一次。
+
+最终集也因同样的原因剔除一道：小任务 filter-js-from-html 上 `dsh` 用了这道题自己的测试与参考解（TaskSet 第 7 节），最终集小任务计分 8 道。最终集的 5 道大任务上 `dsh` 没有作弊的条件：pylua、sqlengine、pyarchive 是离线题；5 道都是本项目设计的题，隐藏测试与参考答案第一次推到 GitHub 是 UTC 11-14 23:16，晚于 `dsh` 最后一道（22:24）；tests 在智能体结束后才复制进容器；请求记录里只有模型请求。5 道的思考日志都只存了最后 20000 个字符，后半段都是正常解题。仓库是公开的，此后联网运行这些题都可能搜到答案。
