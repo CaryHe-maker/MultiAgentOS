@@ -93,7 +93,8 @@
       "role": "picked",
       "bucket": "security",
       "difficulty": "medium",
-      "sha256": "83c883b37177c4b82a41990199d5d9638e066e359d77ece1f38d073c6ad55a4f"
+      "sha256": "83c883b37177c4b82a41990199d5d9638e066e359d77ece1f38d073c6ad55a4f",
+      "excluded": "dsh used this task's own tests and reference solution, which are not in the container (it ran \"the full 439-vector XSS suite and all 12 clean HTML cases\" and quotes the reference solution), so its result is not a solve; left out of every comparison and score (Cary, 2026-11-18)"
     },
     {
       "id": "tb2/llm-inference-batching-scheduler",
@@ -535,5 +536,5 @@
       "devLarge": 26
     }
   },
-  "excludedRule": "An entry with `excluded` stays in its set (keptRule) but is not run, compared or scored; the image rule: tasks where dsh used read_image (Cary, 2026-11-18)"
+  "excludedRule": "An entry with `excluded` stays in its set (keptRule) but is not run, compared or scored: tasks where dsh used read_image, and tasks where dsh used the benchmark's own tests or solution (Cary, 2026-11-18)"
 }
