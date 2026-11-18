@@ -25,7 +25,7 @@ Executor 只接收 Execution 解析后的输入与 Core 派生的范围约束，
 | 目录按 Executor 平铺 | 新 Executor 按 M2Design 第 8.4 节组织：`retention/`、`output-read/`、`fs/`、`git/`、`command/`、`web/`、`vendor/` |
 
 仓库访问（文件集合、快照、路径检查、检索）、`repository-search`、`file-read` 的行为，以及执行点检查的两类结果与 M1 相同，
-见归档的 [M1 ExecutorSet](../../History/M1/Library/ExecutorSet.md) 第 3、4.1–4.3、5 节。只有文件集合的构建方式变了，结果不变（M2 V1.1）：每个目录读一次（`readdir`，不逐项迭代）；已经算过摘要的文件只做一次 `lstat` 查摘要缓存（同样不跟随链接，键仍是 `(dev, ino, size, mtime, ctime)`，内容、权限或属主变了 `ctime` 就变）；只有要算摘要的文件才以 `O_NOFOLLOW` 打开，以描述符的 `fstat` 作键。每次检索、列目录仍各自构建一遍完整的文件集合与快照，不在调用之间复用，命中的文件读出时仍核对真实路径与 SHA-256。在 NodeBB（约一万个文本文件）上，缓存已满时一次构建由约 1.3 秒降到约 0.5 秒。`file-read` 增加返回内容的 SHA-256（M2Design 第 8.1 节）；
+见归档的 [M1 ExecutorSet](../../History/M1/Library/ExecutorSet.md) 第 3、4.1–4.3、5 节。只有文件集合的构建方式变了，结果不变（M2 V1.1）：每个目录读一次（`readdir`，不逐项迭代）；已经算过摘要的文件只做一次 `lstat` 查摘要缓存（同样不跟随链接，键仍是 `(dev, ino, size, mtime, ctime)`，内容、权限或属主变了 `ctime` 就变）；只有要算摘要的文件才以 `O_NOFOLLOW` 打开，以描述符的 `fstat` 作键；同一个键的摘要正在被另一次构建计算时，等它的结果而不再读一遍（键是同一个文件身份与两个时间，结果与自己算的相同；那次计算失败就自己算）。每次检索、列目录仍各自构建一遍完整的文件集合与快照，不在调用之间复用，命中的文件读出时仍核对真实路径与 SHA-256。在 NodeBB（约一万个文本文件）上，缓存已满时一次构建由约 1.3 秒降到约 0.5 秒。`file-read` 增加返回内容的 SHA-256（M2Design 第 8.1 节）；
 `v1` 的 `file-read` 另返回 `nestedInstructions`：从该文件所在目录到仓库根目录之间（不含根目录）存在的 `AGENTS.md` 的相对路径，由外到内排列，经同一个 `RepositoryAccess` 检查（排除规则命中的目录不算，不跟随符号链接），不读取它们的内容（M2Design 第 9.5 节）。
 `repository-search`、`repository-list` 经 `retention/` 生成预览（第 4 节）；预览是给模型看的文本，不是 JSON。`file-read` 的预览是带行号的文本，超出上限时说明可以按 `startLine` 继续读，不另存完整输出：文件本身就能按范围重读。M1 的 `repository-orient`（仓库概览）与 ORIENT ContextPack 已删除（M2Design v1.38）。
 

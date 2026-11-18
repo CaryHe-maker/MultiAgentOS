@@ -239,6 +239,28 @@ describe('file set and snapshot', () => {
     expect(await snapshot(root)).toEqual(cold);
   });
 
+  it('hashes each file once when builds run at the same time, and each gets the whole set', async () => {
+    const root = await emptyDirectory('snap');
+    await writeTree(root, { ...files, 'logo.bin': Buffer.from([1, 0, 2]), 'gbk.txt': GBK_TEXT });
+    const hashed: string[] = [];
+    class Counting extends FileDigestCache {
+      public override computed(key: string, digest: Parameters<FileDigestCache['computed']>[1]) {
+        hashed.push(key);
+        super.computed(key, digest);
+      }
+    }
+    const cache = new Counting();
+    const builds = await Promise.all([
+      snapshot(root, cache),
+      snapshot(root, cache),
+      snapshot(root, cache),
+    ]);
+    const alone = await snapshot(root);
+    for (const built of builds) expect(built).toEqual(alone);
+    expect(hashed).toHaveLength(5);
+    expect(new Set(hashed).size).toBe(5);
+  });
+
   it('hashes again a file whose content changed under the same size and mtime', async () => {
     const root = await emptyDirectory('snap');
     await writeTree(root, files);
