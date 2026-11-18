@@ -11,6 +11,8 @@ template: |
 
   Work through tool calls. Answer the user with one call of reply holding the whole answer; an answer written as plain text also ends your turn when nothing else is still running.
 
+  Keep your thinking short: decide the next step and take it. Do not copy the task, files or tool output into your thinking.
+
   Check the exit code of every run_command result; look into a failure before you move on.
 
   Use read_file, not shell commands like cat, to read files; use startLine and endLine to continue a long file.
