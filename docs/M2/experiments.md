@@ -1057,3 +1057,60 @@ Cary 2026-11-18 定：基线1.2 冻结为 Mission 模式的最终版本，在最
 
 - 与 `dsh`：总用时少 38.8 分钟（约 31%），5 道都更快（pylua 快 10.0、survey-av-fusion 11.7、sqlengine 7.1、minidb 7.8、pyarchive 2.2 分钟）；平均分低 0.014（pylua、sqlengine 高于 `dsh`，minidb 同为满分，survey-av-fusion 低 0.004，pyarchive 低 0.097）；费用约为 1.64 倍。
 - 与第一次运行（基线1.1，95.9 / 0.910 / $2.237）：用时少 8.1 分钟，平均分高 0.007，费用低 21%。
+
+## M2 V1.1 的实验
+
+### T1：Turn-chat 开发集小任务（2026-11-18，分支 `feature/M2/v1.1-turn-chat`）
+
+**条件**：`MAS_MODE=chat`（chat 按单 Agent 的写法、`subagent`/`subagent_fork`/`mission` 三个派生工具，Orchestration D112、D113），`scripts/taskset/mas-run.sh` 不带界面，一次一道；时间上限用 `CAP=900`，与 `dsh` 当时的条件相同（phase 1 的 S7 与 final2，全权限、900 秒）；容器的 CPU 与内存取自各题 `task.toml`（NodeBB 为 1 个 CPU）。`dsh` 的数字取自 S7 与 final2，没有重跑。标签与版本：
+
+| 标签 | 提交 | 内容 |
+|---|---|---|
+| `t11` | `f22a648` | V1.1 的 chat，尚无下面的三项工具优化 |
+| `t11b` | `6bc5eca` | 加两项：检索与列目录的文件集合、命令前后的扫描 |
+| `t11c` | `c795f88` | 再加一项：同一文件的摘要正在计算时不重复计算 |
+| `t11d` | `dfc884a` | 再加 chat 与 chat-sub 提示里"思考要简短"的一句（Cary 定） |
+
+`t11` 的 4 道在 UTC 05:05–05:22（非高峰）；其余都在高峰时段（Cary 要求不等），费用按平时价格折半记。
+
+**计分的 7 道**（看图的 2 道不计分，见下文；parallel 一道 `mas-run.sh` 不支持，teleport 一道 `dsh` 无法运行）：
+
+| 题 | 标签 | mas 结果 / 用时 / 费用（平时价） | `dsh` 结果 / 用时 / 费用 |
+|---|---|---|---|
+| polyglot-c-py | t11 | 通过 / 216 s / $0.023 | 通过 / 133 s / $0.012 |
+| NodeBB | t11c | 通过 / 127 s / $0.011 | 通过 / 120 s / $0.011 |
+| qutebrowser | t11 | 通过 / 121 s / $0.012 | 通过 / 133 s / $0.010 |
+| configure-git-webserver | t11 | 失败 / 112 s / $0.011 | 失败 / 178 s / $0.017 |
+| vuls | t11c | 通过 / 127 s / $0.011 | 通过 / 192 s / $0.010 |
+| tune-mjcf | t11c | 通过 / 591 s / $0.032 | 通过 / 205 s / $0.009 |
+| raman-fitting | t11c | 通过 / 204 s / $0.020 | 通过（查了答案，见下文）/ 273 s / $0.019 |
+| **合计** | | **6/7 / 1498 s / $0.120** | **6/7 / 1234 s / $0.087** |
+
+- 通过数相同；用时多 21%，几乎全在 tune-mjcf：去掉它，mas 907 s、`dsh` 1029 s。3 道快于 `dsh`（qutebrowser、vuls、raman），NodeBB 持平，polyglot 与 tune-mjcf 慢。
+- 缓存命中率与 `dsh` 相同（t11 的 4 道合计 96.48% 对 96.34%）；未命中的总量多 31%，因为每次请求的上下文更大（NodeBB 平均 38.7k 对 22.1k token）。
+- 每题只跑一次；`dsh` 与 `t11` 的计时在机器时钟修好之前（见下文），各可能差到约 ±12 秒。
+
+**三项工具优化（实测，NodeBB 镜像，约一万个文本文件）**：检索与列目录每次调用都在 ExecutorSet 里构建整个仓库的文件集合与快照，命令前后 Kernel 各扫一遍受保护路径与改动指纹（`protectedPathsOf`、`fingerprintRoots`）。改动不改变结果、调用路径与权限检查（随机目录树对照测试、缓存冷热对照测试），记在 ExecutorSet.md 与 Kernel/Execution.md：
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| 文件集合热构建（2 个 CPU） | 1.3 s | 0.53 s（每目录读一次、已算过摘要的文件只 `lstat`） |
+| 命令前后的四次扫描（2 个 CPU） | 约 2.0 s | 约 0.93 s（同时读几个目录、同时 `lstat`） |
+| 两次同时的冷构建（2 个 CPU） | 各算一遍 | 4.8 s（共享正在计算的摘要） |
+| NodeBB 的工具时间（按轮合计，真实运行） | 113 s（t11） | 54 s（t11b）、38 s（t11c）；`dsh` 39 s |
+| NodeBB 的用时 | 229 s（t11） | 139 s（t11b）、127 s（t11c）；`dsh` 120 s |
+
+V1.2 的 Mission 大任务上检索与列目录 13 次共约 0.5 秒（从零写的项目，仓库很小），这项优化对它们几乎没有影响。NodeBB 只有 1 个 CPU：冷构建一次 6.4 s，两次同时 10.2 s（摘要在 `lstat` 之后、`open` 之前才登记为"正在计算"，同时开始的两次多半都没赶上），第一轮的冷检索因此仍要十几秒；把登记提前到第一次 `lstat` 是无损的，没有改。
+
+**机器时钟**：WSL 的系统时钟约每 30 秒往回跳约 11 秒、十几秒后再跳回（内核日志每分钟一条 "Time jumped backwards"），原因是 Windows 没有和网络时间同步（`w32tm` 显示来源为 Local CMOS Clock），比 WSL 的另一个时间来源慢约 11 秒。日志里"命令的完成早于提交"与一次"12 秒的组装"都是这个造成的（按写入顺序那次组装约 1.1 秒）。Cary 在 Windows 上设了 time.windows.com 并同步后，120 秒内 0 次跳变，WSL 与 Windows 相差 0.086 秒。
+
+**慢的两道**：
+
+- tune-mjcf（调 MuJoCo 模型让 2 秒的模拟用时降到 60% 以下）：591 s 里，前 107 s 写了 6 个探测脚本；第 12–13 轮用 `web_fetch` 读了 MuJoCo 的两个 C 源文件，上下文由 23k 涨到 56k token，之后每次请求 9–15 s；第 15 轮起自写多种子的对照脚本（12–60 个种子），把开关、求解器、tolerance、iterations 一批批试过去，每条命令 27–63 s，这一段 301 s。题目自带的 `eval.py` 一次不到 1 秒。27 次请求、思考输出 37k token（`dsh` 17 次、11.5k）。系统开销每条命令约 1 秒，没有等待或断流。
+- polyglot-c-py（写一个既是 Python 又是 C 的文件，算斐波那契数）：容器里没有 Python（第 2–4、17–18、24 轮都在找），模型只能验证 C 的一侧；设计双语文件时连续想了三轮（12、22、17 秒）；第 11–13 轮为了 `#if 0` 里三引号引起的 gcc 警告，两轮各想了约 38 秒（5.5k token）。26 次请求、思考输出 32k token（`dsh` 17 次、17k）。
+
+两道都是同一种倾向：想得多、自建验证、反复试；`dsh` 的提示里有 "Verify your work by running the code or tests" 与 "Keep answers brief and factual"，mas 的 chat 提示当时没有思考要简短的一句（此后加上，`t11d`），也没有前者。
+
+**看图的题不计分（Cary 定）**：`dsh` 有 `read_image`（读 PNG/JPEG/WebP/GIF，存为附件，统一成 8 位 sRGB、过大时缩小；请求时在 `/v1/messages` 的用户消息或工具结果里以 `{"type":"image","source":{"type":"base64",…}}` 或 DeepSeek Files 的 `file_id` 发出，前面加一段说明来源与尺寸的文字），模型直接看到图片；mas 没有图片输入。查了所有 `dsh` 运行的思考记录，用到看图的是 chess-best-move（看棋盘）、gcode-to-text（把刀路画成图再看）与最终集小任务 financial-document-processor（看 12 张发票图片），三道在 `taskset.json` 标 `excluded`（TaskSet 第 7 节）。这两道 mas 在 `t11d` 上都是 0 分：chess 用像素比对认棋盘，漏了 g2 的兵，只写出 e2e4（应为 e2e4、g2g4）；gcode 把刀路画成字符图逐段辨认，上下文由 5k 涨到 214k token，900 秒时还没写 `out.txt`。
+
+**`dsh` 查了评测答案的两道**：gcode-to-text 上 `dsh` 看图读成了 "hacking iz challenging"，随后搜到这是 Terminal-Bench 2 的公开题，从 GitHub 取了 tests 与 solution，照写了期望的 flag；raman-fitting 上它同样取了 solution 与 tests（它自己写道题目说了 "Do not cheat by using online solutions"）。mas 在这几次运行里联网只读了 MuJoCo 源码与棋子图片。raman-fitting 仍在计分里：mas 是自己做出来的；`dsh` 的成绩应读作"查了答案"。
