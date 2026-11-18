@@ -1,0 +1,103 @@
+schemaVersion: v1
+kind: AGENT
+id: chat-sub
+version: v1.0.0
+digest: 1e8430af84b8c098f69fa8229c6e99d28e9cb5b65354371ef892808e7ad66b3e
+description: "A subtask that chat starts: works in its own context or in chat's, and ends with its answer."
+role: subagent
+modelRef:
+  id: deepseek-flash
+  version: v1.0.0
+thinking:
+  defaultEffort: high
+  allowedEfforts:
+    - none
+    - low
+    - high
+    - max
+promptRef:
+  id: chat-sub-system
+  version: v1.0.0
+unitRefs:
+  - id: repository-list
+    version: v1.1.0
+  - id: repository-search
+    version: v1.1.0
+  - id: file-read
+    version: v1.1.0
+  - id: file-write
+    version: v1.1.0
+  - id: file-edit
+    version: v1.1.0
+  - id: output-read
+    version: v1.1.0
+  - id: run-command
+    version: v1.1.0
+  - id: git-inspect
+    version: v1.1.0
+  - id: web-search
+    version: v1.1.0
+  - id: web-fetch
+    version: v1.1.0
+  - id: external-list
+    version: v1.1.0
+  - id: external-read
+    version: v1.1.0
+  - id: external-search
+    version: v1.1.0
+  - id: context-assemble
+    version: v1.0.0
+  - id: model-call
+    version: v1.0.0
+actions:
+  end:
+    - toolRef:
+        id: chat-finish
+        version: v1.0.0
+      then: FINISH_SUBAGENT
+      allowedInFinal: true
+      byText: true
+  onDegraded: RETURN_PARTIAL
+  sleep:
+    toolRef:
+      id: sleep
+      version: v1.1.0
+  message:
+    toolRef:
+      id: send-message
+      version: v1.1.0
+  jobOutput:
+    toolRef:
+      id: job-output
+      version: v1.1.0
+  jobList:
+    toolRef:
+      id: job-list
+      version: v1.1.0
+  jobKill:
+    toolRef:
+      id: job-kill
+      version: v1.1.0
+  todos:
+    toolRef:
+      id: update-todos
+      version: v1.1.0
+spawnable:
+  defaultShare: 1200000
+capabilities:
+  - repo.read
+  - workspace.write
+  - command.exec
+  - command.network
+  - web.search
+  - web.fetch
+  - external.read
+limits:
+  maxRounds: 100
+  maxToolCallsPerRound: 8
+  maxToolUnits: 600
+budget:
+  perCallInputLimit: 256000
+  maxOutputTokens: 32000
+  finalInputBudget: 256000
+  finalMaxOutputTokens: 32000

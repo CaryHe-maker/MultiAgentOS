@@ -1,0 +1,19 @@
+schemaVersion: v1
+kind: TOOL
+id: job-list
+version: v1.0.0
+digest: 8f558480541cf4d57fce747caa05513aebe713cfa017f7a86f06e922e8ea6d6a
+description: Control tool that lists the background commands of the task.
+purpose: CONTROL
+modelName: job_list
+modelDescription: >-
+  List your background commands: each with its id, the command and its state. Those a subtask
+  that delivered left running are yours as well, named by the subtask: fix-api/job_1.
+parametersContract:
+  kind: contract
+  id: workflow.JobListArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

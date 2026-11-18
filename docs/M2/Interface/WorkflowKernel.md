@@ -1,7 +1,7 @@
 # Workflow 与 Kernel 的接口
 
 > 状态：已实现，与 `packages/libraries/contracts`（`ports.ts` 的 `WorkflowGatewayPort`、`kernel-unit`、`kernel-session`）一致。约定见 [Interface](README.md)。
-> major 1 的 Schema 由快照守护（`contracts:snapshot`，SharedContracts 第 2、4 节）：快照冻结之前可以原地修改，冻结之后只能增加可选字段。
+> major 1 已随 M2 发布冻结（SharedContracts 第 2、4 节）：之后只能增加可选字段。
 
 ## 1. 范围
 

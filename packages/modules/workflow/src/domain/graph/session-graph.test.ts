@@ -45,11 +45,11 @@ const pipeline: TemplateDefinition = {
   digest: 'a'.repeat(64),
   description: 'pipeline',
   nodes: [
-    { name: 'explore', kind: 'AGENT', agent: { id: 'explorer', version: 'v0.1.0' } },
+    { name: 'explore', kind: 'AGENT', agent: { id: 'explorer', version: 'v1.0.0' } },
     {
       name: 'build',
       kind: 'AGENT',
-      agent: { id: 'worker', version: 'v0.1.0' },
+      agent: { id: 'worker', version: 'v1.0.0' },
       dependsOn: ['explore'],
       output: true,
     },
@@ -173,7 +173,7 @@ describe('a template', () => {
         {
           name: 'build',
           kind: 'AGENT',
-          agent: { id: 'worker', version: 'v0.1.0' },
+          agent: { id: 'worker', version: 'v1.0.0' },
           dependsOn: ['missing'],
         },
       ],
@@ -224,7 +224,7 @@ describe('a later segment of a step', () => {
         schemaVersion: 'v1',
         kind: 'TEMPLATE',
         id: 'mission',
-        version: 'v0.1.0',
+        version: 'v1.0.0',
         description: 'one step',
         owner: { agent: main },
         nodes: [

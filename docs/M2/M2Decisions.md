@@ -46,7 +46,7 @@
 | 压缩按条目分级：旧的用户消息在 16 KB 内原样保留，其余修剪与摘要 | 2026-11-07 | M2Design 第 9.6 节 |
 | 压缩只有三种触发：用户的 `/compact`、请求发出前估算达到单次输入上限的 90%、服务商报上下文过长；不做空闲时的预先压缩。压缩后保留最近 15%。界面在状态行显示上下文占比，不另做提醒 | 2026-11-09 | M2Design 第 9.6 节 |
 | 所有压缩对象走同一条路径取得 Agent：main 用目录里的当前定义，SubAgent 与模板节点用注册时记下的引用；能力范围由 Workflow 与 Kernel 共用同一个函数计算 | 2026-11-09 | M2Design 第 9.6 节 |
-| Agent 与 Prompt 定义以 `v0.1.0` 发布（M2 V1.0）；Mission 的根任务、worker、lead、explorer 与专家的定义即 Mission 基线1.2（Orchestration D110、D111） | 2026-11-18 | AgentToolPool 第 3 节 |
+| Agent 与 Prompt 定义以 `v0.1.0` 发布（M2 V1.0），发布到 main 时封存为 `v1.0.0`（V1.1 的 Turn-chat 工具与 Unit 为 `v1.1.0`）；Mission 的根任务、worker、lead、explorer 与专家的定义即 Mission 基线1.2（Orchestration D110、D111） | 2026-11-18 | AgentToolPool 第 3 节 |
 
 ## 4. 流程
 

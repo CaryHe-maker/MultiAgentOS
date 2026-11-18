@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: update-todos
+version: v1.1.0
+digest: 411dc47f6c59063dd93ae744007e84f878b0a960975493c4c4942478901b7112
+description: Control tool that replaces the todo list of an AgentRun; it ends nothing. Turn-chat text.
+purpose: CONTROL
+modelName: update_todos
+modelDescription: >-
+  Record and update a task list to plan multi-step work and show progress; skip it for a single step. Each call replaces the list: todos of content and status (pending, in_progress, completed, cancelled).
+parametersContract:
+  kind: contract
+  id: workflow.UpdateTodosArgs
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

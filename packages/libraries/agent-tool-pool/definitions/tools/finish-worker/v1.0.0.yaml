@@ -1,0 +1,23 @@
+schemaVersion: v1
+kind: TOOL
+id: finish-worker
+version: v1.0.0
+digest: fdd6263122c176f344ff3a6049033922a93395e9320f46ee08499cef280a6519
+description: Control tool that ends a worker with what it changed and checked.
+purpose: CONTROL
+modelName: finish_subagent
+modelDescription: >-
+  Call it when your part is done: it returns your result to the agent that started you, and
+  stops you; call it alone. summary (at most
+  2000 characters) is what the reader always sees; report is the full detail. changedFiles lists
+  every file you changed. status is done, partial or blocked. validation lists the check commands you
+  ran after your last change, each with its exit code: the caller sees them and does not run them
+  again. blockers says what stopped you, including a path you needed outside your writeScope.
+parametersContract:
+  kind: contract
+  id: workflow.WorkerResult
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

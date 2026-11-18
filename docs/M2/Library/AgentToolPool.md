@@ -22,11 +22,11 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 ## 3. 定义实例
 
-定义全部是 `schemaVersion = 'v1'` 的草稿（`v0.1.0`）；M1 的定义文件与 M1 的目录已删除（[Definitions](../Interface/Definitions.md) 第 1 节）。
+定义全部是 `schemaVersion = 'v1'` 的已封存版本（`v1.0.0`，Turn-chat 的工具与 Unit 另有 `v1.1.0`，都带 `digest`）；M1 的定义文件与 M1 的目录已删除（[Definitions](../Interface/Definitions.md) 第 1 节）。
 
 | kind | id | 说明 |
 |---|---|---|
-| AGENT | `chat` | Turn-chat 的 Agent（Orchestration D112）：读、检索、写与编辑、命令、网页、读工作区之外的文件，用 `v0.2.0` 的工具与 Unit（说明按单 Agent 的写法改写，参数结构与 `v0.1.0` 相同）；派生用 `actions.delegate` 的三个工具：`subagent`（`chat-sub`，`fresh`）、`subagent_fork`（`chat-sub`，`inherit`）、`mission`（`main`，模板 `mission` 的所有者一步，D113；接管 chat 的这一轮与它能借出的全部额度，项里不写 `share`，D115）；结束工具 `reply`，至多 200 轮；系统提示 `chat-system`。`workflow.chatAgent` 可以让 Turn-chat 改用 `main` |
+| AGENT | `chat` | Turn-chat 的 Agent（Orchestration D112）：读、检索、写与编辑、命令、网页、读工作区之外的文件，用 `v1.1.0` 的工具与 Unit（说明按单 Agent 的写法改写，参数结构与 `v1.0.0` 相同）；派生用 `actions.delegate` 的三个工具：`subagent`（`chat-sub`，`fresh`）、`subagent_fork`（`chat-sub`，`inherit`）、`mission`（`main`，模板 `mission` 的所有者一步，D113；接管 chat 的这一轮与它能借出的全部额度，项里不写 `share`，D115）；结束工具 `reply`，至多 200 轮；系统提示 `chat-system`。`workflow.chatAgent` 可以让 Turn-chat 改用 `main` |
 | AGENT | `chat-sub` | chat 的子任务（D112）：chat 的工具与写法，不能派生；`finish_subagent`（`chat-finish`，`byText`：文字回答也结束）、`RETURN_PARTIAL`；`spawnable` 缺省份额 1,200,000；256k 输入、32k 输出，至多 100 轮；系统提示 `chat-sub-system` |
 | AGENT | `main` | Mission 的根任务（模板 `mission` 的根节点，D106）：列目录、检索、读文件、只读 git、写与编辑、命令、网页检索与读取、读工作区之外的文件（`external.read`）、派生 SubAgent；结束工具 `reply`（`PUBLISH_REPLY`），降级时 `PUBLISH_NOTICE`；没有启动 Unit；`thinking.defaultEffort = high`，允许 `none`–`max` |
 | UNIT | `repository-search`、`file-read`、`context-assemble`、`model-call` | M1 实例的 `v1` 版本：契约改为 major 1 的版本，`failurePolicy` 去掉 `USER_DECLINED` |
@@ -51,7 +51,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `subagent`、`subagent-fork` | `purpose = CONTROL`，参数 `workflow.DelegateArgs`（`description`、`prompt`、可选 `writeScope`）；chat 的 `actions.delegate` 引用，各开始一个 `chat-sub`（D112） |
 | TOOL | `mission` | `purpose = CONTROL`，参数 `workflow.MissionArgs`（`description`、`goal`）；chat 的 `actions.delegate` 引用，以 Mission 的根任务开始一个子任务（D113）；必须单独调用，说明里写明它接管这一轮、它的答复在用户下次写话时就是这次调用的结果（D115） |
 | TOOL | `chat-finish` | `purpose = CONTROL`，模型看到的名字 `finish_subagent`，参数 `workflow.ExplorerResult`；chat-sub 的结束工具 |
-| TOOL、UNIT | 各工具与 Unit 的 `v0.2.0` | chat 与 chat-sub 用：说明按单 Agent 的写法改写，参数结构与 `v0.1.0` 相同；Mission 的 Agent 仍用 `v0.1.0` |
+| TOOL、UNIT | 各工具与 Unit 的 `v1.1.0` | chat 与 chat-sub 用：说明按单 Agent 的写法改写，参数结构与 `v1.0.0` 相同；Mission 的 Agent 仍用 `v1.0.0` |
 | TOOL | `run-subagents`、`finish-explorer`、`finish-worker` | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个。`run_subagents` 立即返回（Orchestration D14），任务的 `agent` 可以是 `explorer`、`worker` 或五个专家之一，worker 可带 `split: true`（系统按 lead 运行；Orchestration D88、D93）；只有 main 带这个工具，main 总是根任务 |
 | TOOL | `lead-run-subagents` | `purpose = CONTROL`；模型看到的名字同样是 `run_subagents`；参数为 `workflow.RunSubagentsNestedArgs`：只能派 `explorer` 与 `worker`，没有 `split`，所以只有根任务能派出 lead 与专家（D93）；由 lead 的 `actions.spawn` 引用 |
 | TOOL | `ask-user` | `purpose = CONTROL`，参数为 `workflow.AskUserArgs`；由 main 与 worker 的 `actions.askUser` 引用，explorer 没有；与 `run_subagents` 同样只能单独出现 |
@@ -68,7 +68,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TEMPLATE | `acceptance`、`integrate` | 预编排模板（Orchestration 第 3.9 节，2026-11-14）：`acceptance` 由不参与开发的任务只依据规格写验收测试并对系统运行，失败按负责部分归类；`integrate` 启动整个系统、跑整体检查、把失败追到所在部分、在那里修复后整体复查。每个模板带多个例子 |
 
 - **main 的提示词**在写入能力完成后定稿（Cary 2026-11-04 决定），`contentStatus` 为 `FINAL`，在真实模型上验证过。之后给 main 增加工具时，只增加对应工具的用法。
-- 定义仍是草稿版本（`v0.x`，没有 `digest`，目录加载时算出）：提示词与工具还要按评测迭代，M2 发布时没有封存；封存（`pnpm run catalog:seal`，写入 `digest`，之后不可原地修改）留到定义稳定之后。
+- 定义在 M2 发布时封存（2026-11-19，Cary 定）：M2 V1.0 的定义为 `v1.0.0`，V1.1 改写的 Turn-chat 工具与 Unit 为 `v1.1.0`（原来的 `v1.0.0`、`v1.1.0`，内容不变，`list-files` 的 `contentStatus` 改为 `FINAL`）；`pnpm run catalog:seal` 写入 `digest`。封存的文件不再修改：要改就发布新版本（`definitions/README.md`）。
 - main 的额度参数（Interface/Definitions 第 2 节）按模型窗口取值（M2Design 第 9.3 节）：`perCallInputLimit = 880000`、`maxOutputTokens = 64000`、
   `finalInputBudget = 880000`、`finalMaxOutputTokens = 64000`；`limits` 为 `maxRounds = 80`、`maxToolCallsPerRound = 8`、`maxToolUnits = 200`。
 - main 的工具集随能力增加（写入、`read_output`、`update_todos`、命令与 `git_inspect`、`run_subagents`、网页）；每次改动都发布 main 的新版本。

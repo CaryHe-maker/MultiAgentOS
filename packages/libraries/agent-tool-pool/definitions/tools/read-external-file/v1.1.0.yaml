@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: read-external-file
+version: v1.1.0
+digest: 59dd17c8f78565caeb722d425038244a162e30c1bded4f1cf145368ef870c73b
+description: Model-facing read of a file outside the repository, served by the external-read unit. Turn-chat text.
+purpose: UNIT
+modelName: read_external_file
+modelDescription: >-
+  Read a text file outside the repository, with line numbers. path is absolute, exactly as the user or a file gave it.
+parametersContract:
+  kind: contract
+  id: executor.FileReadInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

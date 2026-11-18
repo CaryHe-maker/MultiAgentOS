@@ -60,8 +60,8 @@ const packRef = ref(MEDIA_TYPES.contextPack);
 const textRef = ref(MEDIA_TYPES.fileText);
 const summaryRef = ref(MEDIA_TYPES.runSummary);
 const outputRef = ref(MEDIA_TYPES.modelOutput);
-const unitRef = { kind: 'UNIT', id: 'file-read', version: 'v0.1.0', digest: sha };
-const agentRef = { kind: 'AGENT', id: 'worker', version: 'v0.1.0', digest: sha };
+const unitRef = { kind: 'UNIT', id: 'file-read', version: 'v1.0.0', digest: sha };
+const agentRef = { kind: 'AGENT', id: 'worker', version: 'v1.0.0', digest: sha };
 const readOutput = {
   path: 'a.ts',
   startLine: 1,

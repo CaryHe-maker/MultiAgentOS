@@ -928,7 +928,7 @@ main·3      被 children all 唤醒：汇合结果（backend、frontend 按书�
 
 ```yaml
 id: mission
-version: v0.1.0
+version: v1.0.0
 owner: { agent: main }
 nodes:
   - { name: deliver, kind: AGENT, role: owner, output: true, goal: "完成用户给出的目标并交付" }

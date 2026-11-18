@@ -13,7 +13,7 @@ async function pinned(id: string) {
   const catalog = await DefinitionCatalog.load(
     new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
   );
-  const set = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
+  const set = catalog.pinAgent({ id, version: 'v1.0.0' }, context);
   if (!set.ok) throw new Error(set.error.message);
   return set.value;
 }

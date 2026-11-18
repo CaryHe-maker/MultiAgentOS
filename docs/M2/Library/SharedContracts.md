@@ -14,7 +14,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 
 - 只有 major 1：major 0 已全部删除（Interface 第 2.2 节）。
 - Schema 放在各 family 目录中，文件名与代码中的名字都不带版本。
-- major 1 是 M2 V1.0 发布时的 Schema；之后的改动按 Schema 快照的冻结规则处理（`contracts:snapshot`）。
+- major 1 是 M2 发布时的 Schema，快照已冻结（2026-11-19，`frozen: true`）：之后只能给对象增加可选属性，删改字段、删除 Schema 都由快照守卫拒绝；不兼容的改动发布 major 2。`contracts:snapshot` 不再改写冻结的快照。
 - Interface 各文档"Schema 强制的约束"小节中的每一条，都必须由 Schema 强制，并有反例测试。
 
 ## 3. Schema 清单
@@ -103,6 +103,6 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 - 每个 major 1 Schema 的正例与反例；Interface 各文档"Schema 强制的约束"的每一条都有反例（`kernel-protocol.test.ts` 的做法）。
 - 未知 major 被拒绝。
 - 由路径派生的 ID：`requestId`、`nodeId`、`unitRunId` 的 body 等于路径 SHA-256 的前 32 位（属性测试）。
-- 协议快照守卫（M1 的做法）覆盖 major 1；M2 发布前 `frozen: false`，注册的 Schema 必须与快照相同，发布时冻结。
+- 协议快照守卫（M1 的做法）覆盖 major 1；快照已冻结，注册的 Schema 与快照相比只能多出可选属性（`compatibilityIssues`）。
 - **测试数据**：各包的测试从子路径 `@multiagentos/contracts/test-support` 取得合法的定义、产物引用、输出与 ID；每个构造函数返回前按 Schema 校验，测试中不以类型断言编造契约值。
   `testUnitDefinition` 按目录加载时的同一规则声明 `repo.read`（AgentToolPool 第 5 节）。

@@ -124,7 +124,7 @@ Execution -> Supervisor -> Executor 子进程运行 ExecutorSet 中的 Executor
 - Workflow 决定业务推进与验收，Kernel 负责授权、调度、执行、资源与监管；每类领域状态只有一个写入 Owner。
 - 模型只提出动作，不能绕过 Kernel 直接执行工具；Lease 只存在于 Core，授权只由人类签发。
 - Executor 在子进程中运行，只返回物理执行事实，不判断任务是否成功。
-- 跨模块数据经过运行时 Schema 校验，契约由 Schema 快照守护，大对象通过 ArtifactRef 传递。
+- 跨模块数据经过运行时 Schema 校验，契约（major 1）已冻结，大对象通过 ArtifactRef 传递；Agent、工具与提示词的定义已封存（`v1.0.0`、`v1.1.0`，带 digest）。
 
 设计从 [M2 文档](docs/M2/README.md) 开始读：[M2Design](docs/M2/M2Design.md)（总体设计）、[Orchestration](docs/M2/Orchestration.md)（长任务与决定记录）、各模块与接口文档；长期架构见 [Architecture](docs/Architecture/README.md)（长期文档不表示对应能力已经实现）。
 

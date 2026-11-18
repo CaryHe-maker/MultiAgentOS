@@ -1,0 +1,20 @@
+schemaVersion: v1
+kind: TOOL
+id: stop-subagents
+version: v1.0.0
+digest: c2e8566a141c061f350c77df4b14ad6560016c7fcc01ef9756476b1e53577613
+description: Control tool that stops subtasks the caller started.
+purpose: CONTROL
+modelName: stop_subagents
+modelDescription: >-
+  Stop subtasks you started, with everything they started: names, or all. A working task stops
+  after its current step. You get each result as stopped, with what it changed. To redirect a task
+  instead, send it a message with interrupt. Call it alone.
+parametersContract:
+  kind: contract
+  id: workflow.StopSubagentsArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL
