@@ -34,7 +34,8 @@ export const testPinnedAgent = (overrides: Partial<PinnedAgent> = {}): PinnedAge
   contextWindowTokens: 100_000,
   cacheHitWeight: 1,
   instructions: 'You are a test agent.',
-  toolSpecs: () => [],
+  toolSpecs: [],
+  finalToolNames: [],
   ...overrides,
 });
 
@@ -82,7 +83,7 @@ export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {})
     ledgers: new RunLedgers(
       {
         runTokenLimit: minShare(testAgentBudget) * 4,
-        turnTokenLimit: minShare(testAgentBudget) * 2,
+        inputTokenLimit: minShare(testAgentBudget) * 2,
       },
       testAgentBudget,
     ),
@@ -92,11 +93,15 @@ export function testRunWork(host: RunHost, overrides: Partial<RunWorkDeps> = {})
     repositoryRoot: '/repository',
     repositoryExclusions: [],
     pinAgent: () => Promise.resolve({ ok: true, agent: testPinnedAgent() }),
+    compactionAgent: () => testPinnedAgent(),
+    retainArtifacts: () => Promise.resolve(true),
     storeQuestionContent: () => Promise.resolve(testArtifactRef()),
     inputIsValid: () => true,
     preset: 'standard',
     readProjectFile: () => Promise.resolve({ exists: false }),
     isTrusted: () => false,
+    webSearchTrusted: () => false,
+    trustWebSearch: () => Promise.resolve(),
     trust: () => Promise.resolve(),
     createAttempt: execution.createAttempt,
     cancelExecutions: execution.cancelExecutions,

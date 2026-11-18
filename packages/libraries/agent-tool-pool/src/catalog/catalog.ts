@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import {
   DefinitionStatusFileSchema,
   type DefinitionStatus,
@@ -8,11 +7,14 @@ import {
   DEFINITION_KINDS,
   DEFINITION_SCHEMAS,
   COMMAND_KINDS,
+  EXTERNAL_READ_KINDS,
   REPOSITORY_KINDS,
+  SPECIALIST_AGENTS,
   WRITE_KINDS,
   agentMinShare,
   canonicalJson,
   createProtocolRegistry,
+  sha256Hex,
   validate,
   type BoundaryContext,
   type DefinitionByKind,
@@ -70,7 +72,20 @@ function referencesOf(body: Body): readonly Reference[] {
           kind: 'TOOL' as const,
           ref: end.toolRef,
         })),
-        ...(['todos', 'spawn', 'askUser'] as const).flatMap((action) => {
+        ...(
+          [
+            'todos',
+            'spawn',
+            'askUser',
+            'sleep',
+            'message',
+            'viewTasks',
+            'stop',
+            'jobOutput',
+            'jobList',
+            'jobKill',
+          ] as const
+        ).flatMap((action) => {
           const declared = body.actions[action];
           return declared === undefined
             ? []
@@ -119,9 +134,7 @@ function digestOf(body: Body, digests: ReadonlyMap<string, string>): string | un
       Object.entries(record).map(([field, inner]) => [field, replace(inner)]),
     );
   };
-  return createHash('sha256')
-    .update(canonicalJson(replace(body)), 'utf8')
-    .digest('hex');
+  return sha256Hex(canonicalJson(replace(body)));
 }
 
 const ORDER: readonly DefinitionKind[] = ['TOOL', 'PROMPT', 'MODEL', 'UNIT', 'AGENT', 'TEMPLATE'];
@@ -129,7 +142,6 @@ const registry = createProtocolRegistry();
 
 /** The contracts of each kind's Unit; a Unit must name exactly these. */
 const UNIT_CONTRACTS: { readonly [K in ExecutionKind]?: readonly [string, string] } = {
-  REPOSITORY_ORIENT: ['context.RepositoryOrientInput.v1', 'context.RepositoryOrientOutput.v1'],
   REPOSITORY_SEARCH: ['context.RepositorySearchInput.v1', 'context.RepositorySearchOutput.v1'],
   REPOSITORY_LIST: ['executor.RepositoryListInput.v1', 'executor.RepositoryListOutput.v1'],
   FILE_READ: ['executor.FileReadInput.v1', 'executor.FileReadOutput.v1'],
@@ -143,7 +155,6 @@ const UNIT_CONTRACTS: { readonly [K in ExecutionKind]?: readonly [string, string
   CONTEXT_ASSEMBLE: ['context.ContextAssembleInput.v1', 'context.ContextAssembleOutput.v1'],
   MODEL: ['executor.ModelCallInput.v1', 'executor.ModelCallOutput.v1'],
   MESSAGE_PUBLISH: ['kernel.unit.MessagePublishInput.v1', 'kernel.unit.MessagePublishOutput.v1'],
-  REPORT_PUBLISH: ['kernel.unit.ReportPublishInput.v1', 'kernel.unit.ReportPublishOutput.v1'],
 };
 /** Where Workflow fills in part of the input, the tool's parameters are the rest (AgentToolPool 5). */
 const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
@@ -153,12 +164,13 @@ const TOOL_ARGUMENTS: { readonly [K in ExecutionKind]?: string } = {
   COMMAND: 'executor.RunCommandArgs.v1',
 };
 /** The arguments of each end action, as the model writes them. */
-const END_CONTRACTS: Readonly<
-  Record<'PUBLISH_REPLY' | 'PUBLISH_REPORT' | 'HANDOFF' | 'FINISH_SUBAGENT', readonly string[]>
-> = {
+/** What a spawn tool may take: the root's, with `split`, and the one below it (D88). */
+const SPAWN_CONTRACTS: readonly string[] = [
+  'workflow.RunSubagentsArgs.v1',
+  'workflow.RunSubagentsNestedArgs.v1',
+];
+const END_CONTRACTS: Readonly<Record<'PUBLISH_REPLY' | 'FINISH_SUBAGENT', readonly string[]>> = {
   PUBLISH_REPLY: ['workflow.ReplyArgs.v1'],
-  PUBLISH_REPORT: ['workflow.AnalysisReportDraft.v1'],
-  HANDOFF: ['workflow.HandoffBrief.v1'],
   // Each spawnable Agent declares the result it returns (M2Design 3.7).
   FINISH_SUBAGENT: ['workflow.ExplorerResult.v1', 'workflow.WorkerResult.v1'],
 };
@@ -171,6 +183,7 @@ const FIXED_CODES = [
 ];
 const EFFORTS = ['none', 'low', 'high', 'max'] as const;
 const READS_REPOSITORY: ReadonlySet<string> = new Set(REPOSITORY_KINDS);
+const EXTERNAL_KINDS: ReadonlySet<string> = new Set(EXTERNAL_READ_KINDS);
 const WRITES_WORKSPACE: ReadonlySet<string> = new Set(WRITE_KINDS);
 const RUNS_COMMANDS: ReadonlySet<string> = new Set(COMMAND_KINDS);
 const contractOf = (ref: { readonly id: string; readonly version: string }) =>
@@ -405,14 +418,21 @@ function checkRules(
             'UNIT_INVALID',
             `${body.executionKind} must use ${expected.join(' and ')}`,
           );
-        const declaresRead = body.protectedCapabilities.includes('repo.read');
+        const declaresRepoRead = body.protectedCapabilities.includes('repo.read');
+        const declaresExternal = body.protectedCapabilities.includes('external.read');
         // Kernel decides on the declaration alone, so it must agree with the kind (Kernel/Core 5).
+        // Three kinds also read outside the workspace, with `external.read` in place of `repo.read`.
+        const declaresRead = declaresRepoRead || declaresExternal;
         if (READS_REPOSITORY.has(body.executionKind) !== declaresRead)
           report(
             origin,
             'UNIT_INVALID',
             `${body.executionKind} ${declaresRead ? 'must not' : 'must'} declare repo.read`,
           );
+        if (declaresRepoRead && declaresExternal)
+          report(origin, 'UNIT_INVALID', 'a unit declares repo.read or external.read, not both');
+        if (declaresExternal && !EXTERNAL_KINDS.has(body.executionKind))
+          report(origin, 'UNIT_INVALID', `${body.executionKind} cannot declare external.read`);
         const declaresWrite = body.protectedCapabilities.includes('workspace.write');
         if (WRITES_WORKSPACE.has(body.executionKind) !== declaresWrite)
           report(
@@ -498,30 +518,12 @@ function checkAgent(
       );
   const thens = new Set(body.actions.end.map((end) => end.then));
   const needsMessage = thens.has('PUBLISH_REPLY') || body.actions.onDegraded === 'PUBLISH_NOTICE';
-  const needsReport = thens.has('PUBLISH_REPORT') || body.actions.onDegraded === 'PUBLISH_REPORT';
   if (count('MESSAGE_PUBLISH') !== (needsMessage ? 1 : 0))
     report(
       origin,
       'AGENT_INVALID',
       `needs ${needsMessage ? 'exactly one' : 'no'} MESSAGE_PUBLISH unit`,
     );
-  if (count('REPORT_PUBLISH') !== (needsReport ? 1 : 0))
-    report(
-      origin,
-      'AGENT_INVALID',
-      `needs ${needsReport ? 'exactly one' : 'no'} REPORT_PUBLISH unit`,
-    );
-  const unitKeys = new Set(body.unitRefs.map((ref) => `${ref.id}@${ref.version}`));
-  for (const ref of body.startUnitRefs)
-    if (
-      !unitKeys.has(`${ref.id}@${ref.version}`) ||
-      get('UNIT', ref)?.executionKind !== 'REPOSITORY_ORIENT'
-    )
-      report(
-        origin,
-        'AGENT_INVALID',
-        `start unit ${ref.id} must be a REPOSITORY_ORIENT unit of this agent`,
-      );
 
   const { allowedEfforts, defaultEffort } = body.thinking;
   if (!allowedEfforts.includes(defaultEffort))
@@ -546,9 +548,18 @@ function checkAgent(
   const names = new Map<string, string>();
   const tools = [
     ...units.flatMap((unit) => unit.toolRefs.flatMap((ref) => get('TOOL', ref) ?? [])),
-    ...[body.actions.todos, body.actions.spawn, body.actions.askUser].flatMap((action) =>
-      action === undefined ? [] : (get('TOOL', action.toolRef) ?? []),
-    ),
+    ...[
+      body.actions.todos,
+      body.actions.spawn,
+      body.actions.askUser,
+      body.actions.sleep,
+      body.actions.message,
+      body.actions.viewTasks,
+      body.actions.stop,
+      body.actions.jobOutput,
+      body.actions.jobList,
+      body.actions.jobKill,
+    ].flatMap((action) => (action === undefined ? [] : (get('TOOL', action.toolRef) ?? []))),
     ...body.actions.end.flatMap((end) => get('TOOL', end.toolRef) ?? []),
   ];
   for (const tool of tools) {
@@ -598,6 +609,25 @@ function checkAgent(
     )
       report(origin, 'AGENT_INVALID', 'the ask_user tool must be CONTROL with AskUserArgs');
   }
+  const controls = [
+    ['sleep', 'workflow.SleepArgs.v1'],
+    ['message', 'workflow.SendMessageArgs.v1'],
+    ['viewTasks', 'workflow.ViewTasksArgs.v1'],
+    ['stop', 'workflow.StopSubagentsArgs.v1'],
+    ['jobOutput', 'workflow.JobOutputArgs.v1'],
+    ['jobList', 'workflow.JobListArgs.v1'],
+    ['jobKill', 'workflow.JobKillArgs.v1'],
+  ] as const;
+  for (const [action, contract] of controls) {
+    const declared = body.actions[action];
+    if (declared === undefined) continue;
+    const tool = get('TOOL', declared.toolRef);
+    if (
+      tool !== undefined &&
+      (tool.purpose !== 'CONTROL' || contractOf(tool.parametersContract) !== contract)
+    )
+      report(origin, 'AGENT_INVALID', `the ${action} tool must be CONTROL with ${contract}`);
+  }
   checkSpawn(origin, body, get, report);
   for (const unit of units)
     for (const capability of unit.protectedCapabilities)
@@ -625,16 +655,18 @@ function checkSpawn(
     const tool = get('TOOL', body.actions.spawn.toolRef);
     if (
       tool !== undefined &&
-      (tool.purpose !== 'CONTROL' ||
-        contractOf(tool.parametersContract) !== 'workflow.RunSubagentsArgs.v1')
+      (tool.purpose !== 'CONTROL' || !SPAWN_CONTRACTS.includes(contractOf(tool.parametersContract)))
     )
-      report(origin, 'AGENT_INVALID', 'the spawn tool must be CONTROL with RunSubagentsArgs');
+      report(
+        origin,
+        'AGENT_INVALID',
+        'the spawn tool must be CONTROL with RunSubagentsArgs or RunSubagentsNestedArgs',
+      );
   }
   const finishes = body.actions.end.some((end) => end.then === 'FINISH_SUBAGENT');
   if (finishes !== (body.spawnable !== undefined))
     report(origin, 'AGENT_INVALID', 'spawnable and the FINISH_SUBAGENT end go together');
   if (body.spawnable === undefined) return;
-  if (spawns) report(origin, 'AGENT_INVALID', 'a SubAgent cannot spawn');
   if (body.actions.end.some((end) => end.then !== 'FINISH_SUBAGENT'))
     report(origin, 'AGENT_INVALID', 'a spawnable Agent ends only with FINISH_SUBAGENT');
   if (body.actions.onDegraded !== 'RETURN_PARTIAL')
@@ -657,43 +689,37 @@ function checkTemplate(
   const nodes = new Map(body.nodes.map((node) => [node.name, node]));
   if (nodes.size !== body.nodes.length)
     report(origin, 'TEMPLATE_INVALID', 'node names must be unique');
-  const edges = new Map<
-    string,
-    readonly { readonly node: string; readonly conditional: boolean }[]
-  >();
+  // A pre-orchestrated template is reached by the specialist Agent it names (Orchestration D39).
+  if ((body.playbook === undefined) !== (body.agent === undefined))
+    report(origin, 'TEMPLATE_INVALID', 'a playbook and its specialist agent go together');
+  if (body.agent !== undefined && !(SPECIALIST_AGENTS as readonly string[]).includes(body.agent))
+    report(origin, 'TEMPLATE_INVALID', `${body.agent} is not a specialist Agent`);
+  // The owner of a template is one Agent, whose steps are the nodes marked owner; its last step
+  // is the output (Orchestration 3.5).
+  const { owner } = body;
+  const steps = body.nodes.filter((node) => node.kind === 'AGENT' && node.role === 'owner');
+  if (owner === undefined && steps.length > 0)
+    report(origin, 'TEMPLATE_INVALID', 'role owner needs the template to name its owner');
+  if (owner !== undefined) {
+    if (steps.length === 0) report(origin, 'TEMPLATE_INVALID', 'an owner needs at least one step');
+    for (const step of steps)
+      if (
+        step.kind === 'AGENT' &&
+        (step.agent.id !== owner.agent.id || step.agent.version !== owner.agent.version)
+      )
+        report(origin, 'TEMPLATE_INVALID', `${step.name} is a step of the owner, not of its Agent`);
+    const outputs = body.nodes.filter((node) => node.kind === 'AGENT' && node.output === true);
+    if (outputs.length !== 1 || outputs[0]?.kind !== 'AGENT' || outputs[0].role !== 'owner')
+      report(origin, 'TEMPLATE_INVALID', 'exactly one output, and it is a step of the owner');
+  }
+  const edges = new Map<string, readonly string[]>();
   for (const node of body.nodes) {
     if (node.kind !== 'AGENT') continue;
-    const dependencies = (node.dependsOn ?? []).map((dependency) =>
-      typeof dependency === 'string'
-        ? { node: dependency, conditional: false }
-        : { node: dependency.node, conditional: true },
-    );
+    const dependencies = node.dependsOn ?? [];
     edges.set(node.name, dependencies);
-    for (const dependency of dependencies) {
-      if (!nodes.has(dependency.node))
-        report(origin, 'TEMPLATE_INVALID', `${node.name} depends on unknown ${dependency.node}`);
-      if (dependency.conditional && body.origin !== 'BUILTIN')
-        report(
-          origin,
-          'TEMPLATE_INVALID',
-          `${node.name}: conditional edges are for built-in templates only`,
-        );
-    }
-    if (node.inputFrom === 'HANDOFF') {
-      const source = dependencies.find((dependency) => {
-        const before = nodes.get(dependency.node);
-        if (!dependency.conditional || before?.kind !== 'AGENT') return false;
-        return (
-          get('AGENT', before.agent)?.actions.end.some((end) => end.then === 'HANDOFF') === true
-        );
-      });
-      if (source === undefined)
-        report(
-          origin,
-          'TEMPLATE_INVALID',
-          `${node.name} takes a handoff, so it must depend conditionally on an agent that can hand off`,
-        );
-    }
+    for (const dependency of dependencies)
+      if (!nodes.has(dependency))
+        report(origin, 'TEMPLATE_INVALID', `${node.name} depends on unknown ${dependency}`);
   }
   const visiting = new Set<string>();
   const done = new Set<string>();
@@ -701,7 +727,7 @@ function checkTemplate(
     if (done.has(name)) return false;
     if (visiting.has(name)) return true;
     visiting.add(name);
-    const found = (edges.get(name) ?? []).some((dependency) => cyclic(dependency.node));
+    const found = (edges.get(name) ?? []).some((dependency) => cyclic(dependency));
     visiting.delete(name);
     done.add(name);
     return found;
@@ -782,6 +808,13 @@ export class DefinitionCatalog {
       ...(agent.actions.todos === undefined ? [] : [agent.actions.todos.toolRef]),
       ...(agent.actions.spawn === undefined ? [] : [agent.actions.spawn.toolRef]),
       ...(agent.actions.askUser === undefined ? [] : [agent.actions.askUser.toolRef]),
+      ...(agent.actions.sleep === undefined ? [] : [agent.actions.sleep.toolRef]),
+      ...(agent.actions.message === undefined ? [] : [agent.actions.message.toolRef]),
+      ...(agent.actions.viewTasks === undefined ? [] : [agent.actions.viewTasks.toolRef]),
+      ...(agent.actions.stop === undefined ? [] : [agent.actions.stop.toolRef]),
+      ...(agent.actions.jobOutput === undefined ? [] : [agent.actions.jobOutput.toolRef]),
+      ...(agent.actions.jobList === undefined ? [] : [agent.actions.jobList.toolRef]),
+      ...(agent.actions.jobKill === undefined ? [] : [agent.actions.jobKill.toolRef]),
     ];
     const tools = toolRefs.flatMap((toolRef) => this.#find('TOOL', toolRef) ?? []);
     const members: Definition[] = [agent, model, prompt, ...pinnedUnits, ...tools];

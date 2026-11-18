@@ -1,0 +1,29 @@
+schemaVersion: v1
+kind: UNIT
+id: external-read
+version: v0.1.0
+description: Read a line range of one file outside the repository.
+executionKind: FILE_READ
+protectedCapabilities:
+  - external.read
+inputContract:
+  kind: contract
+  id: executor.FileReadInput
+  version: v1
+outputContract:
+  kind: contract
+  id: executor.FileReadOutput
+  version: v1
+toolRefs:
+  - id: read-external-file
+    version: v0.1.0
+effect: READ_ONLY
+isIdempotent: true
+failurePolicy:
+  EXTERNAL_PATH_UNAVAILABLE: RETURN_TO_MODEL
+  OUT_OF_SCOPE: RETURN_TO_MODEL
+  NOT_FOUND: RETURN_TO_MODEL
+  UNSUPPORTED_FILE: RETURN_TO_MODEL
+  INVALID_RANGE: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

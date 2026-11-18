@@ -2,8 +2,8 @@ import type { CoreRejectedCode, InterruptReason } from '@multiagentos/contracts'
 
 /**
  * The run states and what each request may do in them (Kernel/Interaction 6.5, Kernel/Core 5e), as
- * a pure function. Turns open only when open input is answered and close only at rest, so "nothing
- * is active while waiting for input" holds by construction (invariants 4 and 18).
+ * a pure function. The work of an input opens only when open input is answered and settles only at
+ * rest, so "nothing is active while waiting for input" holds by construction (invariants 4 and 18).
  */
 export type RunPhase =
   'RUNNING' | 'PAUSING' | 'PAUSED' | 'INTERRUPTING' | 'AWAITING_INPUT' | 'CONVERGING' | 'CLOSED';
@@ -17,7 +17,8 @@ export interface LocalQuestion {
 
 export interface RunControl {
   readonly phase: RunPhase;
-  readonly turnId?: string;
+  /** The checkpoint of the input whose work goes on (Orchestration 7.1); none while waiting. */
+  readonly openInput?: string;
   readonly humanRequestId?: string;
   /** Why the run is INTERRUPTING; only there. */
   readonly interrupt?: InterruptReason;
@@ -52,18 +53,18 @@ const isClosing = (control: RunControl): boolean =>
 /** Work is held, not refused, while the run is paused or pausing (Kernel/Core 5e). */
 const isHeld = (control: RunControl): boolean =>
   control.phase === 'PAUSING' || control.phase === 'PAUSED';
-/** A Turn is open and the user's work goes on in it, whether it is paused or not. */
+/** The work of an input goes on, whether it is paused or not. */
 const isLive = (control: RunControl): boolean =>
-  control.turnId !== undefined &&
+  control.openInput !== undefined &&
   (control.phase === 'RUNNING' || control.phase === 'PAUSING' || control.phase === 'PAUSED');
 
 /**
- * `registerAgentRun` and `submitUnit`: work belongs to an open Turn. An interrupted run still
+ * `registerAgentRun` and `submitUnit`: work belongs to the work of an input. An interrupted run still
  * admits a Unit here, so that its closing reply can be published; the rest is refused later.
  */
 export function admitWork(control: RunControl): Decision {
   if (isClosing(control)) return refuse('RUN_BLOCKED');
-  if (control.turnId === undefined) return refuse('NO_OPEN_TURN');
+  if (control.openInput === undefined) return refuse('NO_OPEN_INPUT');
   return { accepted: true, control };
 }
 
@@ -79,14 +80,19 @@ export function registerAgentRun(control: RunControl, agentRunId: string): Decis
 }
 
 /** Accepted without effect once the run is closing, as the table says. */
-export function endAgentRun(control: RunControl, agentRunId: string): Decision {
+export function endAgentRun(
+  control: RunControl,
+  agentRunId: string,
+  keepsQuestions = false,
+): Decision {
   if (isClosing(control)) return { accepted: true, control };
   const activeAgentRuns = new Set(control.activeAgentRuns);
   activeAgentRuns.delete(agentRunId);
-  // A question of an AgentRun that ended has no one to answer to.
-  const questions = new Map(
-    [...control.questions].filter(([, asker]) => asker.agentRunId !== agentRunId),
-  );
+  // A question of an AgentRun that ended has no one to answer to, unless its task sleeps until the
+  // answer (ask_user as a sleep): then the answer wakes the next segment.
+  const questions = keepsQuestions
+    ? control.questions
+    : new Map([...control.questions].filter(([, asker]) => asker.agentRunId !== agentRunId));
   return { accepted: true, control: { ...control, activeAgentRuns, questions } };
 }
 
@@ -103,70 +109,70 @@ export function attemptEnded(control: RunControl, unitAttemptId: string): RunCon
   return { ...control, inFlightAttempts };
 }
 
-/** What closes the Turn that an open-input request ends. */
-export type TurnEnd = 'COMPLETED' | 'ABORTED' | 'TIMEOUT';
+/** How the work of an input that an open-input request settles ended. */
+export type InputEnd = 'COMPLETED' | 'ABORTED' | 'TIMEOUT';
 
-const TURN_END_OF: Readonly<Record<InterruptReason, TurnEnd>> = {
+const INPUT_END_OF: Readonly<Record<InterruptReason, InputEnd>> = {
   MEMORY_PRESSURE: 'ABORTED',
   USER_ABORT: 'ABORTED',
   PAUSE_TIMEOUT: 'ABORTED',
-  TURN_TIMEOUT: 'TIMEOUT',
+  INPUT_TIMEOUT: 'TIMEOUT',
 };
 
 /**
- * `requestHuman(prompt)`: the effect names the Turn this closes, if one was open, and how it ends
- * (an interrupted Turn ends ABORTED or TIMEOUT, M2Design 4.3).
+ * `requestHuman(prompt)`: the effect names the input whose work this settles, if one went on, and how
+ * it ended (interrupted work ends ABORTED or TIMEOUT, M2Design 4.3).
  */
 export function requestOpenInput(
   control: RunControl,
   humanRequestId: string,
-): Decision<{ readonly closedTurnId?: string; readonly turnEnd: TurnEnd }> {
+): Decision<{ readonly settledInputId?: string; readonly inputEnd: InputEnd }> {
   if (isClosing(control)) return refuse('RUN_BLOCKED');
   if (isHeld(control) || control.phase === 'AWAITING_INPUT') return refuse('REQUEST_CONFLICT');
   if (control.activeAgentRuns.size > 0 || control.inFlightAttempts.size > 0)
     return refuse('AGENT_RUN_ACTIVE');
-  const { turnId, interrupt, ...rest } = control;
+  const { openInput, interrupt, ...rest } = control;
   return {
     accepted: true,
     control: { ...rest, phase: 'AWAITING_INPUT', humanRequestId, questions: new Map() },
     effect: {
-      turnEnd: interrupt === undefined ? 'COMPLETED' : TURN_END_OF[interrupt],
-      ...(turnId === undefined ? {} : { closedTurnId: turnId }),
+      inputEnd: interrupt === undefined ? 'COMPLETED' : INPUT_END_OF[interrupt],
+      ...(openInput === undefined ? {} : { settledInputId: openInput }),
     },
   };
 }
 
-/** The first input of a run opens its Turn without a request before it. */
-export function openInitialTurn(control: RunControl, turnId: string): Decision {
-  if (control.phase !== 'RUNNING' || control.turnId !== undefined)
+/** The first input of a run opens its work without a request before it. */
+export function openInitialInput(control: RunControl, openInput: string): Decision {
+  if (control.phase !== 'RUNNING' || control.openInput !== undefined)
     return refuse('REQUEST_CONFLICT');
-  return { accepted: true, control: { ...control, turnId } };
+  return { accepted: true, control: { ...control, openInput } };
 }
 
 export function answerOpenInput(
   control: RunControl,
   humanRequestId: string,
-  turnId: string,
+  openInput: string,
 ): Decision {
   if (control.phase !== 'AWAITING_INPUT' || control.humanRequestId !== humanRequestId)
     return refuse('HUMAN_REQUEST_NOT_PENDING');
-  return { accepted: true, control: { ...work(control), phase: 'RUNNING', turnId } };
+  return { accepted: true, control: { ...work(control), phase: 'RUNNING', openInput } };
 }
 
 export function readsProjectFile(control: RunControl): Decision {
   return isClosing(control) ? refuse('RUN_BLOCKED') : { accepted: true, control };
 }
 
-/** Any live state may start closing; a Turn still open ends just before RunClosed. */
+/** Any live state may start closing; work of an input still going on settles just before RunClosed. */
 export function beginConvergence(
   control: RunControl,
-): Decision<{ readonly closedTurnId?: string }> {
+): Decision<{ readonly settledInputId?: string }> {
   if (isClosing(control)) return { accepted: true, control };
-  const { turnId } = control;
+  const { openInput } = control;
   return {
     accepted: true,
     control: { ...work(control), phase: 'CONVERGING' },
-    effect: turnId === undefined ? {} : { closedTurnId: turnId },
+    effect: openInput === undefined ? {} : { settledInputId: openInput },
   };
 }
 
@@ -174,9 +180,9 @@ export function closeRun(control: RunControl): RunControl {
   return { ...control, phase: 'CLOSED' };
 }
 
-/** `pauseRun`: only while the Turn's work runs. */
+/** `pauseRun`: only while the work of an input runs. */
 export function pauseRun(control: RunControl): Decision {
-  if (control.phase !== 'RUNNING' || control.turnId === undefined)
+  if (control.phase !== 'RUNNING' || control.openInput === undefined)
     return refuse('REQUEST_CONFLICT');
   return { accepted: true, control: { ...control, phase: 'PAUSING' } };
 }
@@ -199,13 +205,13 @@ export function resumeRun(control: RunControl): Decision {
  * so the note and the continuation cannot come apart.
  */
 export function steerRun(control: RunControl): Decision {
-  return control.phase === 'RUNNING' && control.turnId !== undefined
+  return control.phase === 'RUNNING' && control.openInput !== undefined
     ? { accepted: true, control }
     : refuse('REQUEST_CONFLICT');
 }
 
 /**
- * The one entry of every interrupt (Kernel/Core 5e): the user's abort needs a live Turn, the two
+ * The one entry of every interrupt (Kernel/Core 5e): the user's abort needs live work, the two
  * timeouts come from Core itself while one is live, and memory pressure takes any state that is
  * not yet closing. An interrupted run asked again changes nothing.
  */
@@ -230,14 +236,25 @@ export function requestLocalQuestion(
   control: RunControl,
   humanRequestId: string,
   asked: LocalQuestion,
+  /** Asked again after a rewind: the AgentRun that asked has ended, its task sleeps on it. */
+  askedAgain = false,
 ): Decision {
-  if (!isLive(control)) return refuse(isClosing(control) ? 'RUN_BLOCKED' : 'NO_OPEN_TURN');
-  if (!control.activeAgentRuns.has(asked.agentRunId)) return refuse('AGENT_RUN_NOT_FOUND');
+  if (!isLive(control)) return refuse(isClosing(control) ? 'RUN_BLOCKED' : 'NO_OPEN_INPUT');
+  if (!askedAgain && !control.activeAgentRuns.has(asked.agentRunId))
+    return refuse('AGENT_RUN_NOT_FOUND');
   if (control.questions.has(humanRequestId)) return refuse('REQUEST_CONFLICT');
   return {
     accepted: true,
     control: { ...control, questions: new Map([...control.questions, [humanRequestId, asked]]) },
   };
+}
+
+/** A local question nobody waits for any more is taken back; one not pending is left alone. */
+export function withdrawLocalQuestion(control: RunControl, humanRequestId: string): RunControl {
+  if (!control.questions.has(humanRequestId)) return control;
+  const questions = new Map(control.questions);
+  questions.delete(humanRequestId);
+  return { ...control, questions };
 }
 
 /** The answer to a local question, in a run that is paused too: it is delivered, and held there. */

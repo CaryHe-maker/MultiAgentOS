@@ -1,0 +1,20 @@
+schemaVersion: v1
+kind: TOOL
+id: search-external-repository
+version: v0.1.0
+description: Model-facing search of a folder outside the repository, served by the external-search unit.
+purpose: UNIT
+modelName: search_external_repository
+modelDescription: >-
+  Search a folder OUTSIDE the repository. path is absolute, exactly as the user or a file you
+  read gave it: /home/alice/app or D:\work\app (or D:/work/app); no relative paths, no ~, no
+  other form, never a guessed path. mode SYMBOL finds declarations, TEXT a fixed string, PATH file
+  paths, AUTO (default) PATH and TEXT. maxItems defaults to 20.
+parametersContract:
+  kind: contract
+  id: context.RepositorySearchInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

@@ -134,9 +134,9 @@ function setup(
     store: new SessionLogStore(new FileSessionStore(dataDir)),
     agents: new Map([
       [
-        'main',
+        'chat',
         {
-          ref: { kind: 'AGENT', id: 'main', version: 'v1.0.0', digest } as const,
+          ref: { kind: 'AGENT', id: 'chat', version: 'v1.0.0', digest } as const,
           modelRef: { id: 'deepseek-flash', version: 'v2.0.0' },
           effort: 'high' as const,
           allowedEfforts: ['high' as const],
@@ -149,16 +149,15 @@ function setup(
     ]),
     templates: new Map(),
     definitionsDigest: digest,
-    definitionVersions: ['main@v1.0.0'],
+    definitionVersions: ['chat@v1.0.0'],
     config: {
       repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
       maxNestedInstructions: 8,
       maxSubagentsPerCall: 4,
       maxDependencyDepth: 2,
-      maxTasks: 12,
-      maxSpawnCalls: 4,
       consecutiveErrorLimit: 5,
       noProgressRounds: 2,
+      toolFailureRounds: 2,
       regenerationLimit: 3,
     },
     runtime: () => ({ sandbox: 'none', currentDate: '2026-11-06' }),
@@ -364,7 +363,7 @@ describe('abort', () => {
     expect(
       ofType(runner.records, 'NODE_ENDED').find((record) => record.status === 'INTERRUPTED'),
     ).toBeDefined();
-    expect(ofType(runner.records, 'TURN_ENDED')).toMatchObject([{ reason: 'ABORTED' }]);
+    expect(ofType(runner.records, 'INPUT_SETTLED')).toMatchObject([{ reason: 'ABORTED' }]);
     // The run stays open for the next message, which asks for open input again.
     expect(ofType(runner.records, 'WORKFLOW_RUN_ENDED')).toEqual([]);
     const next = ofType(runner.records, 'HUMAN_REQUESTED').at(-1);
@@ -379,7 +378,9 @@ describe('abort', () => {
       context,
     );
     await kernel.idle();
-    expect(ofType(runner.records, 'TURN_STARTED')).toHaveLength(2);
+    expect(
+      runner.records.filter((r) => r.type === 'HUMAN_ANSWERED' && r.kind === 'prompt'),
+    ).toHaveLength(2);
     expect(ofType(runner.records, 'AGENT_RUN_ENDED').at(-1)).toMatchObject({ outcome: 'CLOSED' });
   });
 });

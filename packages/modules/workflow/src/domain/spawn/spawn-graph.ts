@@ -4,6 +4,8 @@ import type {
   SessionLogRecord,
   SubagentTask,
 } from '@multiagentos/contracts';
+import { renderPlaybook } from './playbook.js';
+import { registeredOf } from '../handover/handover.js';
 import { outcomeOf, type TaskOutcome } from './task-results.js';
 import type { TaskScope } from '../context/history-projection.js';
 import type { ProjectedGraph } from '../graph/session-graph.js';
@@ -11,7 +13,7 @@ import type { ProjectedGraph } from '../graph/session-graph.js';
 /**
  * What the tasks of a `run_subagents` call look like in the graph and in the log (M2Design 3.1,
  * 3.6): who dispatched a task, what a task is given, what the caller learns when it is woken, and
- * how much a Turn has dispatched. All of it a pure function of the log.
+ * how much the work of an input has dispatched. All of it a pure function of the log.
  */
 
 /** The `DELEGATE` edge that led to a task: its caller's node, and the delegation. */
@@ -43,6 +45,56 @@ export interface CallResult {
   readonly notes: readonly string[];
   readonly outputRef?: ArtifactRef;
   readonly toolCallId?: string;
+  /** The handover that carries the result and what the task listed, and what is in it. */
+  readonly referenceId?: string;
+  readonly references?: readonly HandedReference[];
+}
+
+export interface HandedReference {
+  readonly toolCallId: string;
+  readonly tool: string;
+  readonly previewRef?: ArtifactRef;
+}
+
+/**
+ * What a task handed over, as an entry shows it: the reference id, the items of the handover, and
+ * the preview of each tool result, which the caller sees with the result (D54).
+ */
+export function handoverFieldsOf(
+  records: readonly SessionLogRecord[],
+  outcome: TaskOutcome,
+): { referenceId?: string; references?: HandedReference[] } {
+  const handover =
+    outcome.referenceId === undefined ? undefined : registeredOf(records, outcome.referenceId);
+  return handover === undefined
+    ? {}
+    : {
+        referenceId: handover.referenceId,
+        references: handover.items.map(({ toolCallId, tool }) => {
+          const previewRef = previewOf(records, toolCallId);
+          return { toolCallId, tool, ...(previewRef === undefined ? {} : { previewRef }) };
+        }),
+      };
+}
+
+/** The preview of a tool call's result: what its caller saw, never the full output. */
+function previewOf(
+  records: readonly SessionLogRecord[],
+  toolCallId: string,
+): ArtifactRef | undefined {
+  const submitted = records.find(
+    (record) =>
+      record.type === 'UNIT_SUBMITTED' &&
+      record.inputSource.kind === 'TOOL_CALL' &&
+      record.inputSource.toolCallId === toolCallId,
+  );
+  if (submitted?.type !== 'UNIT_SUBMITTED') return undefined;
+  const completed = records.find(
+    (record) => record.type === 'UNIT_COMPLETED' && record.requestId === submitted.requestId,
+  );
+  return completed?.type === 'UNIT_COMPLETED' && completed.status === 'OK'
+    ? completed.outputRef
+    : undefined;
 }
 
 /**
@@ -116,6 +168,7 @@ export function callResultsOf(
           notes: outcome.notes,
           ...(outcome.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
           ...(outcome.toolCallId === undefined ? {} : { toolCallId: outcome.toolCallId }),
+          ...handoverFieldsOf(records, outcome),
         },
       ];
     });
@@ -129,6 +182,11 @@ export function taskScopeOf(
   node: GraphNodeRecord,
   spawn: NonNullable<GraphNodeRecord['spawn']>,
 ): TaskScope {
+  const continued = continuedOf(records, workflowRunId, graph, spawn);
+  // A task taken up again goes on from all its owner knew: the context the owner started with
+  // as well as the owner's own work (D56).
+  const inherited =
+    inheritedOf(records, workflowRunId, graph, node, spawn) ?? continued?.first.inherited;
   const dependencies = graph.graph.edges
     .filter((edge) => edge.to === node.nodeId && edge.kind === 'DEPENDS')
     .flatMap((edge) => {
@@ -149,6 +207,7 @@ export function taskScopeOf(
           notes: [...outcome.notes],
           ...(outcome.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
           ...(outcome.toolCallId === undefined ? {} : { toolCallId: outcome.toolCallId }),
+          ...handoverFieldsOf(records, outcome),
         },
       ];
     });
@@ -156,10 +215,109 @@ export function taskScopeOf(
     name: node.name,
     agent: node.agentRef?.id ?? 'unknown',
     goal: node.goal ?? '',
-    acceptance: spawn.acceptance,
     writeScope: spawn.writeScope,
     inputs: spawn.inputs,
     dependencies,
+    ...(spawn.specialist === undefined ? {} : { playbook: renderPlaybook(spawn.specialist) }),
+    ...(continued === undefined ? {} : { continued }),
+    ...(inherited === undefined ? {} : { inherited }),
+    ...(spawn.cut === true ? fullFromOf(records, workflowRunId, node) : {}),
+  };
+}
+
+/** The call that started a task, which holds its goal whole (D56). */
+function fullFromOf(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+  node: GraphNodeRecord,
+): { fullFrom?: { outputRef: ArtifactRef; toolCallId: string } } {
+  const started = records.find(
+    (record): record is RecordOf<'GRAPH_EXTENDED'> =>
+      record.type === 'GRAPH_EXTENDED' &&
+      record.workflowRunId === workflowRunId &&
+      record.nodes.some((each) => each.nodeId === node.nodeId),
+  );
+  const toolCallId = started?.edges.find(
+    (each) => each.kind === 'DELEGATE' && each.to === node.nodeId && each.call !== undefined,
+  )?.call?.toolCallId;
+  if (toolCallId === undefined) return {};
+  const turn = records.find(
+    (record) =>
+      record.type === 'MODEL_TURN' &&
+      record.toolCalls.some((call) => call.toolCallId === toolCallId),
+  );
+  return turn?.type === 'MODEL_TURN' ? { fullFrom: { outputRef: turn.outputRef, toolCallId } } : {};
+}
+
+/**
+ * What a task that inherits starts with (Orchestration 3.9, D35): the view of the task that
+ * started it, up to the call, and the call it answers. The view is that task's own, so the prefix
+ * is the one it sent and the provider's cache holds it.
+ */
+function inheritedOf(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+  graph: ProjectedGraph,
+  node: GraphNodeRecord,
+  spawn: NonNullable<GraphNodeRecord['spawn']>,
+): TaskScope['inherited'] {
+  const { inherits } = spawn;
+  if (inherits === undefined) return undefined;
+  // The task it comes from was started by a call, or is the root of the work (D53), whose first
+  // segment holds its step.
+  const segments = [...graph.nodes.values()].filter(
+    (each) => each.mission?.id === inherits.missionId,
+  );
+  const from = segments.find((each) => each.spawn !== undefined) ?? segments[0];
+  const started = records.find(
+    (record): record is RecordOf<'GRAPH_EXTENDED'> =>
+      record.type === 'GRAPH_EXTENDED' &&
+      record.workflowRunId === workflowRunId &&
+      record.nodes.some((each) => each.nodeId === node.nodeId),
+  );
+  const edge = started?.edges.find(
+    (each) => each.kind === 'DELEGATE' && each.to === node.nodeId && each.call !== undefined,
+  );
+  if (from === undefined || started === undefined || edge?.call === undefined) return undefined;
+  const before = records.filter((record) => record.seq < started.seq);
+  const task =
+    from.spawn !== undefined
+      ? taskScopeOf(before, workflowRunId, graph, from, from.spawn)
+      : stepScopeOf(from);
+  return {
+    cut: started.seq,
+    toolCallId: edge.call.toolCallId,
+    as: inherits.as,
+    siblings: started.nodes.filter((each) => each.nodeId !== node.nodeId).map((each) => each.name),
+    // main of a chat sees the whole Session; a step of a template, or a task, its own work.
+    from:
+      task === undefined
+        ? { kind: 'MAIN', missionId: inherits.missionId }
+        : {
+            kind: 'NODE',
+            workflowRunId,
+            agentRunId: inherits.agentRunId,
+            missionId: inherits.missionId,
+            task,
+          },
+  };
+}
+
+/**
+ * A step of a template (Orchestration 3.5) is told what its step is, and keeps the user's goal;
+ * a node without a goal of its own is main of a chat, which has no step.
+ */
+export function stepScopeOf(node: GraphNodeRecord): TaskScope | undefined {
+  if (node.goal === undefined || node.agentRef === undefined) return undefined;
+  return {
+    name: node.name,
+    agent: node.agentRef.id,
+    goal: node.goal,
+    writeScope: [],
+    inputs: [],
+    dependencies: [],
+    withPrompt: true,
+    ...(node.guide === undefined ? {} : { playbook: node.guide }),
   };
 }
 
@@ -168,9 +326,12 @@ export function spawnNodeOf(
   task: SubagentTask & { readonly writeRoots: readonly string[] },
   share: { readonly tokens: number; readonly clamped?: 'MIN' | 'MAX' } | undefined,
 ): NonNullable<GraphNodeRecord['spawn']> {
+  // A task always has a line of what it does: the caller's, or the start of its goal.
+  const role = (task.role ?? task.goal.split(/\r?\n/u)[0] ?? task.name).slice(0, 80);
   return {
     writeScope: [...task.writeRoots],
-    acceptance: [...(task.acceptance ?? [])],
+    role,
+    ...(task.commands === false ? { commands: false } : {}),
     inputs: [...(task.inputs ?? [])],
     ...(task.effort === undefined ? {} : { effort: task.effort }),
     tokens: share?.tokens ?? 1,
@@ -178,14 +339,48 @@ export function spawnNodeOf(
   };
 }
 
-/** What a Turn has dispatched so far: the limits of `run_subagents` count it (M2Design 3.6). */
-export function spawnedIn(
+/**
+ * The tasks a continued task takes up (`continues`), the latest first, and the task scope of the
+ * earliest, whose header its history begins with: so the prefix of its context is the one the
+ * earlier task sent, and the provider's cache still has it.
+ */
+function continuedOf(
   records: readonly SessionLogRecord[],
-  turnId: string | undefined,
+  workflowRunId: string,
+  graph: ProjectedGraph,
+  spawn: NonNullable<GraphNodeRecord['spawn']>,
+): TaskScope['continued'] {
+  const missions: string[] = [];
+  let first: GraphNodeRecord | undefined;
+  let next = spawn.continues?.missionId;
+  while (next !== undefined && !missions.includes(next)) {
+    const missionId = next;
+    const node = [...graph.nodes.values()].find(
+      (each) => each.mission?.id === missionId && each.spawn !== undefined,
+    );
+    if (node?.spawn === undefined) break;
+    missions.push(missionId);
+    first = node;
+    next = node.spawn.continues?.missionId;
+  }
+  if (first?.spawn === undefined) return undefined;
+  // The earliest task continues nothing, so its scope has no `continued` of its own.
+  return { missions, first: taskScopeOf(records, workflowRunId, graph, first, first.spawn) };
+}
+
+/**
+ * What a task has dispatched so far: the limits of `run_subagents` count it per task, so a lead
+ * below the root has limits of its own (Orchestration 9.3).
+ */
+export function spawnedBy(
+  records: readonly SessionLogRecord[],
+  missionId: string,
 ): { readonly tasks: number; readonly calls: number } {
   const spawns = records.filter(
     (record): record is RecordOf<'GRAPH_EXTENDED'> =>
-      record.type === 'GRAPH_EXTENDED' && record.source === 'SPAWN' && record.turnId === turnId,
+      record.type === 'GRAPH_EXTENDED' &&
+      record.source === 'SPAWN' &&
+      record.nodes.some((node) => node.mission?.parentId === missionId),
   );
   return { tasks: spawns.reduce((sum, each) => sum + each.nodes.length, 0), calls: spawns.length };
 }

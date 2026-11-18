@@ -2,7 +2,7 @@ schemaVersion: v1
 kind: AGENT
 id: main
 version: v0.1.0
-description: 'The agent of a Turn-chat: reads, searches, changes and tests the repository and replies.'
+description: 'The root of a long task (template mission): plans the goal, splits it among subtasks, checks the result and delivers it.'
 role: coding assistant
 modelRef:
   id: deepseek-flash
@@ -38,13 +38,18 @@ unitRefs:
     version: v0.1.0
   - id: web-fetch
     version: v0.1.0
+  - id: external-list
+    version: v0.1.0
+  - id: external-read
+    version: v0.1.0
+  - id: external-search
+    version: v0.1.0
   - id: context-assemble
     version: v0.1.0
   - id: model-call
     version: v0.1.0
   - id: message-publish
     version: v0.1.0
-startUnitRefs: []
 actions:
   end:
     - toolRef:
@@ -53,6 +58,34 @@ actions:
       then: PUBLISH_REPLY
       allowedInFinal: true
   onDegraded: PUBLISH_NOTICE
+  sleep:
+    toolRef:
+      id: sleep
+      version: v0.1.0
+  message:
+    toolRef:
+      id: send-message
+      version: v0.1.0
+  viewTasks:
+    toolRef:
+      id: view-tasks
+      version: v0.1.0
+  jobOutput:
+    toolRef:
+      id: job-output
+      version: v0.1.0
+  jobList:
+    toolRef:
+      id: job-list
+      version: v0.1.0
+  jobKill:
+    toolRef:
+      id: job-kill
+      version: v0.1.0
+  stop:
+    toolRef:
+      id: stop-subagents
+      version: v0.1.0
   todos:
     toolRef:
       id: update-todos
@@ -72,6 +105,7 @@ capabilities:
   - command.network
   - web.search
   - web.fetch
+  - external.read
   - agent.spawn
 limits:
   maxRounds: 80

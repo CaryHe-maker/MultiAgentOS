@@ -1,6 +1,6 @@
 import {
-  capabilitiesUnderPreset,
   canonicalJson,
+  requestedCapabilitiesOf,
   sha256Hex,
   type ExecutionKind,
   type PinnedDefinitionSet,
@@ -14,6 +14,7 @@ import type { AgentBinding } from './session-runner.js';
 const unitOf = (unit: UnitDefinition): AgentUnit => ({
   ref: { kind: 'UNIT', id: unit.id, version: unit.version, digest: unit.digest },
   failurePolicy: unit.failurePolicy,
+  ...(unit.protectedCapabilities.includes('external.read') ? { external: true as const } : {}),
 });
 
 /**
@@ -29,10 +30,10 @@ export function agentBindingOf(
   options: { readonly commands?: boolean } = {},
 ): AgentBinding {
   const { agent, model, units, tools } = set;
-  const requestedCapabilities = capabilitiesUnderPreset(agent.capabilities, preset).filter(
-    (capability) =>
-      options.commands !== false ||
-      (capability !== 'command.exec' && capability !== 'command.network'),
+  const requestedCapabilities = requestedCapabilitiesOf(
+    agent.capabilities,
+    preset,
+    options.commands !== false,
   );
   const offered = units.filter((unit) =>
     unit.protectedCapabilities.every((c) => requestedCapabilities.includes(c)),
@@ -49,13 +50,8 @@ export function agentBindingOf(
     if (tool === undefined) throw new Error(`Agent ${agent.id} has no tool ${ref.id}`);
     return tool;
   };
-  const orient = units.find(
-    (unit) =>
-      unit.executionKind === 'REPOSITORY_ORIENT' &&
-      agent.startUnitRefs.some((ref) => ref.id === unit.id && ref.version === unit.version),
-  );
-  // The catalog allows one publishing Unit per Agent: a message or a report. A SubAgent has none.
-  const publish = byKind('MESSAGE_PUBLISH') ?? byKind('REPORT_PUBLISH');
+  // The catalog allows one publishing Unit per Agent. A SubAgent has none.
+  const publish = byKind('MESSAGE_PUBLISH');
   if (publish === undefined && agent.actions.onDegraded !== 'RETURN_PARTIAL')
     throw new Error(`Agent ${agent.id} has no publishing Unit`);
 
@@ -65,7 +61,6 @@ export function agentBindingOf(
       maxRounds: agent.limits.maxRounds,
       maxToolCallsPerRound: agent.limits.maxToolCallsPerRound,
     },
-    ...(orient === undefined ? {} : { orient: unitOf(orient) }),
     contextAssemble: required('CONTEXT_ASSEMBLE'),
     modelCall: required('MODEL'),
     ...(publish === undefined ? {} : { publish: unitOf(publish) }),
@@ -110,6 +105,70 @@ export function agentBindingOf(
             ),
           },
         }),
+    ...(agent.actions.sleep === undefined
+      ? {}
+      : {
+          sleepTool: {
+            toolName: toolOf(agent.actions.sleep.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.sleep.toolRef).parametersContract,
+            ),
+          },
+        }),
+    ...(agent.actions.message === undefined
+      ? {}
+      : {
+          messageTool: {
+            toolName: toolOf(agent.actions.message.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.message.toolRef).parametersContract,
+            ),
+          },
+        }),
+    ...(agent.actions.viewTasks === undefined
+      ? {}
+      : {
+          viewTasksTool: {
+            toolName: toolOf(agent.actions.viewTasks.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.viewTasks.toolRef).parametersContract,
+            ),
+          },
+        }),
+    ...(agent.actions.stop === undefined || !requestedCapabilities.includes('agent.spawn')
+      ? {}
+      : {
+          stopTool: {
+            toolName: toolOf(agent.actions.stop.toolRef).modelName,
+            parameters: registry.resolveContract(
+              toolOf(agent.actions.stop.toolRef).parametersContract,
+            ),
+          },
+        }),
+    // Job tools only where commands run (Orchestration 6.2).
+    ...(requestedCapabilities.includes('command.exec')
+      ? {
+          jobTools: (
+            [
+              ['OUTPUT', agent.actions.jobOutput],
+              ['LIST', agent.actions.jobList],
+              ['KILL', agent.actions.jobKill],
+            ] as const
+          ).flatMap(([action, declared]) =>
+            declared === undefined
+              ? []
+              : [
+                  {
+                    action,
+                    toolName: toolOf(declared.toolRef).modelName,
+                    parameters: registry.resolveContract(
+                      toolOf(declared.toolRef).parametersContract,
+                    ),
+                  },
+                ],
+          ),
+        }
+      : {}),
     ...(agent.actions.todos === undefined
       ? {}
       : {

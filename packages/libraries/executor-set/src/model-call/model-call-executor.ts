@@ -1,5 +1,6 @@
 import { APICallError } from 'ai';
 import {
+  parseToolArguments,
   MEDIA_TYPES,
   canonicalJson,
   type AssembleContextPack,
@@ -7,6 +8,7 @@ import {
   type ExecutorEnvironment,
   type ExecutorOutcome,
   type ModelCallOutput,
+  type ModelProgressEvent,
   type ModelExecutorInput,
   type ModelRawOutput,
   type ModelToolCall,
@@ -16,6 +18,7 @@ import {
 import { rejected, violation } from '../outcome/outcomes.js';
 import { createLanguageModel, type LanguageModel, type ModelScope } from './language-model.js';
 import { toPrompt, toTools, toolSpecsOf } from './provider-request.js';
+import { reasoningDeltaOf, streamTap } from './stream-tap.js';
 import { trackedFetch, type RequestProgress } from './tracked-fetch.js';
 
 type GenerateResult = Awaited<ReturnType<LanguageModel['doGenerate']>>;
@@ -26,15 +29,143 @@ export const MAX_TOOL_CALLS = 32;
 export interface ModelCallExecutorOptions {
   /** The HTTP client handed to the provider SDK; tests pass a fake, production uses `fetch`. */
   readonly fetch?: typeof globalThis.fetch;
+  /** How long a streamed call may go without a byte from the provider (D109); tests shorten it. */
+  readonly streamIdleMs?: number;
+}
+
+/**
+ * A streamed call that gets no byte from the provider for this long has stalled (D109): DeepSeek
+ * sends a piece every few seconds while it works, so the call is ended as failed and asked again,
+ * instead of waiting for the HTTP client's own limit of 300 seconds (experiments m3-textutils).
+ */
+export const STREAM_IDLE_MS = 60_000;
+
+/** A timer that aborts when it is not touched for `ms`; it starts at once. */
+function idleWatch(ms: number): {
+  readonly signal: AbortSignal;
+  readonly touch: () => void;
+  readonly stop: () => void;
+} {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const touch = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      controller.abort();
+    }, ms);
+  };
+  touch();
+  return { signal: controller.signal, touch, stop: () => clearTimeout(timer) };
+}
+
+/**
+ * What an error said, for the fact of the call (D109): the name, code, status, message and the
+ * start of the provider's answer of every error in the chain. The key never appears in it.
+ */
+export function failureDetailOf(error: unknown, secret: string): string | undefined {
+  const parts: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; typeof current === 'object' && current !== null && depth < 5; depth += 1) {
+    const { name, code, statusCode, message, responseBody, cause } = current as {
+      name?: unknown;
+      code?: unknown;
+      statusCode?: unknown;
+      message?: unknown;
+      responseBody?: unknown;
+      cause?: unknown;
+    };
+    const said = [name, code, statusCode, message]
+      .filter((each) => typeof each === 'string' || typeof each === 'number')
+      .map(String);
+    if (typeof responseBody === 'string' && responseBody.length > 0)
+      said.push(responseBody.slice(0, 300));
+    if (said.length > 0) parts.push(said.join(' '));
+    current = cause;
+  }
+  const detail = parts.join(' <- ').split(secret).join('[key]').slice(0, 1000);
+  return detail.length === 0 ? undefined : detail;
 }
 
 /** Seconds or an HTTP date; anything else means no hint (ExecutorSet 7). */
+
 export function retryAfterMsOf(header: string | undefined, now: Date): number | undefined {
   if (header === undefined) return undefined;
   const seconds = Number(header);
   if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
   const at = Date.parse(header);
   return Number.isNaN(at) ? undefined : Math.max(0, at - now.getTime());
+}
+
+type StreamOptions = Parameters<LanguageModel['doStream']>[0];
+
+/**
+ * One streamed request read to its end and put together as the answer `doGenerate` would have
+ * given: the same content parts, finish reason and usage, so everything after it is unchanged.
+ * The watcher is not told from here: it is fed from the network side (`streamTap`).
+ */
+async function generateByStreaming(
+  model: LanguageModel,
+  options: StreamOptions,
+): Promise<GenerateResult> {
+  const { stream } = await model.doStream({ ...options, includeRawChunks: true });
+  const reader = stream.getReader();
+  let text = '';
+  let reasoning = '';
+  let rawUsage: unknown;
+  const calls: { toolCallId: string; toolName: string; input: string }[] = [];
+  let finish:
+    { finishReason: GenerateResult['finishReason']; usage: GenerateResult['usage'] } | undefined;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      switch (value.type) {
+        case 'raw': {
+          // The adapter's own `usage.raw` has lost the fields it does not know, DeepSeek's cache
+          // hits among them, so the chunk as it came is kept.
+          const chunkUsage = (value.rawValue as { usage?: unknown } | null)?.usage;
+          if (typeof chunkUsage === 'object' && chunkUsage !== null) rawUsage = chunkUsage;
+          const delta = reasoningDeltaOf(value.rawValue);
+          if (delta !== undefined) reasoning += delta;
+          break;
+        }
+        case 'text-delta':
+          text += value.delta;
+          break;
+        case 'tool-call':
+          calls.push({
+            toolCallId: value.toolCallId,
+            toolName: value.toolName,
+            input: value.input,
+          });
+          break;
+        case 'finish':
+          finish = { finishReason: value.finishReason, usage: value.usage };
+          break;
+        case 'error':
+          throw value.error instanceof Error
+            ? value.error
+            : new Error('the provider stream failed');
+        default:
+          break;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (finish === undefined) throw new Error('the stream ended without a finish');
+  return {
+    content: [
+      ...(reasoning.length > 0 ? [{ type: 'reasoning' as const, text: reasoning }] : []),
+      ...(text.length > 0 ? [{ type: 'text' as const, text }] : []),
+      ...calls.map((call) => ({ type: 'tool-call' as const, ...call })),
+    ],
+    finishReason: finish.finishReason,
+    usage: finish.usage,
+    warnings: [],
+    // `usageOf` reads DeepSeek's cache hits from the body of the answer.
+    response: { body: { usage: rawUsage } },
+  };
 }
 
 function reasoningOf(result: GenerateResult): string | undefined {
@@ -47,7 +178,11 @@ function reasoningOf(result: GenerateResult): string | undefined {
   return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
 }
 
-/** What each assistant message replays, in message order (ExecutorSet 6.3). */
+/**
+ * What each assistant message replays, in message order (ExecutorSet 6.3): its own thinking, so
+ * the start of the request stays the same from one request to the next and the provider's
+ * prompt cache covers it.
+ */
 const replayOf = (pack: AssembleContextPack): readonly (string | undefined)[] =>
   pack.items.flatMap((item) =>
     item.role === 'assistant'
@@ -64,11 +199,12 @@ const replayOf = (pack: AssembleContextPack): readonly (string | undefined)[] =>
  */
 export function createModelCallExecutor(options: ModelCallExecutorOptions = {}): Executor<'MODEL'> {
   const inner = options.fetch ?? globalThis.fetch;
+  const idleMs = options.streamIdleMs ?? STREAM_IDLE_MS;
   return {
     executionKind: 'MODEL',
     execute: async (input, environment) => {
       try {
-        return await callModel(input, environment, inner);
+        return await callModel(input, environment, inner, idleMs);
       } catch {
         return failureOf('INTERNAL', false, 'UNKNOWN');
       }
@@ -80,6 +216,7 @@ async function callModel(
   input: ModelExecutorInput,
   environment: ExecutorEnvironment,
   inner: typeof globalThis.fetch,
+  idleMs: number,
 ): Promise<ExecutorOutcome> {
   const base = environment.scope;
   if (base.kind !== 'MODEL') return violation('SCOPE_MISSING');
@@ -106,26 +243,75 @@ async function callModel(
   };
   const pack = input.contextPack;
   const replay = forced ? [] : replayOf(pack);
-  const model = createLanguageModel(scope, apiKey, trackedFetch(inner, scope, progress, replay));
+  // The person watching (if any) is told the thinking from the network side, and the end once.
+  const tell = (event: ModelProgressEvent): void => {
+    try {
+      environment.progress?.(event);
+    } catch {
+      // Watching must not change what the call does.
+    }
+  };
   const specs = toolSpecsOf(pack);
-  const end = specs.find((spec) => spec.purpose === 'CONTROL')?.name;
+  // Calling a tool that answers the user (the reply) is told as the start of the answer.
+  const answerTools = new Set(
+    specs.filter((spec) => spec.answer === true).map((spec) => spec.name),
+  );
+  // A streamed call is watched for a stall (D109): every byte off the network touches the timer.
+  const streaming = environment.progress !== undefined;
+  const idle = streaming ? idleWatch(idleMs) : undefined;
+  const watcher = streaming ? streamTap(tell, answerTools) : undefined;
+  const tap =
+    watcher === undefined
+      ? undefined
+      : (bytes: Uint8Array): void => {
+          idle?.touch();
+          watcher(bytes);
+        };
+  const model = createLanguageModel(
+    scope,
+    apiKey,
+    trackedFetch(inner, scope, progress, replay, tap),
+  );
+  // A final call names the end tools it may call (D102); a forced one is forced to the first.
+  const end = input.finishTools?.[0];
   const { limits } = environment;
   let result: GenerateResult;
+  const callOptions = {
+    prompt: toPrompt(pack),
+    ...('maxOutputTokens' in limits ? { maxOutputTokens: limits.maxOutputTokens } : {}),
+    ...(specs.length === 0
+      ? {}
+      : {
+          tools: toTools(specs),
+          toolChoice:
+            forced && end !== undefined
+              ? { type: 'tool' as const, toolName: end }
+              : { type: 'auto' as const },
+        }),
+    abortSignal:
+      idle === undefined ? environment.signal : AbortSignal.any([environment.signal, idle.signal]),
+  };
   try {
-    result = await model.doGenerate({
-      prompt: toPrompt(pack),
-      ...('maxOutputTokens' in limits ? { maxOutputTokens: limits.maxOutputTokens } : {}),
-      ...(specs.length === 0
-        ? {}
-        : {
-            tools: toTools(specs),
-            toolChoice:
-              forced && end !== undefined ? { type: 'tool', toolName: end } : { type: 'auto' },
-          }),
-      abortSignal: environment.signal,
-    });
+    // With a progress callback the request streams, so the person watching sees the thinking as
+    // it comes; the result is built from the whole stream and is the same as a one-shot answer.
+    result =
+      environment.progress === undefined
+        ? await model.doGenerate(callOptions)
+        : await generateByStreaming(model, callOptions);
   } catch (error) {
-    const outcome = classifyCall(error, progress, environment.signal);
+    // A stall is the provider's failure, not a stop: the Workflow asks again, as after any
+    // PROVIDER_ERROR, and the provider may have processed the request (UNKNOWN).
+    if (idle?.signal.aborted === true && !environment.signal.aborted)
+      return {
+        ...failureOf('PROVIDER_ERROR', false, 'UNKNOWN'),
+        detail: `no data from the provider for ${String(idleMs / 1000)} s`,
+      };
+    const classified = classifyCall(error, progress, environment.signal);
+    const detail = failureDetailOf(error, apiKey);
+    const outcome =
+      classified.outcome === 'FAILED' && detail !== undefined
+        ? { ...classified, detail }
+        : classified;
     if (
       outcome.outcome === 'FAILED' &&
       outcome.retryable &&
@@ -136,6 +322,9 @@ async function callModel(
       if (retryAfterMs !== undefined) return { ...outcome, retryAfterMs };
     }
     return outcome;
+  } finally {
+    idle?.stop();
+    if (environment.progress !== undefined) tell({ kind: 'END' });
   }
   return completedCall(result, base, environment, input);
 }
@@ -152,7 +341,7 @@ export function failureOf(
   retryable: boolean,
   requestState: RequestState,
   usage?: TokenUsage,
-): ExecutorOutcome {
+): Extract<ExecutorOutcome, { outcome: 'FAILED' }> {
   return {
     outcome: 'FAILED',
     reasonCode,
@@ -207,11 +396,7 @@ function completedCall(
   );
   const toolCalls = rawCalls.slice(0, MAX_TOOL_CALLS).map(parseCall);
   const usage = usageOf(result);
-  const ends = new Set(
-    toolSpecsOf(input.contextPack)
-      .filter((spec) => spec.purpose === 'CONTROL')
-      .map((spec) => spec.name),
-  );
+  const ends = new Set(input.finishTools ?? []);
   const only = toolCalls[0];
   if (
     input.final &&
@@ -245,11 +430,12 @@ function completedCall(
   };
   const output: ModelCallOutput =
     toolCalls.length > 0
-      ? { finishReason: 'TOOL_CALLS', toolCalls, hasText: text.length > 0, hasReasoning }
+      ? { finishReason: 'TOOL_CALLS', toolCalls, hasText: text.trim().length > 0, hasReasoning }
       : {
           finishReason: finishReasonOf(result.finishReason.unified),
           toolCalls: [],
-          hasText: text.length > 0,
+          // Blank text is no text: an answer written as text must say something (D97).
+          hasText: text.trim().length > 0,
           hasReasoning,
         };
   return {
@@ -269,17 +455,14 @@ export function parseCall(call: {
   toolName: string;
   argumentsText: string;
 }): ModelToolCall {
-  try {
-    const parsed: unknown = JSON.parse(call.argumentsText);
-    if (parsed !== null)
-      return {
-        toolCallId: call.toolCallId,
-        toolName: call.toolName,
-        arguments: parsed as Record<string, unknown>,
-      };
-  } catch {
-    // falls through to INVALID_JSON
-  }
+  // Read leniently, as every other reader of the call reads it (D75).
+  const parsed = parseToolArguments(call.argumentsText);
+  if (parsed !== null && parsed !== undefined)
+    return {
+      toolCallId: call.toolCallId,
+      toolName: call.toolName,
+      arguments: parsed as Record<string, unknown>,
+    };
   return {
     toolCallId: call.toolCallId,
     toolName: call.toolName,

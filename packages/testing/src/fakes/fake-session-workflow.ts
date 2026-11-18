@@ -86,9 +86,10 @@ export function createFakeSessionWorkflow(gateway: WorkflowGatewayPort): FakeSes
         const at = new Date().toISOString();
         sessions.set(sessionId, {
           sessionId,
+          repositoryRoot: event.repositoryRoot,
           createdAt: at,
           lastActiveAt: at,
-          turnCount: 0,
+          inputCount: 0,
           status: 'ACTIVE',
         });
       }
@@ -96,8 +97,14 @@ export function createFakeSessionWorkflow(gateway: WorkflowGatewayPort): FakeSes
         sessionId,
         event.commandId,
         event.command === 'FORK'
-          ? { command: 'FORK', outcome: 'READY', inheritedArtifacts: [], fromTurnCount: 0 }
-          : { command: event.command, outcome: 'READY' },
+          ? { command: 'FORK', outcome: 'READY', inheritedArtifacts: [], fromInputCount: 0 }
+          : event.command === 'OPEN'
+            ? {
+                command: 'OPEN',
+                outcome: 'READY',
+                inputCount: sessions.get(sessionId)?.inputCount ?? 0,
+              }
+            : { command: 'CREATE', outcome: 'READY' },
       );
     },
   };

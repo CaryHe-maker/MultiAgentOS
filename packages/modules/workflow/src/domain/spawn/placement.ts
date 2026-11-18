@@ -12,7 +12,7 @@ export interface Placement {
   readonly writeRoots: readonly string[];
   /** Of a SubAgent: who started it, under which delegation, for which task. */
   readonly link?: {
-    readonly parentAgentRunId: string;
+    readonly parentAgentRunId?: string;
     readonly delegationId: string;
     readonly taskName: string;
   };
@@ -26,14 +26,16 @@ export function placementOf(
     readonly effort: ThinkingEffort;
     readonly writeRoots: readonly string[];
   },
-  dispatch?: { readonly parentAgentRunId: string; readonly delegationId: string },
+  dispatch?: { readonly parentAgentRunId?: string; readonly delegationId: string },
 ): Placement {
   const { spawn } = node;
   if (spawn === undefined || dispatch === undefined)
     return { effort: agent.effort, label: agent.label, writeRoots: agent.writeRoots };
   return {
     effort: spawn.effort ?? agent.effort,
-    label: `${agent.label} ${node.name}`,
+    // A task that inherits runs as its caller's Agent but is the one its phase names (D35): the
+    // activity area calls it that, not by the caller it comes from.
+    label: `${spawn.inherits?.as ?? agent.label} ${node.name}`,
     writeRoots: spawn.writeScope,
     link: { ...dispatch, taskName: node.name },
   };

@@ -25,7 +25,7 @@ import { RunLedgers, minShare } from '../monitor/index.js';
 import { testAgentBudget, testPinnedAgent, testScheduler } from '../test-support/run-work.js';
 import type { ExecutionConfig } from './attempt-request.js';
 import { RunAttempts, type AttemptFault, type AttemptSpec } from './run-attempts.js';
-import { RunExecution, type RetryingActivity } from './run-execution.js';
+import { RunExecution, concurrencyClassOf, type RetryingActivity } from './run-execution.js';
 import { SessionArtifacts } from './session-artifacts.js';
 
 const tool = {
@@ -37,7 +37,6 @@ const tool = {
 };
 const config: ExecutionConfig = {
   executionLimits: {
-    REPOSITORY_ORIENT: tool,
     REPOSITORY_SEARCH: tool,
     REPOSITORY_LIST: tool,
     FILE_READ: tool,
@@ -54,9 +53,6 @@ const config: ExecutionConfig = {
   },
   retryBackoffBaseMs: 100,
   retryAfterMaxMs: 5000,
-  maxReportBytes: 1000,
-  maxSnapshotFiles: 100,
-  orientBudget: 100,
   searchBudget: 100,
   cancelGraceMs: 10,
   pauseDrainMs: 50,
@@ -81,9 +77,13 @@ function setup(
   options: {
     converging?: boolean;
     maxConcurrentAttempts?: number;
+    maxConcurrentExec?: number;
     serialExecution?: boolean;
     /** Call slots; the test can change them. */
     slots?: { free: number };
+    protectedPaths?: { snapshot: () => Promise<ReadonlySet<string>> };
+    /** An assembly past the trigger waits for this compaction before it is delivered. */
+    compaction?: () => Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'>;
   } = {},
 ) {
   const bodies = new Map<string, Uint8Array>();
@@ -124,15 +124,20 @@ function setup(
     now: () => new Date(NOW),
   });
   const ledgers = new RunLedgers(
-    { runTokenLimit: minShare(testAgentBudget) * 4, turnTokenLimit: minShare(testAgentBudget) * 2 },
+    {
+      runTokenLimit: minShare(testAgentBudget) * 4,
+      inputTokenLimit: minShare(testAgentBudget) * 2,
+    },
     testAgentBudget,
   );
-  ledgers.openTurnLedger('trn_1');
+  ledgers.openInputLedger('trn_1');
   const dispatched: ExecutionRequest[] = [];
   const reports: UnitReport[] = [];
   const ended: string[] = [];
   const faults: AttemptFault[] = [];
   const retries: RetryingActivity[] = [];
+  const audits: object[] = [];
+  const releasedBytes: number[] = [];
   const cancelled: number[] = [];
   const cancelledExecutions: { executionId: string; reason: string }[] = [];
   const timers: { delayMs: number; due: () => void; cancelled: boolean }[] = [];
@@ -159,7 +164,23 @@ function setup(
       return Promise.resolve();
     },
     written: () => Promise.resolve(),
+    ...(options.protectedPaths === undefined
+      ? {}
+      : {
+          protectedPaths: {
+            snapshot: options.protectedPaths.snapshot,
+            quarantine: () => Promise.resolve([]),
+          },
+        }),
+    ...(options.compaction === undefined
+      ? {}
+      : {
+          compactionDue: () => true,
+          afterAssemble: options.compaction,
+        }),
     retrying: (activity) => retries.push(activity),
+    audit: (entry) => audits.push(entry),
+    released: (bytes) => releasedBytes.push(bytes),
     readRepositoryFile: (path) => Promise.resolve(path === 'AGENTS.md' ? 'be careful' : undefined),
     enqueue: (work) => {
       void work();
@@ -176,7 +197,8 @@ function setup(
     newAttemptId: () => nextId('una'),
     limits: {
       maxAttempts: options.maxConcurrentAttempts ?? 6,
-      maxExec: 1,
+      maxExec: options.maxConcurrentExec ?? 1,
+      maxWeb: 10,
       serial: options.serialExecution === true,
     },
   });
@@ -222,7 +244,6 @@ function setup(
       requestId: testId('req', requests),
       agentRunId: testId('agr', agentRun),
       unitRunId: testId('unr', requests),
-      turnId: testId('trn'),
       unit: testUnitDefinition(kind),
       input: input as UnitInput,
       scope,
@@ -271,6 +292,8 @@ function setup(
     ended,
     faults,
     retries,
+    audits,
+    releasedBytes,
     cancelled,
     cancelledExecutions,
     timers,
@@ -352,6 +375,40 @@ describe('the queues (M2Design 7.1)', () => {
   });
 });
 
+describe('the queue class of a command (M2Design 7.1, D87)', () => {
+  const command = (backend: 'BWRAP' | 'UNISOLATED', writableRoots: string[]) =>
+    ({
+      unit: { executionKind: 'COMMAND' },
+      scope: {
+        kind: 'SANDBOX',
+        backend,
+        approvalDigest: 'a'.repeat(64),
+        profile: {
+          repositoryRoot: '/repo',
+          workdir: '',
+          writableRoots,
+          network: false,
+          homeReadOnly: [],
+          homeMaskedFiles: [],
+          maskedFiles: [],
+          maskedDirs: [],
+          protectedExisting: [],
+        },
+      },
+    }) as unknown as Pick<AttemptSpec, 'unit' | 'scope'>;
+
+  it('reads a line of the read-only list in a sandbox, and writes with a writable root', () => {
+    expect(concurrencyClassOf(command('BWRAP', []))).toBe('READ');
+    expect(concurrencyClassOf(command('BWRAP', ['src']))).toBe('EXEC');
+  });
+
+  it('reads one without a sandbox only where Landlock holds its writes', () => {
+    expect(concurrencyClassOf(command('UNISOLATED', []))).toBe('EXEC');
+    expect(concurrencyClassOf(command('UNISOLATED', []), true)).toBe('READ');
+    expect(concurrencyClassOf(command('UNISOLATED', ['src']), true)).toBe('EXEC');
+  });
+});
+
 describe('results', () => {
   it('keeps the preview for the Session and the full output for seven days', async () => {
     const run = setup();
@@ -393,31 +450,6 @@ describe('results', () => {
 });
 
 describe('resolving references', () => {
-  it('turns objectiveRef into the objective', async () => {
-    const run = setup();
-    const objectiveRef = await run.artifacts.storeUserInput({
-      inputId: testId('inp'),
-      text: 'why?',
-    });
-    await run.submit('REPOSITORY_ORIENT', { objectiveRef });
-    expect(run.last().input).toMatchObject({ objective: 'why?' });
-  });
-
-  it('refuses an objective of another Session before anything runs', async () => {
-    const run = setup();
-    const other = setup();
-    const objectiveRef = await other.artifacts.storeUserInput({
-      inputId: testId('inp'),
-      text: 'theirs',
-    });
-    await run.submit('REPOSITORY_ORIENT', { objectiveRef });
-    expect(run.dispatched).toEqual([]);
-    expect(run.reports[0]).toMatchObject({
-      status: 'REJECTED',
-      reasonCode: 'INVALID_ARTIFACT_REF',
-    });
-  });
-
   it('assembles history from artifacts, and tells the model what a refusal means', async () => {
     const run = setup();
     const contentRef = await run.artifacts.storeUserInput({
@@ -437,7 +469,7 @@ describe('resolving references', () => {
       'SESSION',
     );
     const reasoningRef = await run.artifacts.put('secret thoughts', 'text/plain', 'SESSION');
-    const entry = { category: 'NORMAL', turnId: testId('trn') };
+    const entry = { category: 'NORMAL' };
     await run.submit(
       'CONTEXT_ASSEMBLE',
       {
@@ -466,7 +498,7 @@ describe('resolving references', () => {
         status: {
           round: 1,
           maxRounds: 10,
-          budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
           final: false,
         },
       },
@@ -511,10 +543,45 @@ describe('technical retries', () => {
     const contextPackRef = await run.artifacts.put(
       canonicalJson(contextPack()),
       MEDIA_TYPES.contextPack,
-      'EXPIRING',
+      'ONCE',
     );
     await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope });
+    return contextPackRef;
   }
+
+  it('puts every failed model call on the audit with what the error said (D109)', async () => {
+    const run = setup();
+    await atModel(run);
+    await run.execution.handleFact(
+      run.factFor(run.last(), failure({ detail: 'TypeError fetch failed <- ECONNREFUSED' })),
+    );
+    await run.execution.handleFact(
+      run.factFor(
+        run.last(),
+        failure({
+          reasonCode: 'PROVIDER_ERROR',
+          retryable: false,
+          requestState: 'UNKNOWN',
+          detail: 'no data from the provider for 60 s',
+        }),
+      ),
+    );
+    // The retried attempt and the last one are both on record, each with its own cause.
+    expect(
+      run.audits.filter((entry) => (entry as { type?: string }).type === 'MODEL_FAILED'),
+    ).toMatchObject([
+      {
+        reasonCode: 'PROVIDER_UNREACHABLE',
+        retryable: true,
+        detail: 'TypeError fetch failed <- ECONNREFUSED',
+      },
+      {
+        reasonCode: 'PROVIDER_ERROR',
+        retryable: false,
+        detail: 'no data from the provider for 60 s',
+      },
+    ]);
+  });
 
   it('waits for the longer of the back-off and Retry-After, and says so', async () => {
     const run = setup();
@@ -526,6 +593,41 @@ describe('technical retries', () => {
 
     await run.execution.handleFact(run.factFor(run.last(), failure()));
     expect(run.last().notBefore).toBe('2026-11-02T00:00:00.200Z');
+  });
+
+  it('keeps the context pack while it retries, and releases it when the attempt is over (Execution 6d)', async () => {
+    const run = setup();
+    const pack = await atModel(run);
+    await run.execution.handleFact(run.factFor(run.last(), failure()));
+    expect(run.dispatched).toHaveLength(2);
+    // A retry reads the same pack again: it is still there, and nothing was released.
+    expect(await run.artifacts.read(pack)).toMatchObject({ ok: true });
+    expect(run.releasedBytes).toEqual([]);
+
+    await run.execution.handleFact(run.factFor(run.last(), failure({ retryable: false })));
+    expect(run.reports[0]).toMatchObject({ status: 'FAILED' });
+    expect(await run.artifacts.read(pack)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
+    expect(run.releasedBytes).toEqual([pack.size]);
+  });
+
+  it('releases the context pack of an attempt that gave up on a long Retry-After', async () => {
+    const run = setup();
+    const pack = await atModel(run);
+    await run.execution.handleFact(run.factFor(run.last(), failure({ retryAfterMs: 5001 })));
+    expect(await run.artifacts.read(pack)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
+  });
+
+  it('does not release what is kept for the Session, only what was registered ONCE', async () => {
+    const run = setup();
+    const pack = await run.artifacts.put(
+      canonicalJson(contextPack()),
+      MEDIA_TYPES.contextPack,
+      'SESSION',
+    );
+    await run.submit('MODEL', { contextPackRef: pack, final: false }, { ...modelScope });
+    await run.execution.handleFact(run.factFor(run.last(), failure({ retryable: false })));
+    expect(await run.artifacts.read(pack)).toMatchObject({ ok: true });
+    expect(run.releasedBytes).toEqual([]);
   });
 
   it('gives up when Retry-After is too long, with the original reason', async () => {
@@ -799,6 +901,82 @@ describe('pausing and aborting (Kernel/Execution 4e)', () => {
     expect(run.faults).toEqual([]);
   });
 
+  it('cancels the attempts of one AgentRun only, its queued ones too (Orchestration 5.1)', async () => {
+    const run = setup();
+    const contextPackRef = await modelPack(run);
+    await run.submit('MODEL', { contextPackRef, final: false }, { ...modelScope }, 1);
+    await run.submit('FILE_READ', fileInput, repository, 1);
+    await run.submit('FILE_READ', { path: 'b.ts' }, repository, 2);
+    expect(run.dispatched).toHaveLength(2);
+    run.execution.abortAgentRun(testId('agr', 1));
+    // The model call of AgentRun 1 is cancelled, its queued read answers at once, and the read of
+    // AgentRun 2 goes on untouched.
+    expect(run.cancelledExecutions).toEqual([
+      { executionId: run.dispatched[0]?.executionId, reason: 'ABORTED' },
+    ]);
+    expect(run.reports.map((report) => report.status)).toEqual(['INTERRUPTED']);
+    await run.execution.handleFact(run.factFor(run.dispatched[1] as never, run.fileResult()));
+    expect(run.reports.map((report) => report.status)).toEqual(['INTERRUPTED', 'OK']);
+  });
+
+  it('interrupts an assembly held for its compaction at once, not as a stop it cannot confirm', async () => {
+    // The real case (2026-11-14): a worker's assembly came out past the trigger and waited for a
+    // compaction; its parent interrupted it meanwhile. The assembly's execution had already ended,
+    // so no fact of a stop would ever come.
+    let compactionDone: (verdict: 'PROCEED') => void = () => undefined;
+    const run = setup({
+      compaction: () =>
+        new Promise((resolve) => {
+          compactionDone = resolve;
+        }),
+    });
+    await run.submit(
+      'CONTEXT_ASSEMBLE',
+      {
+        final: false,
+        history: [],
+        status: {
+          round: 2,
+          maxRounds: 10,
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
+          final: false,
+        },
+      },
+      { kind: 'NONE' },
+    );
+    await run.execution.handleFact(
+      run.factFor(run.last(), {
+        outcome: 'COMPLETED',
+        result: {
+          output: {
+            contextPackId: testId('ctx'),
+            tokenCount: 95_000,
+            tokenBudget: 100_000,
+            prefixSha256: 'a'.repeat(64),
+            projectionDigest: 'b'.repeat(64),
+            headDigest: 'c'.repeat(64),
+            elidedEntries: [],
+          },
+          artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
+        },
+      }),
+    );
+    expect(run.reports).toEqual([]);
+    run.execution.abortAgentRun(testId('agr', 1));
+    // Every grace the abort set runs out; the run must not be judged unconfirmed for it.
+    for (const timer of [...run.timers]) if (!timer.cancelled) timer.due();
+    expect(run.faults).toEqual([]);
+    expect(run.execution.unknownEffects()).toEqual([]);
+    expect(run.reports).toEqual([
+      expect.objectContaining({ status: 'INTERRUPTED', interruptedBy: 'ABORTED' }),
+    ]);
+    // The compaction that ends later answers nothing more.
+    compactionDone('PROCEED');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(run.reports).toHaveLength(1);
+    expect(run.faults).toEqual([]);
+  });
+
   it('judges a run that does not stop unconfirmed after the grace', async () => {
     const run = setup();
     await run.submit('FILE_READ', fileInput);
@@ -820,5 +998,55 @@ describe('pausing and aborting (Kernel/Execution 4e)', () => {
       { kind: 'NONE' },
     );
     expect(run.reports.at(-1)).toMatchObject({ status: 'OK', output: { kind: 'DEGRADED_REPLY' } });
+  });
+
+  it('does not run a command whose protected paths cannot be listed, and says the check failed', async () => {
+    const run = setup({
+      protectedPaths: { snapshot: () => Promise.reject(new Error('SANDBOX_SCAN_INCOMPLETE')) },
+    });
+    await run.submit('COMMAND', { command: 'ls', workdir: '', timeoutMs: 1000, network: false });
+    // Nothing was sent: what such a command created in a protected place could not be taken away.
+    expect(run.dispatched).toEqual([]);
+    expect(run.reports.at(-1)).toMatchObject({
+      status: 'REJECTED',
+      reasonCode: 'ADMISSION_CHECK_FAILED',
+    });
+  });
+
+  it('runs unisolated commands side by side where the roots of their tasks do not meet (D60)', async () => {
+    const run = setup({
+      maxConcurrentExec: 4,
+      protectedPaths: { snapshot: () => Promise.resolve(new Set<string>()) },
+    });
+    const unisolated = (writableRoots: string[]): AttemptSpec['scope'] => ({
+      kind: 'SANDBOX',
+      backend: 'UNISOLATED',
+      approvalDigest: 'a'.repeat(64),
+      profile: {
+        repositoryRoot: '/repository',
+        workdir: '',
+        writableRoots,
+        network: false,
+        homeReadOnly: [],
+        homeMaskedFiles: [],
+        maskedFiles: [],
+        maskedDirs: [],
+        protectedExisting: [],
+      },
+    });
+    const command = { command: 'make', workdir: '', timeoutMs: 1000, network: false };
+    await run.submit('COMMAND', command, unisolated(['src/a']), 1);
+    await run.submit('COMMAND', command, unisolated(['src/b']), 2);
+    await run.submit('COMMAND', command, unisolated(['src/a/x']), 3);
+    // Without a sandbox the commands of different tasks are not run one at a time: only the one
+    // that may write where another runs waits.
+    expect(run.dispatched.filter((request) => request.executionKind === 'COMMAND')).toHaveLength(2);
+  });
+
+  it('goes on to build the request of a command whose protected paths could be listed', async () => {
+    const run = setup({ protectedPaths: { snapshot: () => Promise.resolve(new Set<string>()) } });
+    await run.submit('COMMAND', { command: 'ls', workdir: '', timeoutMs: 1000, network: false });
+    // (This scope is no sandbox, so the request is refused later, and for another reason.)
+    expect(run.reports.at(-1)).not.toMatchObject({ reasonCode: 'ADMISSION_CHECK_FAILED' });
   });
 });

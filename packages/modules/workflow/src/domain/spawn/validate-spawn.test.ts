@@ -1,15 +1,14 @@
-import type { RunSubagentsArgs } from '@multiagentos/contracts';
+import type { SpawnRequest } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import { validateSpawn, type SpawnContext } from './validate-spawn.js';
+import { nearestEffort, validateSpawn, type SpawnContext } from './validate-spawn.js';
 
 const context = (overrides: Partial<SpawnContext> = {}): SpawnContext => ({
-  rules: { maxSubagentsPerCall: 4, maxDependencyDepth: 2, maxTasks: 12, maxSpawnCalls: 4 },
+  rules: { maxSubagentsPerCall: 4, maxDependencyDepth: 2 },
   agents: new Map([
     ['explorer', { writes: false, allowedEfforts: ['none', 'low'] }],
     ['worker', { writes: true, allowedEfforts: ['low', 'high', 'max'] }],
   ]),
   callerRoots: ['.'],
-  spawned: { tasks: 0, calls: 0 },
   readable: () => true,
   ...overrides,
 });
@@ -27,7 +26,7 @@ const worker = (name: string, writeScope: string[], extra: object = {}) => ({
   writeScope,
   ...extra,
 });
-const codes = (args: RunSubagentsArgs, ctx = context()) => {
+const codes = (args: SpawnRequest, ctx = context()) => {
   const result = validateSpawn(args, ctx);
   return result.ok ? [] : result.errors.map((error) => error.code);
 };
@@ -103,29 +102,53 @@ describe('validateSpawn', () => {
     ]);
   });
 
-  it('lets tasks that wait for each other share files', () => {
+  it('refuses workers that write the same files one after the other (D55)', () => {
     expect(
       codes({ tasks: [worker('a', ['src']), worker('b', ['src/api'], { dependsOn: ['a'] })] }),
+    ).toEqual(['WRITE_SCOPE_CHAIN']);
+  });
+
+  it('lets a worker wait for another that writes other files', () => {
+    expect(
+      codes({ tasks: [worker('a', ['src/a']), worker('b', ['src/b'], { dependsOn: ['a'] })] }),
     ).toEqual([]);
   });
 
-  it('keeps an effort inside what the Agent allows', () => {
-    expect(codes({ tasks: [explorer('e', { effort: 'max' })] })).toEqual(['EFFORT_NOT_ALLOWED']);
-    expect(codes({ tasks: [worker('w', ['src'], { effort: 'none' })] })).toEqual([
-      'EFFORT_NOT_ALLOWED',
+  it('sets an effort the Agent does not allow to the nearest it does, and starts the task', () => {
+    const efforts = (args: SpawnRequest) => {
+      const result = validateSpawn(args, context());
+      expect(result.ok).toBe(true);
+      return result.ok ? result.plan.tasks.map((task) => task.effort) : [];
+    };
+    // An explorer thinks at none or low; a worker at low, high or max.
+    expect(
+      efforts({ tasks: [explorer('a', { effort: 'high' }), explorer('b', { effort: 'max' })] }),
+    ).toEqual(['low', 'low']);
+    expect(efforts({ tasks: [worker('w', ['src'], { effort: 'none' })] })).toEqual(['low']);
+    // What is allowed stays, and no effort stays none.
+    expect(
+      efforts({
+        tasks: [
+          explorer('a', { effort: 'none' }),
+          worker('w', ['src'], { effort: 'max' }),
+          explorer('c'),
+        ],
+      }),
+    ).toEqual(['none', 'max', undefined]);
+  });
+
+  it('does not let an effort that is set right keep a task that is wrong from being refused', () => {
+    expect(codes({ tasks: [{ name: 'w', agent: 'worker', goal: 'x', effort: 'none' }] })).toEqual([
+      'WRITE_SCOPE_REQUIRED',
     ]);
   });
 
-  it('counts tasks and calls per Turn', () => {
-    expect(codes({ tasks: [explorer('a')] }, context({ spawned: { tasks: 0, calls: 4 } }))).toEqual(
-      ['SPAWN_LIMIT'],
-    );
-    expect(
-      codes(
-        { tasks: [explorer('a'), explorer('b')] },
-        context({ spawned: { tasks: 11, calls: 1 } }),
-      ),
-    ).toEqual(['SPAWN_LIMIT']);
+  it('finds the nearest effort, the lower one when two are as near', () => {
+    expect(nearestEffort('high', ['none', 'low'])).toBe('low');
+    expect(nearestEffort('max', ['none', 'low'])).toBe('low');
+    expect(nearestEffort('none', ['low', 'high', 'max'])).toBe('low');
+    expect(nearestEffort('low', ['none', 'high'])).toBe('none');
+    expect(nearestEffort('high', [])).toBeUndefined();
   });
 
   it('hands over only what the caller can read', () => {
@@ -141,9 +164,13 @@ describe('validateSpawn', () => {
   });
 
   it('reports every rule that fails, not only the first', () => {
-    expect(codes({ tasks: [{ name: 'w', agent: 'worker', goal: 'x', effort: 'none' }] })).toEqual([
-      'EFFORT_NOT_ALLOWED',
-      'WRITE_SCOPE_REQUIRED',
-    ]);
+    expect(
+      codes({
+        tasks: [
+          { name: 'w', agent: 'worker', goal: 'x' },
+          { name: 'v', agent: 'worker', goal: 'y' },
+        ],
+      }),
+    ).toEqual(['WRITE_SCOPE_REQUIRED', 'WRITE_SCOPE_REQUIRED']);
   });
 });

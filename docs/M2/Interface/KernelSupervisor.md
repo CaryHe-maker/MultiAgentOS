@@ -1,6 +1,6 @@
 # MultiAgentOS M2 接口：Kernel 内部的沙盒与执行取消
 
-> 状态：草稿（阶段 3，待评审）。设计以 [M2Design](../M2Design.md) 第 4.7、5、6、7.6、7.7 节为准，本文只写字段与调用关系。
+> 状态：已实现；发布前再与代码核对一次。设计以 [M2Design](../M2Design.md) 第 4.7、5、6、7.6、7.7 节为准，本文只写字段与调用关系。
 > 版本规则、命名与 Schema 清单见 [README](README.md)；发布版只有 major 1。
 
 ## 1. 范围
@@ -20,7 +20,7 @@ SandboxProfile 由 Core 在签发 `command.exec` 的 Lease 时计算，Execution
 interface SandboxProfile {
   repositoryRoot: string;          // realpath
   workdir: string;                 // 相对仓库根目录，根目录为 ''；realpath 后必须在仓库内
-  writableRoots: string[];         // 相对仓库根目录；main 为 ['']，worker 为 writeScope（阶段 4）
+  writableRoots: string[];         // 相对仓库根目录；main 为 ['']，worker 为 writeScope
   network: boolean;                // 只有批准了 command.network 的那一条命令为 true
   homeReadOnly: string[];          // 以只读挂回的 $HOME 下的工具链与缓存目录（绝对路径；配置 kernel.sandboxHomeReadOnly）
   homeMaskedFiles: string[];       // 挂回目录中的凭据文件，以空文件遮蔽（绝对路径；缺省列表可追加、不可删除）
@@ -39,7 +39,7 @@ type SandboxScope = {
 };
 ```
 
-`writableRoots` 与 Core 的第 ③ 步判定、文件工具使用同一个函数 `writableRoots(profile)`（contracts，阶段 2 的 `isWritable` 旁）；沙盒的 `--bind` 参数由它得出，三处使用同一份结果（不变量 5.4 的第 4 层）。
+`writableRoots` 与 Core 的第 ③ 步判定、文件工具使用同一个函数 `writableRoots(profile)`（contracts，在 `isWritable` 旁）；沙盒的 `--bind` 参数由它得出，三处使用同一份结果（不变量 5.4 的第 4 层）。
 
 ## 3. 批准绑定确切内容
 
@@ -57,7 +57,7 @@ approvalDigest = sha256(canonicalJson({ command, workdir, network, writableRoots
 
 ```ts
 // executor.CommandInput（Workflow 填 command、workdir?、timeoutMs?、network?；模型看到的 RunCommandArgs 相同）
-interface RunCommandArgs { command: string /* 1..8000 */; workdir?: string; timeoutMs?: number /* ≤ 600000 */; network?: boolean }
+interface RunCommandArgs { command: string /* 1..32000，Orchestration D85 */; workdir?: string; timeoutMs?: number /* ≤ 600000 */; network?: boolean }
 
 // kernel.execution.CommandExecutorInput（Core 补全后交给 Executor）
 interface CommandExecutorInput { command: string; timeoutMs: number }
@@ -103,9 +103,11 @@ interface SandboxRunner {
 只有 `executionKind = 'COMMAND'` 的 Executor 拿到真实的 `SandboxRunner`，其余得到一个拒绝一切的实现。
 
 **停止的升级**（M2Design 第 4.7 节）：`signal` 触发后，对 `--json-status-fd` 报告的 `child-pid` 的进程组发 SIGTERM；`cancelGraceMs` 后对外层进程组发 SIGKILL；再等 `killGraceMs`。仍无法确认已停止时，`run` 以特殊拒绝 `STOP_UNCONFIRMED` 结束，
-Supervisor 上报 `ExecutionFact(STOP_UNCONFIRMED)`；Core 收到后经 `reportSystemFault` 停机。
+Supervisor 上报 `ExecutionFact(STOP_UNCONFIRMED)`；Core 收到后经 `reportSystemFault` 停机。`UNISOLATED` 的命令没有 PID 命名空间，它是自己会话的首进程：两次信号都发给这个会话里的每个进程（从 `/proc` 按会话号找，僵尸进程除外）和它的进程组，所以换了进程组的子进程（例如 `timeout` 运行的程序）也一并停止（Orchestration D84）。
 
 **可用性探测**：Session 开始时以真实的 profile 运行一次 `/bin/true`（仓库根目录为工作目录）。结果 `SandboxProbe { available: boolean; backend; reason?: 'NO_BWRAP' | 'USERNS_DENIED' | 'PROFILE_FAILED'; hint?: string }` 写入 `SESSION_STARTED` 的 `sandbox`（`state`: `ISOLATED`、`UNISOLATED`、`UNAVAILABLE`，不可用时带 `reason`）与每个 Session 的审计（`SANDBOX_PROBED`）；模型在运行时上下文中看到同一状态。不可用且 `sandbox.unavailable = deny` 时，命令工具不提供给任何 Agent。
+
+**未隔离命令的写入限制（D79）**：`UNISOLATED` 的命令不再直接以 `bash -c` 启动，而是先由一个 Python 小程序（`ctypes`，以 `python3 -I -c` 传入，不安装文件）用 Landlock 把写入限制在：该任务存在的可写根目录、`/tmp`、`/var/tmp`、`/dev`、家目录下的 `.cache` 与 `.npm`，再在同一进程里 `exec` 那个 shell（进程号不变，停止与进程组照旧）；限制对命令启动的所有子进程都有效，读取不受限。Landlock 不需要特权，也不需要用户命名空间，所以在 `bwrap` 跑不起来的容器里也能用（Linux 5.13 起）。`createSandboxRunner` 启动时探测一次（`probeLandlock`，记下解释器的绝对路径），结果在 `TrackedSandboxRunner.unisolatedWritesEnforced`；探测失败（内核不支持、没有 python3）时未隔离命令照旧运行，写入范围不强制；探测成功而某条命令设置限制失败时，这条命令不运行（退出码 126），不会在没有限制的情况下运行。限制只按允许列表：可写根目录为整个仓库（`.`）时，其中受保护的路径不能再单独排除，这与未隔离时一样；仓库本身在 `/tmp` 或 `/var/tmp` 里时，那个临时目录不放开（放开就等于整个仓库可写），这时命令写不了它，可写根目录仍然有效。
 
 ## 7. cancelExecution
 
@@ -113,13 +115,13 @@ Supervisor 上报 `ExecutionFact(STOP_UNCONFIRMED)`；Core 收到后经 `reportS
 interface CancelExecutionRequest { executionId: ExecutionId; runEpoch: number; reason: 'PAUSED' | 'ABORTED' }
 ```
 
-`SupervisorPort.cancelExecution`（阶段 3 已实现；未知、已结束或 `runEpoch` 不符的执行被忽略，重复请求保留第一个原因）：对一个执行发出中止，停止升级同上；结果仍以 `ExecutionFact` 交付，被取消的执行为 `TERMINATED`，`reasonCode = EXECUTION_CANCELLED`；`reason` 随事实交回，Execution 据此形成 `INTERRUPTED(PAUSED | ABORTED)`（阶段 5 用 `PAUSED`）。`cancelRun` 保留，用于收敛。
+`SupervisorPort.cancelExecution`（未知、已结束或 `runEpoch` 不符的执行被忽略，重复请求保留第一个原因）：对一个执行发出中止，停止升级同上；结果仍以 `ExecutionFact` 交付，被取消的执行为 `TERMINATED`，`reasonCode = EXECUTION_CANCELLED`；`reason` 随事实交回，Execution 据此形成 `INTERRUPTED(PAUSED | ABORTED)`（暂停用 `PAUSED`）。`cancelRun` 保留，用于收敛。
 
 ## 8. 内存压力与中断
 
 ```ts
 interface MemoryPressure { source: 'PROCESS' | 'SYSTEM'; level: 'WARNING' | 'DANGER'; ratio: number; rss: number; heapRatio: number; availableBytes?: number }  // 控制消息，Monitor → Core
-type InterruptReason = 'MEMORY_PRESSURE' | 'USER_ABORT' | 'TURN_TIMEOUT' | 'PAUSE_TIMEOUT';   // 后三种阶段 5 加入，入口同一个 `interrupt(reason)`（Core 第 5e 节）
+type InterruptReason = 'MEMORY_PRESSURE' | 'USER_ABORT' | 'TURN_TIMEOUT' | 'PAUSE_TIMEOUT';   // 入口都是同一个 `interrupt(reason)`（Core 第 5e 节）
 RunInterrupted { workflowRunId; reason: InterruptReason }                      // Kernel → Workflow 事件
 WrapUpReason += 'MEMORY_LIMIT';  QuotaKind += 'MEMORY';  RunReport / closeRun 原因 += 'INTERRUPTED'
 ```

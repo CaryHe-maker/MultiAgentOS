@@ -81,6 +81,25 @@ describe('HTML as Markdown for a model', () => {
     expect(markdown).toBe('# Real\n\nBody.');
   });
 
+  it('takes time in proportion to the size of the page, because it runs on the one thread of the program', () => {
+    // A page of many blocks: the conversion once recounted everything written at every block, so
+    // 400 KB took twelve seconds and a page of the largest size the fetch allows took minutes,
+    // while nothing else in the process (the other fetches, the models, the screen) could run.
+    const row =
+      '<div class="item"><a href="/school/1.html">学校名称</a><p>2024 年 理科 招生计划 <b>120</b></p><ul><li>一</li><li>二</li></ul></div>\n';
+    const html = page(row.repeat(Math.ceil((2 * 1024 * 1024) / row.length)));
+    const started = performance.now();
+    const { markdown } = htmlToMarkdown(html);
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(markdown.length).toBeGreaterThan(500_000);
+  });
+
+  it('writes the line breaks between blocks exactly once, however the blocks follow each other', () => {
+    expect(htmlToMarkdown('<p>a</p><p></p><p></p><p>b</p>').markdown).toBe('a\n\nb');
+    expect(htmlToMarkdown('<p>a</p>\n\n\n<p>b</p>').markdown).toBe('a\n\nb');
+    expect(htmlToMarkdown('<ul><li>a</li></ul><ul><li>b</li></ul>').markdown).toContain('a');
+  });
+
   it('survives broken markup and gives nothing for an empty page', () => {
     expect(htmlToMarkdown('<p>one<p>two</div></span><b>bold').markdown).toBe('one\n\ntwo**bold**');
     expect(htmlToMarkdown('').markdown).toBe('');

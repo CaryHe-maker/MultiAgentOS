@@ -1,3 +1,5 @@
+import { MAX_BACKGROUND_JOBS, runningJobs } from '../graph/mission-jobs.js';
+import { posix } from 'node:path';
 import {
   COMMAND_DEFAULT_TIMEOUT_MS,
   normalizeRequestPath,
@@ -10,7 +12,10 @@ import {
   type SessionLogRecord,
   type UnitInput,
 } from '@multiagentos/contracts';
+import { isRolledBack, rolledBackRanges } from './rolled-back.js';
 import type { ToolInput } from '../agent/agent-cycle.js';
+import { parseReferenceName } from '@multiagentos/contracts';
+import { resolveReference } from '../handover/handover.js';
 import type { ProjectionScope } from './history-projection.js';
 
 /** What the log last says about a file: read or written at a digest, or read as missing. */
@@ -42,7 +47,12 @@ export function fileBaselines(records: readonly SessionLogRecord[]): Map<string,
       if (known !== undefined) baselines.set(known.path, { kind: 'SHA', sha256: known.sha256 });
       else if (record.reasonCode === 'NOT_FOUND' && path !== undefined)
         baselines.set(path, { kind: 'ABSENT' });
-    } else if (record.type === 'WORKSPACE_REVERTED') baselines.clear();
+    } else if (
+      record.type === 'WORKSPACE_REVERTED' ||
+      record.type === 'ROLLED_BACK' ||
+      record.type === 'WORKSPACE_BOUND'
+    )
+      baselines.clear();
     else if (record.type === 'WORKSPACE_DIVERGED')
       for (const file of record.files) baselines.delete(file);
   }
@@ -55,14 +65,39 @@ function fullOutputOf(
   records: readonly SessionLogRecord[],
   scope: ProjectionScope,
 ): { readonly fullRef?: ArtifactRef } | undefined {
+  // A reference `ref_N/toolCallId` is what another AgentRun handed over: only the registry says
+  // what it is, and to whom (handover.ts). It is read whole, cut or not.
+  if (parseReferenceName(toolCallId) !== undefined) {
+    const ref = resolveReference(toolCallId, records, scope);
+    return ref === undefined ? undefined : { fullRef: ref };
+  }
+  const rolledBack = rolledBackRanges(records);
+  // A message sent to this task is read by its id (Orchestration 5.3): the record of the message
+  // names who may read it, and its text is in the model output of the sender.
+  const message = records.find(
+    (record) =>
+      record.type === 'MISSION_MESSAGE' &&
+      record.source.toolCallId === toolCallId &&
+      scope.missionId !== undefined &&
+      record.to.includes(scope.missionId) &&
+      !isRolledBack(record.seq, rolledBack),
+  );
+  if (message?.type === 'MISSION_MESSAGE') return { fullRef: message.source.outputRef };
   const reverted = new Set<string>();
   const callers = new Set<string>();
   const main = new Set<string>();
   for (const record of records) {
     if (record.type === 'WORKSPACE_REVERTED')
       for (const turnId of record.revertedTurnIds) reverted.add(turnId);
-    if (record.type === 'AGENT_RUN_REGISTERED' && record.agentRef.id === 'main')
+    if (record.type === 'AGENT_RUN_REGISTERED' && record.parentAgentRunId === undefined)
       main.add(record.agentRunId);
+    // Every segment of a task reads what an earlier segment of it ran (Orchestration 3.4).
+    if (
+      record.type === 'AGENT_RUN_REGISTERED' &&
+      scope.missionId !== undefined &&
+      record.missionId === scope.missionId
+    )
+      callers.add(record.agentRunId);
   }
   if (scope.kind === 'MAIN') for (const agentRunId of main) callers.add(agentRunId);
   else callers.add(scope.agentRunId);
@@ -73,7 +108,8 @@ function fullOutputOf(
       record.inputSource.kind === 'TOOL_CALL' &&
       record.inputSource.toolCallId === toolCallId &&
       callers.has(record.agentRunId) &&
-      (record.turnId === undefined || !reverted.has(record.turnId))
+      (record.turnId === undefined || !reverted.has(record.turnId)) &&
+      !isRolledBack(record.seq, rolledBack)
     )
       ({ requestId } = record);
   if (requestId === undefined) return undefined;
@@ -97,13 +133,48 @@ const BAD_WORKDIR =
 const NO_SUCH_CALL = 'Not executed: there is no tool call with this id.';
 const NOT_CUT = 'Not executed: the output of that call was not cut; its result above is all of it.';
 
+const PATH_ARGUMENTS: Partial<Record<ExecutionKind, readonly string[]>> = {
+  FILE_READ: ['path'],
+  FILE_WRITE: ['path'],
+  FILE_EDIT: ['path'],
+  REPOSITORY_LIST: ['path'],
+  REPOSITORY_SEARCH: ['path'],
+  COMMAND: ['workdir'],
+};
+
+/**
+ * A model is often told a file by its full path (`/app/src/a.ts` when the repository is `/app`);
+ * the file tools take paths relative to the repository root. A full path that lies under the root
+ * is made relative here, once, for every tool, so a task that names files in full needs no detour.
+ * A path outside the root is left as it is, and the tool refuses it as before.
+ */
+export function relativeToRoot(kind: ExecutionKind, args: unknown, root: string): unknown {
+  const names = PATH_ARGUMENTS[kind];
+  if (names === undefined || root === '' || typeof args !== 'object' || args === null) return args;
+  const base = root.replace(/\/+$/u, '');
+  const rewritten: Record<string, unknown> = { ...(args as Record<string, unknown>) };
+  let changed = false;
+  for (const name of names) {
+    const value = rewritten[name];
+    if (typeof value !== 'string' || !value.startsWith('/')) continue;
+    const full = posix.normalize(value).replace(/\/+$/u, '');
+    if (full === base) rewritten[name] = '.';
+    else if (full.startsWith(`${base}/`)) rewritten[name] = full.slice(base.length + 1);
+    else continue;
+    changed = true;
+  }
+  return changed ? rewritten : args;
+}
+
 /** Module/Workflow 7, items 8 and 10: what the model cannot give, it is not asked for. */
 export function toolInputOf(
   kind: ExecutionKind,
-  args: unknown,
+  given: unknown,
   records: readonly SessionLogRecord[],
   scope: ProjectionScope,
+  repositoryRoot = '',
 ): ToolInput {
+  const args = relativeToRoot(kind, given, repositoryRoot);
   const unchanged = { ok: true, input: args as UnitInput } as const;
   switch (kind) {
     case 'FILE_READ': {
@@ -133,11 +204,26 @@ export function toolInputOf(
       const run = args as RunCommandArgs;
       const workdir = run.workdir === undefined ? '' : normalizeRequestPath(run.workdir);
       if (workdir === undefined) return { ok: false, message: BAD_WORKDIR };
+      // A job belongs to a task, and a run has room for a few (Orchestration 6.1).
+      const room =
+        scope.missionId !== undefined && runningJobs(records).length < MAX_BACKGROUND_JOBS;
+      if (run.runInBackground === true && !room)
+        return {
+          ok: false,
+          message:
+            scope.missionId === undefined
+              ? 'A background command needs a task to belong to; run it in the foreground.'
+              : `${String(MAX_BACKGROUND_JOBS)} background commands already run; wait for one (sleep with jobs) or stop one with job_kill.`,
+        };
       const input = {
         command: run.command,
         workdir: workdir === '.' ? '' : workdir,
         timeoutMs: run.timeoutMs ?? COMMAND_DEFAULT_TIMEOUT_MS,
         network: run.network ?? false,
+        ...(run.runInBackground === true ? { background: true } : {}),
+        ...((run.promoteOnTimeout ?? true) && room && run.runInBackground !== true
+          ? { promoteOnTimeout: true }
+          : {}),
       };
       return { ok: true, input, workflowFields: input };
     }

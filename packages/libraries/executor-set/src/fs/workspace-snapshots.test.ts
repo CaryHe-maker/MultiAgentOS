@@ -50,16 +50,13 @@ const exists = (path: string) =>
     () => false,
   );
 
-/** One Turn in which `change` happens. */
-async function turn(
-  store: WorkspaceSnapshots,
-  change: () => Promise<void>,
-  turnId = newId('trn'),
-): Promise<string> {
-  await store.turnStarted(turnId);
+/** One input of the user (a checkpoint), in whose stretch `change` happens, until the run is still. */
+async function turn(store: WorkspaceSnapshots, change: () => Promise<void>): Promise<string> {
+  const checkpointId = newId('ckp');
+  await store.checkpoint(checkpointId, 'INPUT', 'user input');
   await change();
-  await store.turnEnded(turnId);
-  return turnId;
+  await store.settle();
+  return checkpointId;
 }
 
 const planOf = async (store: WorkspaceSnapshots, scope: 'LAST' | 'ALL' = 'LAST') => {
@@ -78,30 +75,27 @@ afterEach(async () => {
   await rm(shadow, { recursive: true, force: true });
 });
 
-describe('a Turn', () => {
+describe('the stretch of a checkpoint', () => {
   it('records what it added, changed and deleted, without needing a git repository', async () => {
     await put('keep.txt', 'keep');
     await put('change.txt', 'old');
     await put('delete.txt', 'bye');
     const store = snapshots();
-    const turnId = newId('trn');
-    await store.turnStarted(turnId);
+    await store.checkpoint(newId('ckp'), 'INPUT', 'user input');
     await put('change.txt', 'new');
     await put('sub/add.txt', 'hello');
     await rm(join(root, 'delete.txt'));
-    expect(await store.turnEnded(turnId)).toMatchObject({
+    expect(await store.settle()).toMatchObject({
       startSnapshot: expect.any(String) as string,
       endSnapshot: expect.any(String) as string,
       changedFileCount: 3,
     });
-    expect(lines.at(-1)).toMatchObject({
-      kind: 'TURN_ENDED',
-      changedFiles: [
-        { path: 'change.txt', change: 'MODIFIED' },
-        { path: 'delete.txt', change: 'DELETED' },
-        { path: 'sub/add.txt', change: 'ADDED' },
-      ],
-    });
+    expect(lines.at(-1)).toMatchObject({ kind: 'SETTLED' });
+    expect((await store.diffLatest(1))?.files).toEqual([
+      { path: 'change.txt', change: 'MODIFIED' },
+      { path: 'delete.txt', change: 'DELETED' },
+      { path: 'sub/add.txt', change: 'ADDED' },
+    ]);
     expect(await exists('.git')).toBe(false);
   });
 
@@ -112,14 +106,12 @@ describe('a Turn', () => {
     await put('a.txt', 'a');
     await symlink(join(root, 'a.txt'), join(root, 'link.txt')).catch(() => undefined);
     const store = snapshots();
-    const turnId = await turn(store, async () => {
+    await turn(store, async () => {
       await put('.env', 'CHANGED');
       await put('node_modules/a/index.js', 'y');
       await put('big.bin', Buffer.alloc(17 * 1024 * 1024, 2));
     });
-    expect(lines.find((l) => l.kind === 'TURN_ENDED' && l.turnId === turnId)).toMatchObject({
-      changedFiles: [],
-    });
+    expect((await store.diffLatest(1))?.files).toEqual([]);
   });
 
   it('still reads settings of nobody: a repository config cannot reach it', async () => {
@@ -127,7 +119,7 @@ describe('a Turn', () => {
     await put('a.txt', 'one\n');
     const store = snapshots();
     await turn(store, () => put('a.txt', 'two\r\n'));
-    expect(lines.at(-1)).toMatchObject({ changedFiles: [{ path: 'a.txt' }] });
+    expect((await store.diffLatest(1))?.files).toEqual([{ path: 'a.txt', change: 'MODIFIED' }]);
   });
 
   it('goes on without a snapshot when capturing fails', async () => {
@@ -145,13 +137,13 @@ describe('a Turn', () => {
       now: () => new Date(0),
     });
     await turn(broken, () => put('a.txt', 'b'));
-    expect(lines[0]).not.toHaveProperty('startSnapshot');
+    expect(lines[0]).not.toHaveProperty('snapshot');
     expect(await broken.planUndo('LAST')).toEqual({ kind: 'NOT_UNDOABLE' });
   });
 });
 
 describe('undo', () => {
-  it('restores only what the Turn changed, bytes and all', async () => {
+  it('restores only what the stretch changed, bytes and all', async () => {
     const binary = Buffer.from([0, 255, 1, 254, 10, 13, 10]);
     await put('a.bin', binary);
     await put('b.txt', 'old');
@@ -167,23 +159,24 @@ describe('undo', () => {
     await put('untouched-later.txt', 'by the user');
     const plan = await planOf(store);
     expect(plan.external).toEqual([]);
-    expect(await store.applyUndo(plan, false)).toEqual({ ok: true });
+    expect(await store.applyRollBack(plan, false)).toMatchObject({ ok: true });
     expect(await readFile(join(root, 'a.bin'))).toEqual(binary);
     expect(await read('b.txt')).toBe('old');
     expect(await exists('c.txt')).toBe(false);
     expect(await read('untouched-later.txt')).toBe('by the user');
-    expect(lines.at(-1)).toMatchObject({ kind: 'REVERTED', forced: false });
+    expect(lines.at(-1)).toMatchObject({ kind: 'ROLLED_BACK_TO', inclusive: true });
+    expect(lines.at(-1)).not.toHaveProperty('forced');
   });
 
-  it('goes back one Turn at a time, and all at once', async () => {
+  it('goes back one checkpoint at a time, and all at once', async () => {
     await put('a.txt', '0');
     const store = snapshots();
     await turn(store, () => put('a.txt', '1'));
     await turn(store, () => put('a.txt', '2'));
     await turn(store, () => put('a.txt', '3'));
-    await store.applyUndo(await planOf(store), false);
+    await store.applyRollBack(await planOf(store), false);
     expect(await read('a.txt')).toBe('2');
-    await store.applyUndo(await planOf(store, 'ALL'), false);
+    await store.applyRollBack(await planOf(store, 'ALL'), false);
     expect(await read('a.txt')).toBe('0');
     expect(await store.planUndo('LAST')).toEqual({ kind: 'NOTHING_TO_UNDO' });
   });
@@ -195,7 +188,7 @@ describe('undo', () => {
     await put('a.txt', 'user');
     const plan = await planOf(store);
     expect(plan.external).toEqual([{ path: 'a.txt', change: 'MODIFIED' }]);
-    const applied = await store.applyUndo(plan, true);
+    const applied = await store.applyRollBack(plan, true);
     expect(applied).toMatchObject({ ok: true, backupSnapshot: expect.any(String) as string });
     expect(await read('a.txt')).toBe('old');
   });
@@ -218,10 +211,10 @@ describe('undo', () => {
     });
     const plan = await planOf(store);
     await put('b.txt', 'changed meanwhile');
-    expect(await store.applyUndo(plan, false)).toEqual({ ok: false });
+    expect(await store.applyRollBack(plan, false)).toEqual({ ok: false });
     expect(await read('a.txt')).toBe('a1');
     expect(await read('b.txt')).toBe('changed meanwhile');
-    expect(lines.at(-1)).not.toMatchObject({ kind: 'REVERTED' });
+    expect(lines.at(-1)).not.toMatchObject({ kind: 'ROLLED_BACK_TO' });
   });
 
   it('survives a restart: the index alone is enough', async () => {
@@ -229,33 +222,33 @@ describe('undo', () => {
     await turn(snapshots(), () => put('a.txt', 'new'));
     const reopened = snapshots();
     await reopened.load();
-    await reopened.applyUndo(await planOf(reopened), false);
+    await reopened.applyRollBack(await planOf(reopened), false);
     expect(await read('a.txt')).toBe('old');
   });
 
-  it('treats a Turn left by an exit as all external, when nothing follows it', async () => {
+  it('treats a stretch left by an exit as all external, when nothing follows it', async () => {
     await put('a.txt', 'old');
     const store = snapshots();
-    await store.turnStarted(newId('trn'));
+    await store.checkpoint(newId('ckp'), 'INPUT', 'user input');
     await put('a.txt', 'new');
     const reopened = snapshots();
     await reopened.load();
     expect((await planOf(reopened)).external).toEqual([{ path: 'a.txt', change: 'UNKNOWN' }]);
-    await reopened.applyUndo(await planOf(reopened), true);
+    await reopened.applyRollBack(await planOf(reopened), true);
     expect(await read('a.txt')).toBe('old');
   });
 
-  it('measures a Turn left by an exit against the next start', async () => {
+  it('measures a stretch left by an exit against the next checkpoint', async () => {
     await put('a.txt', 'old');
     const first = snapshots();
-    await first.turnStarted(newId('trn'));
+    await first.checkpoint(newId('ckp'), 'INPUT', 'user input');
     await put('a.txt', 'crashed');
     const second = snapshots();
     await second.load();
     await turn(second, () => put('b.txt', 'next'));
     const plan = await planOf(second, 'ALL');
     expect(plan.external).toEqual([]);
-    await second.applyUndo(plan, false);
+    await second.applyRollBack(plan, false);
     expect(await read('a.txt')).toBe('old');
     expect(await exists('b.txt')).toBe(false);
   });
@@ -272,32 +265,126 @@ describe('undo', () => {
       () => false,
     );
     if (!linked) return;
-    await store.applyUndo(plan, false).catch(() => undefined);
+    await store.applyRollBack(plan, false).catch(() => undefined);
     await expect(stat(join(outside, 'a.txt'))).rejects.toThrow();
     await rm(outside, { recursive: true, force: true });
   });
 });
 
 describe('a diff', () => {
-  it('shows a Turn, the latest first, skipping what was reverted', async () => {
+  it('shows a stretch, the latest first, skipping what was undone', async () => {
     await put('a.txt', 'zero\n');
     const store = snapshots();
-    const first = await turn(store, () => put('a.txt', 'one\n'));
-    const second = await turn(store, () => put('a.txt', 'two\n'));
-    expect(await store.diffTurn(1)).toMatchObject({
-      turnId: second,
+    await turn(store, () => put('a.txt', 'one\n'));
+    await turn(store, () => put('a.txt', 'two\n'));
+    expect(await store.diffLatest(1)).toMatchObject({
       files: [{ path: 'a.txt', change: 'MODIFIED' }],
       diff: expect.stringContaining('+two') as string,
     });
-    expect(await store.diffTurn(2)).toMatchObject({ turnId: first });
-    expect(await store.diffTurn(3)).toBeUndefined();
-    await store.applyUndo(await planOf(store), false);
-    expect(await store.diffTurn(1)).toMatchObject({ turnId: first });
+    expect(await store.diffLatest(2)).toMatchObject({
+      diff: expect.stringContaining('+one') as string,
+    });
+    expect(await store.diffLatest(3)).toBeUndefined();
+    await store.applyRollBack(await planOf(store), false);
+    expect(await store.diffLatest(1)).toMatchObject({
+      diff: expect.stringContaining('+one') as string,
+    });
+    expect(await store.diffCheckpoint(1)).toEqual(await store.diffLatest(1));
+  });
+});
+
+describe('a rewind and an undo are the same way back (Orchestration 7.5, D8)', () => {
+  it('keeps the checkpoint a rewind goes back to, and keeps a backup of what it overwrote', async () => {
+    await put('a.txt', '0');
+    const store = snapshots();
+    await turn(store, () => put('a.txt', '1'));
+    await store.checkpoint(newId('ckp'), 'ROOT_SPAWN', 'before starting writer');
+    await put('a.txt', '2');
+    await put('new.txt', 'by a task');
+    const planned = await store.planRewind(2);
+    if (planned.kind !== 'PLAN') throw new Error(planned.kind);
+    expect(await store.applyRollBack(planned.plan, false)).toMatchObject({
+      ok: true,
+      files: ['a.txt', 'new.txt'],
+      backupSnapshot: expect.any(String) as string,
+    });
+    expect(await read('a.txt')).toBe('1');
+    expect(await exists('new.txt')).toBe(false);
+    expect((await store.listCheckpoints()).map((point) => point.kind)).toEqual([
+      'INPUT',
+      'ROOT_SPAWN',
+    ]);
+    // The work goes on from it, and an undo then takes back the whole exchange.
+    await put('a.txt', '3');
+    await store.settle();
+    await store.applyRollBack(await planOf(store), false);
+    expect(await read('a.txt')).toBe('1');
+    await store.applyRollBack(await planOf(store), false);
+    expect(await read('a.txt')).toBe('0');
+    expect(await store.planUndo('LAST')).toEqual({ kind: 'NOTHING_TO_UNDO' });
+  });
+
+  it('reads an index written with Turns, and undoes them the same way', async () => {
+    await put('a.txt', '0');
+    const store = snapshots();
+    await turn(store, () => put('a.txt', '1'));
+    await turn(store, () => put('a.txt', '2'));
+    // The same index, as a Session written before checkpoints replaced Turns would hold it.
+    const [first, , second, ,] = lines;
+    if (first?.kind !== 'CHECKPOINT' || second?.kind !== 'CHECKPOINT') throw new Error('index');
+    const ends = lines.filter((line) => line.kind === 'SETTLED');
+    lines = [
+      {
+        kind: 'TURN_STARTED',
+        turnId: 'trn_A',
+        turnSeq: 1,
+        viewId: 'main',
+        ...(first.snapshot === undefined ? {} : { startSnapshot: first.snapshot }),
+        at: first.at,
+      },
+      {
+        kind: 'TURN_ENDED',
+        turnId: 'trn_A',
+        ...(ends[0]?.kind === 'SETTLED' && ends[0].snapshot !== undefined
+          ? { endSnapshot: ends[0].snapshot }
+          : {}),
+        changedFiles: [],
+        at: first.at,
+      },
+      {
+        kind: 'TURN_STARTED',
+        turnId: 'trn_B',
+        turnSeq: 2,
+        viewId: 'main',
+        ...(second.snapshot === undefined ? {} : { startSnapshot: second.snapshot }),
+        at: second.at,
+      },
+      {
+        kind: 'TURN_ENDED',
+        turnId: 'trn_B',
+        ...(ends[1]?.kind === 'SETTLED' && ends[1].snapshot !== undefined
+          ? { endSnapshot: ends[1].snapshot }
+          : {}),
+        changedFiles: [],
+        at: second.at,
+      },
+      { kind: 'REVERTED', revertedTurnIds: ['trn_B'], forced: false, at: second.at },
+    ];
+    await put('a.txt', '1');
+    const reopened = snapshots();
+    await reopened.load();
+    expect(await reopened.listCheckpoints()).toEqual([
+      { seq: 1, kind: 'INPUT', label: 'user input', at: first.at, changedFiles: 1 },
+    ]);
+    const plan = await planOf(reopened);
+    expect(plan.checkpointId).toBe('ckp_A');
+    await reopened.applyRollBack(plan, false);
+    expect(await read('a.txt')).toBe('0');
   });
 });
 
 describe('opening a Session', () => {
-  it('finds what changed since its last Turn', async () => {
+  it('finds what changed since it was last still', async () => {
     await put('a.txt', 'a');
     await turn(snapshots(), () => put('a.txt', 'b'));
     const opened = snapshots();
@@ -312,13 +399,13 @@ describe('opening a Session', () => {
     await put('a.txt', 'a');
     const store = snapshots();
     await turn(store, () => put('a.txt', 'b'));
-    await store.applyUndo(await planOf(store), false);
+    await store.applyRollBack(await planOf(store), false);
     const opened = snapshots();
     await opened.load();
     expect(await opened.divergedFiles()).toEqual([]);
   });
 
-  it('has nothing to say for a Session with no Turn', async () => {
+  it('has nothing to say for a Session with no checkpoint', async () => {
     await put('a.txt', 'a');
     expect(await snapshots().divergedFiles()).toEqual([]);
   });
@@ -332,7 +419,7 @@ describe('what a snapshot holds', () => {
     await turn(store, () => put('crlf.txt', 'three\r\n'));
     const plan = await planOf(store);
     expect(plan.external).toEqual([]);
-    expect(await store.applyUndo(plan, false)).toMatchObject({ ok: true });
+    expect(await store.applyRollBack(plan, false)).toMatchObject({ ok: true });
     expect(await read('crlf.txt')).toBe('one\r\ntwo\r\n');
   });
 
@@ -341,7 +428,7 @@ describe('what a snapshot holds', () => {
     await put('big.txt', before);
     const store = snapshots();
     await turn(store, () => put('big.txt', 'small'));
-    await store.applyUndo(await planOf(store), false);
+    await store.applyRollBack(await planOf(store), false);
     expect(await read('big.txt')).toBe(before);
   });
 
@@ -350,7 +437,7 @@ describe('what a snapshot holds', () => {
     await put('b.txt', 'b');
     const store = snapshots();
     await turn(store, () => rm(join(root, 'b.txt')));
-    await store.applyUndo(await planOf(store), false);
+    await store.applyRollBack(await planOf(store), false);
     expect(await read('b.txt')).toBe('b');
   });
 
@@ -360,18 +447,15 @@ describe('what a snapshot holds', () => {
     await turn(store, () => put('a.txt', 'b'));
     await writeFile(join(shadow, 'snapshots', 'capture-index.lock'), '');
     await turn(store, () => put('a.txt', 'c'));
-    await store.applyUndo(await planOf(store), false);
+    await store.applyRollBack(await planOf(store), false);
     expect(await read('a.txt')).toBe('b');
   });
 
   it('notices and undoes a change of the executable bit', async () => {
     await put('run.sh', 'echo');
     const store = snapshots();
-    const turnId = newId('trn');
-    await store.turnStarted(turnId);
-    await chmod(join(root, 'run.sh'), 0o755);
-    await store.turnEnded(turnId);
-    await store.applyUndo(await planOf(store), false);
+    await turn(store, () => chmod(join(root, 'run.sh'), 0o755));
+    await store.applyRollBack(await planOf(store), false);
     expect((await stat(join(root, 'run.sh'))).mode & 0o111).toBe(0);
   });
 
@@ -382,7 +466,7 @@ describe('what a snapshot holds', () => {
       await put('keep/new/deep/b.txt', 'b');
       await put('fresh/deep/c.txt', 'c');
     });
-    await store.applyUndo(await planOf(store), false);
+    await store.applyRollBack(await planOf(store), false);
     expect(await exists('keep/a.txt')).toBe(true);
     expect(await exists('keep/new')).toBe(false);
     expect(await exists('fresh')).toBe(false);
@@ -404,7 +488,7 @@ describe('what a snapshot holds', () => {
     expect((await planOf(store)).files).toEqual([]);
   });
 
-  it('says so when a Turn has no snapshot, and the Turn goes on', async () => {
+  it('says so when a checkpoint has no snapshot, and the work goes on', async () => {
     const said: string[] = [];
     const store = new WorkspaceSnapshots({
       repositoryRoot: root,
@@ -419,10 +503,10 @@ describe('what a snapshot holds', () => {
       now: () => new Date('2026-11-04T00:00:00.000Z'),
       diagnostic: (line) => said.push(line),
     });
-    await store.turnStarted('trn_1');
-    expect(said.join('')).toContain('cannot be undone');
-    await expect(store.turnEnded('trn_1')).resolves.toEqual({});
-    await expect(store.diffTurn(1)).resolves.toBeUndefined();
+    await store.checkpoint('ckp_1', 'INPUT', 'user input');
+    expect(said.join('')).toContain('no way back');
+    await expect(store.settle()).resolves.toEqual({});
+    await expect(store.diffLatest(1)).resolves.toBeUndefined();
     await expect(store.planUndo('LAST')).resolves.toEqual({ kind: 'NOT_UNDOABLE' });
   });
 });

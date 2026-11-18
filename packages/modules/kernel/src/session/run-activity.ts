@@ -1,12 +1,15 @@
-import type {
-  ActivityEvent,
-  ExecutionKind,
-  MessagePublished,
-  UnitReport,
+import {
+  newId,
+  type ActivityEvent,
+  type BackgroundJobs,
+  type CommandOutput,
+  type ExecutionKind,
+  type MessagePublished,
+  type UnitReport,
 } from '@multiagentos/contracts';
 import type { AttemptSpec } from './run-attempts.js';
 
-export type ActivityOutput = ActivityEvent | MessagePublished;
+export type ActivityOutput = ActivityEvent | BackgroundJobs | MessagePublished;
 
 export interface RunActivityDeps {
   readonly emit: (event: ActivityOutput) => void;
@@ -18,7 +21,6 @@ const NOT_TOOLS: ReadonlySet<ExecutionKind> = new Set([
   'CONTEXT_ASSEMBLE',
   'MODEL',
   'MESSAGE_PUBLISH',
-  'REPORT_PUBLISH',
 ]);
 
 type Phase = ActivityEvent['phase'];
@@ -33,7 +35,18 @@ export class RunActivity {
   readonly #deps: RunActivityDeps;
   readonly #labels = new Map<string, string>();
   readonly #parents = new Map<string, string>();
+  /** The task each AgentRun is a segment of, and that task's parent (Orchestration 3.2). */
+  readonly #missions = new Map<string, { missionId: string; parentMissionId?: string }>();
+  /** Tasks asleep between segments: the line they keep, until the task ends. */
+  readonly #sleeping = new Map<string, { agentRunId: string; label: string; parent?: string }>();
   readonly #todos = new Map<string, NonNullable<ActivityEvent['todos']>>();
+  /** When each command in flight started: a command moved to the background has run since then. */
+  readonly #commandStarts = new Map<string, string>();
+  /** The background commands running now, by job key, with the task that started them. */
+  readonly #jobs = new Map<
+    string,
+    { readonly agentRunId: string; readonly missionId?: string; readonly since: string }
+  >();
 
   public constructor(deps: RunActivityDeps) {
     this.#deps = deps;
@@ -44,9 +57,32 @@ export class RunActivity {
     this.#emit(agentRunId, 'THINKING');
   }
 
-  registered(agentRunId: string, label: string, parentAgentRunId?: string): void {
+  /**
+   * A control call of the AgentRun (Workflow's, not a Unit): shown as a finished tool, with an
+   * attempt id of its own so the interface keeps it apart from every Unit.
+   */
+  step(agentRunId: string, step: Pick<UnitLine, 'toolName' | 'argsSummary'>): void {
+    this.#emit(agentRunId, 'CALLING_TOOL', {
+      unitAttemptId: newId('una'),
+      toolName: step.toolName,
+      argsSummary: step.argsSummary,
+      state: 'DONE',
+    });
+  }
+
+  registered(
+    agentRunId: string,
+    label: string,
+    parentAgentRunId?: string,
+    mission?: { readonly missionId: string; readonly parentMissionId?: string },
+  ): void {
     this.#labels.set(agentRunId, label);
     if (parentAgentRunId !== undefined) this.#parents.set(agentRunId, parentAgentRunId);
+    if (mission !== undefined) {
+      this.#missions.set(agentRunId, { ...mission });
+      // A task woken again: its new segment takes the place of the line it slept on.
+      this.#sleeping.delete(mission.missionId);
+    }
   }
 
   /** The AgentRun started tasks and waits for them. */
@@ -63,6 +99,7 @@ export class RunActivity {
       type: 'ActivityEvent',
       agentRunId,
       ...(parent === undefined ? {} : { parentAgentRunId: parent }),
+      ...this.#missionFields(agentRunId),
       label,
       phase,
       ...(unit === undefined ? {} : { unit }),
@@ -91,9 +128,10 @@ export class RunActivity {
         this.#emit(spec.agentRunId, final ? 'WRAPPING_UP' : 'THINKING');
         return;
       case 'MESSAGE_PUBLISH':
-      case 'REPORT_PUBLISH':
         return;
       default:
+        if (spec.unit.executionKind === 'COMMAND')
+          this.#commandStarts.set(unitAttemptId, this.#deps.now().toISOString());
         this.#emit(spec.agentRunId, 'CALLING_TOOL', this.#unit(spec, unitAttemptId, 'RUNNING'));
     }
   }
@@ -107,6 +145,7 @@ export class RunActivity {
       type: 'ActivityEvent',
       agentRunId: spec.agentRunId,
       ...(parent === undefined ? {} : { parentAgentRunId: parent }),
+      ...this.#missionFields(spec.agentRunId),
       label,
       phase: 'RETRYING',
       ...(NOT_TOOLS.has(spec.unit.executionKind)
@@ -120,6 +159,11 @@ export class RunActivity {
   /** The AgentRun asked the user a question with `ask_user` and waits for the answer. */
   awaitingAnswer(agentRunId: string): void {
     this.#emit(agentRunId, 'AWAITING_ANSWER');
+  }
+
+  /** The AgentRun asked its parent for more rounds and waits for the answer (D91). */
+  awaitingGrant(agentRunId: string): void {
+    this.#emit(agentRunId, 'AWAITING_GRANT');
   }
 
   /** The run is paused: nothing of this AgentRun runs until it is continued. */
@@ -156,6 +200,8 @@ export class RunActivity {
       return;
     }
     if (spec === undefined || NOT_TOOLS.has(report.executionKind)) return;
+    if (report.executionKind === 'COMMAND')
+      this.#jobStarted(report.agentRunId, report.unitAttemptId, report.output);
     this.#emit(report.agentRunId, 'CALLING_TOOL', {
       ...this.#unit(spec, report.unitAttemptId, 'DONE'),
       ...(report.fullRef === undefined ? {} : { fullRef: report.fullRef }),
@@ -164,7 +210,105 @@ export class RunActivity {
 
   ended(agentRunId: string): void {
     this.#emit(agentRunId, 'ENDED');
+    this.#forget(agentRunId);
+  }
+
+  /**
+   * The segment ended and its task sleeps (Orchestration 4): the task keeps its line, as
+   * sleeping, until it is woken (a new segment) or closed.
+   */
+  sleeping(agentRunId: string): void {
+    const mission = this.#missions.get(agentRunId);
+    const label = this.#labels.get(agentRunId);
+    if (mission === undefined || label === undefined) return this.ended(agentRunId);
+    this.#emit(agentRunId, 'SLEEPING');
+    const parent = this.#parents.get(agentRunId);
+    this.#sleeping.set(mission.missionId, {
+      agentRunId,
+      label,
+      ...(parent === undefined ? {} : { parent }),
+    });
+    this.#forget(agentRunId);
+    // Its mission is remembered under its last segment, so that closing it can say which line.
+    this.#missions.set(agentRunId, mission);
+  }
+
+  /** A sleeping task that will not wake was closed: its line goes. */
+  missionClosed(missionId: string): void {
+    const asleep = this.#sleeping.get(missionId);
+    if (asleep === undefined) return;
+    this.#sleeping.delete(missionId);
+    const mission = this.#missions.get(asleep.agentRunId);
+    this.#missions.delete(asleep.agentRunId);
+    this.#deps.emit({
+      type: 'ActivityEvent',
+      agentRunId: asleep.agentRunId,
+      ...(asleep.parent === undefined ? {} : { parentAgentRunId: asleep.parent }),
+      ...(mission === undefined
+        ? {}
+        : {
+            missionId: mission.missionId,
+            ...(mission.parentMissionId === undefined
+              ? {}
+              : { parentMissionId: mission.parentMissionId }),
+          }),
+      label: asleep.label,
+      phase: 'ENDED',
+      at: this.#deps.now().toISOString(),
+    });
+  }
+
+  /** A command that runs on as a job: counted behind its task's line until it ends. */
+  #jobStarted(agentRunId: string, unitAttemptId: string, output: unknown): void {
+    const started = this.#commandStarts.get(unitAttemptId);
+    this.#commandStarts.delete(unitAttemptId);
+    const { job } = (output ?? {}) as Partial<CommandOutput>;
+    if (job === undefined) return;
+    const { missionId } = this.#missionFields(agentRunId);
+    const now = this.#deps.now().toISOString();
+    this.#jobs.set(job.jobKey, {
+      agentRunId,
+      ...(missionId === undefined ? {} : { missionId }),
+      since: job.promoted ? (started ?? now) : now,
+    });
+    this.#emitJobs(agentRunId, missionId);
+  }
+
+  /** A background command ended or was stopped (Orchestration 6.4). */
+  jobEnded(jobKey: string): void {
+    const job = this.#jobs.get(jobKey);
+    if (job === undefined) return;
+    this.#jobs.delete(jobKey);
+    this.#emitJobs(job.agentRunId, job.missionId);
+  }
+
+  #emitJobs(agentRunId: string, missionId: string | undefined): void {
+    const same = [...this.#jobs.values()].filter((job) =>
+      missionId === undefined ? job.agentRunId === agentRunId : job.missionId === missionId,
+    );
+    const startedAt = same.map((job) => job.since).sort();
+    this.#deps.emit({
+      type: 'BackgroundJobs',
+      agentRunId,
+      ...(missionId === undefined ? {} : { missionId }),
+      startedAt,
+    });
+  }
+
+  #missionFields(agentRunId: string): { missionId?: string; parentMissionId?: string } {
+    const mission = this.#missions.get(agentRunId);
+    if (mission === undefined) return {};
+    return {
+      missionId: mission.missionId,
+      ...(mission.parentMissionId === undefined
+        ? {}
+        : { parentMissionId: mission.parentMissionId }),
+    };
+  }
+
+  #forget(agentRunId: string): void {
     this.#labels.delete(agentRunId);
     this.#parents.delete(agentRunId);
+    this.#missions.delete(agentRunId);
   }
 }

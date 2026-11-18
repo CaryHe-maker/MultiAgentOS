@@ -151,18 +151,24 @@ function languageOf(node: ElementNode): string {
 
 class Writer {
   readonly #parts: string[] = [];
+  /** How much was written, and how many line breaks end it: kept as it goes, never recounted. */
+  #length = 0;
+  #trailing = 0;
   base: URL | undefined;
 
   text(value: string): void {
+    if (value === '') return;
     this.#parts.push(value);
+    this.#length += value.length;
+    let ending = 0;
+    while (ending < value.length && value[value.length - 1 - ending] === '\n') ending += 1;
+    this.#trailing = ending === value.length ? this.#trailing + ending : ending;
   }
 
   /** At least `lines` line breaks since the last text, so blocks do not run together. */
   break(lines: number): void {
-    const joined = this.#parts.join('');
-    const present = /\n*$/u.exec(joined)?.[0].length ?? 0;
-    if (joined.length === 0) return;
-    if (present < lines) this.#parts.push('\n'.repeat(lines - present));
+    if (this.#length === 0 || this.#trailing >= lines) return;
+    this.text('\n'.repeat(lines - this.#trailing));
   }
 
   result(): string {

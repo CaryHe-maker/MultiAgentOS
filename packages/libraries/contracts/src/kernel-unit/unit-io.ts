@@ -4,8 +4,6 @@ import {
   ContextAssembleOutputSchema,
 } from '../context/history-entry.js';
 import {
-  RepositoryOrientInputSchema,
-  RepositoryOrientOutputSchema,
   RepositorySearchInputSchema,
   RepositorySearchOutputSchema,
 } from '../context/repository.js';
@@ -34,16 +32,13 @@ import {
   WebSearchOutputSchema,
 } from '../executor/web.js';
 import { MessagePublishInputSchema, MessagePublishOutputSchema } from './message-publish.js';
-import { ReportPublishInputSchema, ReportPublishOutputSchema } from './report-publish.js';
 
 export const UnitInputSchema = Type.Union(
   [
-    RepositoryOrientInputSchema,
     RepositorySearchInputSchema,
     FileReadInputSchema,
     ContextAssembleInputSchema,
     ModelCallInputSchema,
-    ReportPublishInputSchema,
     RepositoryListInputSchema,
     MessagePublishInputSchema,
     FileWriteInputSchema,
@@ -60,10 +55,8 @@ export type UnitInput = Static<typeof UnitInputSchema>;
 
 export const UnitOutputSchema = Type.Union(
   [
-    RepositoryOrientOutputSchema,
     RepositorySearchOutputSchema,
     FileReadOutputSchema,
-    ReportPublishOutputSchema,
     RepositoryListOutputSchema,
     MessagePublishOutputSchema,
     ContextAssembleOutputSchema,

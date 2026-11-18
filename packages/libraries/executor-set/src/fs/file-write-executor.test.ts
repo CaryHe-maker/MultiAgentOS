@@ -186,10 +186,43 @@ describe('file-edit', () => {
     expect(await read('f.txt')).toBe('a a');
   });
 
-  it('refuses a stale base before it looks for the text', async () => {
-    await put('f.txt', 'a');
+  it('edits a file changed since it was read when the text is found exactly once (D76)', async () => {
+    await put('f.txt', 'header changed\nconst limit = compute(1)\n');
+    const outcome = await edit({
+      path: 'f.txt',
+      oldString: 'const limit = compute(1)',
+      newString: 'const limit = compute(2)',
+      baseSha: sha256Hex('header\nconst limit = compute(1)\n'),
+    });
+    expect(outcome).toMatchObject({ result: { output: { operation: 'EDITED' } } });
+    if (outcome.outcome !== 'COMPLETED') throw new Error(outcome.outcome);
+    expect(outcome.result.artifact.text).toContain('The file had changed since you read it');
+    expect(await read('f.txt')).toBe('header changed\nconst limit = compute(2)\n');
+  });
+
+  it.each([
+    ['is not there', 'const missing = compute(9)'],
+    ['is there twice', 'const twice = compute(0)'],
+    ['is too short to be specific', 'one'],
+  ])('refuses a stale base when the text %s', async (_, oldString) => {
+    const original = 'const twice = compute(0)\nconst twice = compute(0)\nsomeone\n';
+    await put('f.txt', original);
     expect(
-      await edit({ path: 'f.txt', oldString: 'a', newString: 'b', baseSha: sha256Hex('other') }),
+      await edit({ path: 'f.txt', oldString, newString: 'b', baseSha: sha256Hex('other') }),
+    ).toMatchObject(refused('FILE_CHANGED'));
+    expect(await read('f.txt')).toBe(original);
+  });
+
+  it('refuses a stale base for a replace-all edit', async () => {
+    await put('f.txt', 'const limit = compute(1)\n');
+    expect(
+      await edit({
+        path: 'f.txt',
+        oldString: 'const limit = compute(1)',
+        newString: 'b',
+        replaceAll: true,
+        baseSha: sha256Hex('other'),
+      }),
     ).toMatchObject(refused('FILE_CHANGED'));
   });
 
@@ -201,7 +234,7 @@ describe('file-edit', () => {
   });
 });
 
-/** The exit condition of stage 2 (M2Design 6.3): here the code is the only defence. */
+/** A release condition (M2Design 6.3): here the code is the only defence. */
 describe('against an attacker', () => {
   it.each([
     ['/etc/passwd', 'WRITE_OUT_OF_SCOPE'],

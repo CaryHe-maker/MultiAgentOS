@@ -23,3 +23,4 @@ export {
   type FakeSessionWorkflow,
 } from './fakes/fake-session-workflow.js';
 export * from './fakes/fake-supervisor.js';
+export { asksForStream, streamEventsOf, streamedIfAsked } from './fakes/streamed-completion.js';

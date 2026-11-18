@@ -17,7 +17,7 @@ import {
   type ExecutionConfig,
 } from './attempt-request.js';
 import type { Fingerprints } from './change-scan.js';
-import { publishMessage, publishReport, type BuiltInResult } from './built-in-units.js';
+import { publishMessage, type BuiltInResult } from './built-in-units.js';
 import {
   AttemptQueues,
   type ConcurrencyClass,
@@ -48,6 +48,8 @@ export interface RunExecutionDeps {
   /** Cancels one execution; its fact comes back saying why (M2Design 7.6). */
   readonly cancelExecution: (request: CancelExecutionRequest) => Promise<void>;
   readonly retrying: (activity: RetryingActivity) => void;
+  /** Bytes of artifacts that an attempt released as it ended (Kernel/Execution 6d). */
+  readonly released?: (bytes: number) => void;
   /** A write landed; awaited, so that whatever follows from it precedes the report. */
   readonly written: (path: string, sha256: string) => Promise<void>;
   /** Undefined when the file does not exist. */
@@ -60,7 +62,7 @@ export interface RunExecutionDeps {
   readonly schedule: (delayMs: number, due: () => void) => () => void;
   readonly now: () => Date;
   /**
-   * Protected paths a command may not create (Kernel/Execution 9, M2Design 6.1): the set that
+   * Protected paths a command may not create (Kernel/Execution 4d, M2Design 6.1): the set that
    * exists before it runs, and the moving of whatever is new afterwards.
    */
   readonly protectedPaths?: {
@@ -87,6 +89,16 @@ export interface RunExecutionDeps {
   readonly afterAssemble?: (info: AssemblyInfo) => Promise<'PROCEED' | 'COMPACTED' | 'BUDGET'>;
   /** Decided at once, inside the actor: is a compaction due for this assembly? */
   readonly compactionDue?: (info: AssemblyInfo) => boolean;
+  /**
+   * An ordinary assembly that needs no compaction came back with this size: how full the context
+   * of its AgentRun is. Not a fact, nothing waits for it.
+   */
+  readonly contextLevel?: (level: {
+    readonly executionId: string;
+    readonly agentRunId: string;
+    readonly used: number;
+    readonly limit: number;
+  }) => void;
   /** A model call of an AgentRun was answered: a size it was refused for is remembered. */
   readonly modelAnswered?: (info: {
     readonly agentRunId: string;
@@ -95,6 +107,19 @@ export interface RunExecutionDeps {
   }) => void;
   /** What may execute at once over all AgentRuns (`kernel.maxConcurrentAttempts` and the like). */
   readonly limits: QueueLimits;
+  /**
+   * Landlock holds the writes of an unisolated command (D79), so one without a writable root, a
+   * line of the read-only list, cannot change the repository and queues as a READ (D87).
+   */
+  readonly unisolatedReadOnly?: boolean;
+  /**
+   * A model call was sent to the Supervisor: its thinking may now be streamed to the console, so
+   * the Kernel remembers whose call it is. Not a fact, nothing waits for it.
+   */
+  readonly modelStarted?: (call: {
+    readonly executionId: string;
+    readonly agentRunId: string;
+  }) => void;
   readonly newExecutionId?: () => string;
   readonly newAttemptId?: () => string;
 }
@@ -104,7 +129,10 @@ export interface AssemblyInfo {
   readonly agentRunId: string;
   readonly kind: 'COMPLETED' | 'OVERSIZE';
   readonly tokenCount: number;
+  /** The task's own budget, without the part it inherited (D100). */
   readonly tokenBudget: number;
+  /** The tokens of the inherited part, which the own budget does not count (D100). */
+  readonly frozenTokens: number;
 }
 
 /** The roots a sandboxed command may write: what a scan before and after looks at. */
@@ -134,20 +162,27 @@ interface Attempt extends QueueEntry {
 /**
  * The class a Unit declares for the queue (M2Design 7.1). A command that cannot write, one of the
  * read-only list in a sandbox without a writable root, is a READ: it takes no part in the EXEC
- * mutex and is no barrier (M2Design 5.2).
+ * mutex and is no barrier (M2Design 5.2). Without `bwrap` the same holds where Landlock holds
+ * the writes of an unisolated command (D79): with no writable root it reaches nothing of the
+ * repository (`unisolatedReadOnly`, D87). Without either, it could write, and stays an EXEC.
  */
-export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): ConcurrencyClass {
+export function concurrencyClassOf(
+  spec: Pick<AttemptSpec, 'unit' | 'scope'>,
+  unisolatedReadOnly = false,
+): ConcurrencyClass {
   switch (spec.unit.executionKind) {
     case 'MODEL':
       return 'MODEL';
+    case 'WEB_SEARCH':
+    case 'WEB_FETCH':
+      return 'WEB';
     case 'FILE_WRITE':
     case 'FILE_EDIT':
     case 'MESSAGE_PUBLISH':
-    case 'REPORT_PUBLISH':
       return 'WRITE';
     case 'COMMAND':
       return spec.scope.kind === 'SANDBOX' &&
-        spec.scope.backend === 'BWRAP' &&
+        (spec.scope.backend === 'BWRAP' || unisolatedReadOnly) &&
         spec.scope.profile.writableRoots.length === 0
         ? 'READ'
         : 'EXEC';
@@ -156,6 +191,9 @@ export function concurrencyClassOf(spec: Pick<AttemptSpec, 'unit' | 'scope'>): C
   }
 }
 
+/** What a checkpoint holds: what may change the workspace (Orchestration 7.3). */
+const mutating = (cls: ConcurrencyClass): boolean => cls === 'WRITE' || cls === 'EXEC';
+
 /** What a Unit attempt completes with; CONTEXT_PRUNE is Kernel's own and answers the compaction. */
 type Completed = Exclude<
   Extract<ExecutionFact, { outcome: 'COMPLETED' }>,
@@ -163,12 +201,10 @@ type Completed = Exclude<
 >;
 type NotCompleted = Exclude<ExecutionFact, { outcome: 'COMPLETED' }>;
 
-/** The overview is a structure with its own token budget, not a preview of an output. */
+/** Model work has no preview limits: its output is not cut for the model. */
 const toolLimitOf = (fact: Completed, config: ExecutionConfig) => {
   const { executionKind } = fact;
-  return executionKind === 'MODEL' ||
-    executionKind === 'CONTEXT_ASSEMBLE' ||
-    executionKind === 'REPOSITORY_ORIENT'
+  return executionKind === 'MODEL' || executionKind === 'CONTEXT_ASSEMBLE'
     ? undefined
     : config.executionLimits[executionKind];
 };
@@ -183,6 +219,11 @@ export class RunExecution {
   readonly #builder: AttemptRequestBuilder;
   readonly #queues = new AttemptQueues<Attempt>();
   readonly #byId = new Map<string, Attempt>();
+  /**
+   * Assemblies whose execution has ended and that wait for a compaction before they are delivered
+   * (Kernel/Core 6a): nothing executes for them any more, so a stop has nothing to confirm.
+   */
+  readonly #heldForCompaction = new Set<string>();
   readonly #internal = new Map<string, (fact: ExecutionFact) => void>();
   readonly #effects: UnknownEffect[] = [];
   #seq = 0;
@@ -191,6 +232,8 @@ export class RunExecution {
   #cancelFallback: (() => void) | undefined;
   /** While paused or pausing nothing new starts (Kernel/Execution 4e). */
   #held = false;
+  /** Set while a checkpoint holds mutating work (Orchestration 7.3). */
+  #mutatingHeld: (() => void) | undefined;
   #onDrained: (() => void) | undefined;
   readonly #drainTimers = new Set<() => void>();
 
@@ -214,8 +257,19 @@ export class RunExecution {
       retries: 0,
       seq: this.#seq,
       agentRunId: spec.agentRunId,
-      cls: concurrencyClassOf(spec),
+      cls: concurrencyClassOf(spec, this.#deps.unisolatedReadOnly === true),
       state: 'QUEUED',
+      // What a command may write decides which others it may run beside (M2Design 7.1). An
+      // unisolated command has the same roots, those of its task, only not enforced; it is
+      // scheduled by them as a sandboxed one is (D60), or the commands of every task of a run
+      // without a sandbox would go one at a time.
+      ...(spec.scope.kind === 'SANDBOX'
+        ? {
+            roots: [...spec.scope.profile.writableRoots],
+            // What it lent or what is protected it only reads (Orchestration 8.2).
+            readOnly: [...spec.scope.profile.protectedExisting],
+          }
+        : {}),
     };
     this.#byId.set(unitAttemptId, attempt);
     this.#queues.add(attempt);
@@ -256,7 +310,12 @@ export class RunExecution {
     try {
       do {
         this.#again = false;
-        const started = this.#held ? [] : this.#queues.startable(this.#deps.limits);
+        const started = this.#held
+          ? []
+          : this.#queues.startable(
+              this.#deps.limits,
+              (attempt) => this.#mutatingHeld === undefined || !mutating(attempt.cls),
+            );
         await Promise.all(started.map((attempt) => this.#run(attempt)));
       } while (this.#again);
     } finally {
@@ -264,8 +323,29 @@ export class RunExecution {
     }
   }
 
+  /**
+   * The attempt is over, with no retry to come: what was made for it alone to read is released
+   * (Kernel/Execution 6d). A model call reads its context pack, which an assembly registered ONCE;
+   * the Session's own artifacts are not touched. Best effort: what is missed expires in days.
+   */
+  async #over(attempt: Attempt): Promise<void> {
+    const { unit, input } = attempt.spec;
+    if (unit.executionKind !== 'MODEL') return;
+    const { contextPackRef } = input as { readonly contextPackRef?: ArtifactRef };
+    if (contextPackRef === undefined) return;
+    try {
+      const bytes = await this.#deps.artifacts.release([contextPackRef]);
+      if (bytes > 0) this.#deps.released?.(bytes);
+    } catch {
+      // The registration stays ONCE and expires with the others.
+    }
+  }
+
   async #finish(attempt: Attempt, check: Omit<ResultCheck, 'unitAttemptId'>): Promise<void> {
     attempt.attempts.submitResultCheck({ unitAttemptId: attempt.unitAttemptId, ...check });
+    // Only the fact of the execution the attempt stands at ends it, as Core judges the same.
+    if (check.executionId === undefined || check.executionId === attempt.executionId)
+      await this.#over(attempt);
     this.#queues.release(attempt);
     this.#checkDrained();
     await this.#pump();
@@ -273,6 +353,7 @@ export class RunExecution {
 
   /** The attempt is over without a result of its own: Core ended it, with a report or the run. */
   async #dropped(attempt: Attempt): Promise<void> {
+    await this.#over(attempt);
     this.#queues.release(attempt);
     this.#checkDrained();
     await this.#pump();
@@ -289,14 +370,11 @@ export class RunExecution {
 
   async #run(attempt: Attempt): Promise<void> {
     const { unit, input } = attempt.spec;
-    const { artifacts, config } = this.#deps;
-    if (unit.executionKind === 'MESSAGE_PUBLISH' || unit.executionKind === 'REPORT_PUBLISH') {
+    const { artifacts } = this.#deps;
+    if (unit.executionKind === 'MESSAGE_PUBLISH') {
       let result: BuiltInResult;
       try {
-        result =
-          unit.executionKind === 'MESSAGE_PUBLISH'
-            ? await publishMessage(input, artifacts)
-            : await publishReport(input, artifacts, config.maxReportBytes);
+        result = await publishMessage(input, artifacts);
       } catch {
         result = { outcome: 'FAILED', reasonCode: 'INTERNAL' };
       }
@@ -308,25 +386,39 @@ export class RunExecution {
 
   /**
    * What a command is judged against afterwards, taken once before its first dispatch: which
-   * protected paths exist, and what the files under its write roots look like. A snapshot that
-   * cannot be taken leaves nothing to compare; the sandbox still protects what exists.
+   * protected paths exist, and what the files under its write roots look like. Without the
+   * protected paths nothing a command creates there could be taken away again (M2Design 12, 16),
+   * so a command whose protected paths cannot be listed does not run; the list of changed files
+   * only serves the report, and its absence does not stop anything. Returns whether to go on.
    */
-  async #snapshotBeforeCommand(attempt: Attempt): Promise<void> {
+  async #snapshotBeforeCommand(attempt: Attempt): Promise<boolean> {
     const { protectedPaths, changes } = this.#deps;
-    if (attempt.spec.unit.executionKind !== 'COMMAND' || attempt.snapshotted === true) return;
+    if (attempt.spec.unit.executionKind !== 'COMMAND' || attempt.snapshotted === true) return true;
     attempt.snapshotted = true;
+    if (protectedPaths !== undefined)
+      try {
+        attempt.protectedBefore = await protectedPaths.snapshot();
+      } catch {
+        return false;
+      }
     const roots = commandRootsOf(attempt.spec);
-    try {
-      if (protectedPaths !== undefined) attempt.protectedBefore = await protectedPaths.snapshot();
-      if (changes !== undefined && roots.length > 0)
+    if (changes !== undefined && roots.length > 0)
+      try {
         attempt.changedBefore = await changes.snapshot(roots);
-    } catch {
-      // See above.
-    }
+      } catch {
+        // The command still runs; only the list of what it changed will be missing.
+      }
+    return true;
   }
 
   async #dispatch(attempt: Attempt, notBefore?: string): Promise<void> {
-    await this.#snapshotBeforeCommand(attempt);
+    if (!(await this.#snapshotBeforeCommand(attempt))) {
+      await this.#finish(attempt, {
+        outcome: 'NOT_DISPATCHED',
+        reasonCode: 'ADMISSION_CHECK_FAILED',
+      });
+      return;
+    }
     const executionId = this.#deps.newExecutionId?.() ?? newId('exe');
     let built: BuiltRequest;
     const calibration = attempt.attempts.calibrationOf(attempt.spec.agent.id);
@@ -398,6 +490,8 @@ export class RunExecution {
   #send(attempt: Attempt, built: BuiltRequest, executionId: string): void {
     attempt.attempts.registerExecution(attempt.unitAttemptId, executionId);
     attempt.executionId = executionId;
+    if (built.request.executionKind === 'MODEL')
+      this.#deps.modelStarted?.({ executionId, agentRunId: attempt.spec.agentRunId });
     if (built.request.executionKind === 'WEB_SEARCH' || built.request.executionKind === 'WEB_FETCH')
       attempt.webInput = built.request.input;
     // Cross-subject I/O never holds the actor (Kernel/Interaction 5.4).
@@ -457,6 +551,7 @@ export class RunExecution {
       return;
     if (await this.#createdProtected(attempt, fact)) return;
     this.#auditWeb(attempt, fact);
+    this.#auditModelFailure(attempt, fact);
     if (fact.executionKind === 'MODEL')
       this.#deps.modelAnswered?.({
         agentRunId: attempt.spec.agentRunId,
@@ -532,6 +627,7 @@ export class RunExecution {
             kind: 'COMPLETED',
             tokenCount: fact.result.output.tokenCount,
             tokenBudget: perCallInputLimit,
+            frozenTokens: fact.result.output.frozenTokens ?? 0,
           }
         : fact.outcome === 'REJECTED' && fact.reasonCode === 'LIMIT_EXCEEDED'
           ? {
@@ -539,9 +635,20 @@ export class RunExecution {
               kind: 'OVERSIZE',
               tokenCount: perCallInputLimit,
               tokenBudget: perCallInputLimit,
+              frozenTokens: 0,
             }
           : undefined;
-    return info !== undefined && compactionDue(info) ? info : undefined;
+    if (info === undefined) return undefined;
+    if (compactionDue(info)) return info;
+    // An assembly that is made again after a compaction tells its size then, not this one.
+    if (info.kind === 'COMPLETED')
+      this.#deps.contextLevel?.({
+        executionId: fact.executionId,
+        agentRunId: info.agentRunId,
+        used: info.tokenCount,
+        limit: info.tokenBudget,
+      });
+    return undefined;
   }
 
   /** Runs outside the actor; what comes of it goes back in as a message of the actor. */
@@ -550,12 +657,13 @@ export class RunExecution {
     fact: ExecutionFact,
     info: AssemblyInfo,
   ): Promise<void> {
+    this.#heldForCompaction.add(attempt.unitAttemptId);
     // A compaction that breaks must not break the call it was to make room for.
     const verdict =
       (await this.#deps.afterAssemble?.(info).catch(() => 'PROCEED' as const)) ?? 'PROCEED';
     this.#deps.enqueue(async () => {
-      // Aborted, paused or closed meanwhile: the attempt was answered by that, not by this.
-      if (this.#byId.get(attempt.unitAttemptId) !== attempt) return;
+      // Its AgentRun was interrupted meanwhile: the attempt was answered by that, not by this.
+      if (!this.#heldForCompaction.delete(attempt.unitAttemptId)) return;
       if (verdict === 'PROCEED') await this.#settle(attempt, fact);
       else
         await this.#finish(attempt, {
@@ -585,6 +693,24 @@ export class RunExecution {
       ...(fact.executionKind === 'WEB_SEARCH'
         ? { queries: input?.['queries'] }
         : { url: input?.['url'] }),
+    });
+  }
+
+  /**
+   * A model call that failed goes on record with what the provider or the HTTP client said
+   * (D109), retried or not: the fact itself is not kept, so without this line the cause of a
+   * stall or a provider error is lost when the run ends. The detail never holds the key.
+   */
+  #auditModelFailure(attempt: Attempt, fact: ExecutionFact): void {
+    if (fact.executionKind !== 'MODEL' || fact.outcome !== 'FAILED') return;
+    this.#deps.audit?.({
+      type: 'MODEL_FAILED',
+      unitAttemptId: attempt.unitAttemptId,
+      requestId: attempt.spec.requestId,
+      agentRunId: attempt.spec.agentRunId,
+      reasonCode: fact.reasonCode,
+      retryable: fact.retryable,
+      ...(fact.detail === undefined ? {} : { detail: fact.detail }),
     });
   }
 
@@ -646,7 +772,8 @@ export class RunExecution {
     }
     let refs: { outputRef: ArtifactRef; fullRef?: ArtifactRef; reasoningRef?: ArtifactRef };
     try {
-      const retention = fact.executionKind === 'CONTEXT_ASSEMBLE' ? 'EXPIRING' : 'SESSION';
+      // What an assembly makes is read by one model call and is released when that attempt is over.
+      const retention = fact.executionKind === 'CONTEXT_ASSEMBLE' ? 'ONCE' : 'SESSION';
       const outputRef = await artifacts.put(
         result.artifact.text,
         result.artifact.mediaType,
@@ -765,12 +892,15 @@ export class RunExecution {
    * cancelled, and when the Supervisor never confirms, the fallback judges it unconfirmed.
    */
   cancel(runEpoch: number): void {
-    for (const attempt of this.#queues.drainQueued())
+    for (const attempt of this.#queues.drainQueued()) {
       attempt.attempts.abandon(attempt.unitAttemptId);
+      void this.#over(attempt);
+    }
     // One that waits for a call slot, or is being built, was never sent: nothing to stop.
     for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
       if (attempt.executionId !== undefined) continue;
       attempt.attempts.abandon(attempt.unitAttemptId);
+      void this.#over(attempt);
       this.#queues.release(attempt);
     }
     const sent = this.#queues.running().filter((attempt) => attempt.executionId !== undefined);
@@ -805,7 +935,43 @@ export class RunExecution {
   }
 
   /** The pause is complete once nothing is executing; Core then moves from PAUSING to PAUSED. */
+  /**
+   * The barrier of a checkpoint (Orchestration 7.3): new writes and foreground commands stay
+   * queued; `clear` is called once none is executing any more. Reads, the web and model calls go
+   * on. A command that runs in the background has detached and is not waited for.
+   */
+  holdMutating(clear: () => void): void {
+    this.#mutatingHeld = clear;
+    this.#checkMutatingClear();
+  }
+
+  /** The mutating attempts that wait behind the barrier now: what the snapshot did not see run. */
+  heldMutating(): string[] {
+    return this.#queues
+      .waitingQueued()
+      .filter((attempt) => mutating(attempt.cls))
+      .map((attempt) => attempt.spec.requestId);
+  }
+
+  releaseMutating(): void {
+    this.#mutatingHeld = undefined;
+    void this.#pump();
+  }
+
+  #checkMutatingClear(): void {
+    const clear = this.#mutatingHeld;
+    if (clear === undefined) return;
+    const busy = [...this.#queues.running(), ...this.#queues.waiting()].some((attempt) =>
+      mutating(attempt.cls),
+    );
+    if (busy) return;
+    // Called once; the barrier stays until it is released.
+    this.#mutatingHeld = () => undefined;
+    clear();
+  }
+
   #checkDrained(): void {
+    this.#checkMutatingClear();
     if (this.#onDrained === undefined || this.#queues.running().length > 0) return;
     const notify = this.#onDrained;
     this.#onDrained = undefined;
@@ -858,8 +1024,10 @@ export class RunExecution {
     this.#onDrained = undefined;
     for (const stop of this.#drainTimers) stop();
     this.#drainTimers.clear();
-    for (const attempt of this.#queues.drainQueued())
+    for (const attempt of this.#queues.drainQueued()) {
       attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+      void this.#over(attempt);
+    }
     const sent: Attempt[] = [];
     for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
       if (attempt.executionId !== undefined) {
@@ -870,6 +1038,7 @@ export class RunExecution {
       if (attempt.state === 'WAITING') {
         // Parked, never sent: it ends here. One still being built ends when the build returns.
         attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+        void this.#over(attempt);
         this.#queues.release(attempt);
       } else attempt.cancelReason = 'ABORTED';
     }
@@ -889,6 +1058,61 @@ export class RunExecution {
       });
     });
     // The pump looks again: what ended queues no more behind it.
+    void this.#pump();
+  }
+
+  /**
+   * Cancels the attempts of one AgentRun (Orchestration 5.1, 5.2): queued ones answer at once, sent
+   * ones get the stop of M2Design 4.7 and answer INTERRUPTED(ABORTED) when their fact comes. The
+   * rest of the run is untouched.
+   */
+  abortAgentRun(agentRunId: string): void {
+    for (const attempt of this.#queues.drainQueued(agentRunId)) {
+      attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+      void this.#over(attempt);
+    }
+    const sent: Attempt[] = [];
+    for (const attempt of [...this.#queues.running(), ...this.#queues.waiting()]) {
+      if (attempt.spec.agentRunId !== agentRunId) continue;
+      // An assembly held for a compaction has nothing executing: it answers now. The compaction
+      // goes on for the context; what it ends with is no answer to this attempt any more.
+      if (this.#heldForCompaction.delete(attempt.unitAttemptId)) {
+        void this.#finish(attempt, {
+          executionId: attempt.executionId ?? '',
+          outcome: 'INTERRUPTED',
+          interruptedBy: 'ABORTED',
+        });
+        continue;
+      }
+      // A write always finishes: cancelling it could leave half a file (as a pause does).
+      if (attempt.cls === 'WRITE' && attempt.executionId !== undefined) continue;
+      if (attempt.executionId !== undefined) {
+        sent.push(attempt);
+        this.#cancelSent(attempt, 'ABORTED');
+        continue;
+      }
+      if (attempt.state === 'WAITING') {
+        attempt.attempts.interruptUnsent(attempt.unitAttemptId, 'ABORTED');
+        void this.#over(attempt);
+        this.#queues.release(attempt);
+      } else attempt.cancelReason = 'ABORTED';
+    }
+    if (sent.length > 0) {
+      const { config, enqueue, schedule } = this.#deps;
+      schedule(config.cancelGraceMs + config.convergenceMarginMs, () => {
+        enqueue(() => {
+          for (const attempt of sent) {
+            if (attempt.executionId === undefined || !this.#queues.running().includes(attempt))
+              continue;
+            this.#noteStop(attempt, attempt.executionId);
+            void this.#finish(attempt, {
+              executionId: attempt.executionId,
+              outcome: 'STOP_UNCONFIRMED',
+            });
+          }
+        });
+      });
+    }
     void this.#pump();
   }
 

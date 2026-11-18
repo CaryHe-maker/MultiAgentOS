@@ -1,11 +1,12 @@
 /**
- * Drives the whole product in Turn-chat for the deterministic cases of stage 1 (M2Plan 8.3): the
+ * Drives the whole product in Turn-chat for the deterministic acceptance cases: the
  * real composition, Kernel, Workflow, console and ExecutorSet, with only the provider's HTTP API
  * replaced. It stands where the user stands: it types lines and reads what the console shows.
  */
 import { realpath } from 'node:fs/promises';
 import type { ExecutorRegistry, SystemConfig, SystemFaultReporter } from '@multiagentos/contracts';
 import { createExecutorRegistry, type WebOptions } from '@multiagentos/executor-set';
+import { streamedIfAsked } from '@multiagentos/testing';
 import type { MemorySample, SandboxProbe, TrackedSubprocessRunner } from '@multiagentos/kernel';
 import type {
   Console,
@@ -15,16 +16,18 @@ import type {
 } from '@multiagentos/user-interaction';
 import { composeSystem, type System } from '../../src/bootstrap/compose-system.js';
 import { defaultSystemConfig } from '../../src/config/system-config.js';
+import {
+  agentOfTools,
+  completionResponse,
+  type ScriptedAgent,
+  type ScriptedCall,
+  type ScriptedTurn,
+} from '../support/scripted-model.js';
 
-export interface ChatCall {
-  readonly name: string;
-  readonly arguments: unknown;
-}
+export type ChatCall = ScriptedCall;
 
 /** One provider answer: tool calls, or text, or a raw response such as a rate limit. */
-export type ProviderTurn =
-  | { readonly calls: readonly ChatCall[]; readonly text?: string }
-  | { readonly response: () => Response | Promise<Response> };
+export type ProviderTurn = ScriptedTurn | { readonly response: () => Response | Promise<Response> };
 
 export const reply = (text: string): ProviderTurn => ({
   calls: [{ name: 'reply', arguments: { text } }],
@@ -67,39 +70,25 @@ export function scriptedChat(...turns: readonly ProviderTurn[]): ScriptedChat {
       requests.push(JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as ChatRequest);
       const turn = queue.shift();
       if (turn === undefined) throw new Error('a request beyond the script');
-      if ('response' in turn) return turn.response();
+      // The product asks for a stream; the script is written once, as whole answers.
+      if ('response' in turn) return streamedIfAsked(init, await turn.response());
       calls += 1;
-      return new Response(
-        JSON.stringify({
-          id: `chatcmpl-${String(calls)}`,
-          object: 'chat.completion',
-          created: 1_767_225_600,
-          model: 'deepseek-flash',
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: turn.text ?? null,
-                tool_calls: turn.calls.map((call, index) => ({
-                  id: `call_${String(calls)}_${String(index)}`,
-                  type: 'function',
-                  function: { name: call.name, arguments: JSON.stringify(call.arguments) },
-                })),
-              },
-              finish_reason: 'tool_calls',
-            },
-          ],
-          usage: { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 },
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return streamedIfAsked(init, completionResponse(turn, String(calls)));
     },
   };
 }
 
 export const textOf = (message: ChatMessage | undefined): string =>
   typeof message?.content === 'string' ? message.content : JSON.stringify(message?.content ?? '');
+
+/**
+ * The text that tells a task what it is: the header of a task that starts from its goal, or the
+ * answer to the call of a task that starts with its caller's context (D35, D56).
+ */
+export const isTaskText = (text: string, task: string): boolean =>
+  task === ''
+    ? text.includes('Your task (') || text.includes('you are a different task: "')
+    : text.includes(`Your task (${task},`) || text.includes(`you are a different task: "${task}"`);
 
 export async function until(condition: () => boolean, what: string, ms = 15_000): Promise<void> {
   const deadline = Date.now() + ms;
@@ -124,7 +113,7 @@ export interface ChatOptions {
   readonly preset?: 'standard' | 'readonly';
   /** Replaces Executors, for a case that needs an Executor to fail in a way a real one cannot. */
   readonly executors?: ExecutorRegistry;
-  /** What the web tools reach: a stand-in for DeepSeek's interface and for DNS (stage 6). */
+  /** What the web tools reach: a stand-in for DeepSeek's interface and for DNS. */
   readonly web?: WebOptions;
   readonly sandboxProbe?: SandboxProbe;
   readonly memorySample?: () => MemorySample;
@@ -245,11 +234,18 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
 }
 
 /** Which Agent a request is for, from the tools it offers (M2Design 3.9). */
-export function agentOfRequest(request: ChatRequest): 'main' | 'explorer' | 'worker' | 'unknown' {
-  const names = new Set((request.tools ?? []).map((each) => each.function.name));
-  if (names.has('run_subagents')) return 'main';
-  if (names.has('finish_subagent')) return names.has('write_file') ? 'worker' : 'explorer';
-  return 'unknown';
+export function agentOfRequest(request: ChatRequest): ScriptedAgent {
+  return agentOfTools(new Set((request.tools ?? []).map((each) => each.function.name)));
+}
+
+/**
+ * Asks for the list of Sessions and waits until the console has shown it: `/resume <n>` and
+ * `/delete <n>` refer to that list, so they must not be typed before it is there.
+ */
+export async function listSessions(chat: Chat): Promise<void> {
+  const before = chat.printed('NOTICE').length;
+  await chat.console.submit('/sessions');
+  await until(() => chat.printed('NOTICE').length > before, 'the list of Sessions');
 }
 
 /** A turn that is answered only after `wait` has settled: two Agents can be made to overlap. */
@@ -262,7 +258,7 @@ export type RoutedTurn =
  */
 export function scriptedAgents(
   scripts: Readonly<
-    Partial<Record<'main' | 'explorer' | 'worker' | 'summary', readonly RoutedTurn[]>>
+    Partial<Record<'main' | 'lead' | 'explorer' | 'worker' | 'summary', readonly RoutedTurn[]>>
   >,
   /** Worker scripts by task, for a case where two workers say different things. */
   tasks: Readonly<Record<string, readonly RoutedTurn[]>> = {},
@@ -287,12 +283,26 @@ export function scriptedAgents(
       const agent = asksSummary && queues.has('summary') ? 'summary' : agentOfRequest(request);
       // A task is known by the first user message that carries its name.
       const first = textOf(request.messages.find((message) => message.role === 'user'));
-      const task = [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
-      const key = task ?? agent;
-      const turn = (task === undefined ? queues.get(agent) : byTask.get(task))?.shift();
+      // A task that inherits a context (D35) is told who it is by the answer to the call that
+      // started it, after the history of the task it comes from.
+      const all = request.messages.map((message) => textOf(message)).join('\n');
+      // A task of a task that inherited has its caller's answer above its own: the last one
+      // names it (D58).
+      const inherited = [...byTask.keys()]
+        .map((name) => ({ name, at: all.lastIndexOf(`you are a different task: "${name}"`) }))
+        .filter((each) => each.at >= 0)
+        .sort((left, right) => right.at - left.at)[0]?.name;
+      const task =
+        inherited ?? [...byTask.keys()].find((name) => first.includes(`Your task (${name},`));
+      // A summary of a task's history carries the task's name too: it still goes to the summaries.
+      const own = agent === 'summary' ? undefined : task;
+      const key = own ?? agent;
+      const turn = (own === undefined ? queues.get(agent) : byTask.get(own))?.shift();
       if (turn === undefined) throw new Error(`a request beyond the script of ${key}`);
       // A call the Kernel cancels (a pause, an abort) stops waiting, like a real request would.
+      // Like a real fetch, a signal that is already aborted rejects at once.
       const cancelled = new Promise<never>((_, reject) => {
+        if (init?.signal?.aborted === true) reject(new DOMException('aborted', 'AbortError'));
         init?.signal?.addEventListener('abort', () => {
           reject(new DOMException('aborted', 'AbortError'));
         });

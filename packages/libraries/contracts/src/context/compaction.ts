@@ -19,7 +19,7 @@ export const CompactionTargetSchema = Type.Union(
 export type CompactionTarget = Static<typeof CompactionTargetSchema>;
 
 /** Why a compaction started. */
-export const COMPACTION_TRIGGERS = ['AUTO', 'OVERFLOW', 'USER', 'IDLE'] as const;
+export const COMPACTION_TRIGGERS = ['AUTO', 'OVERFLOW', 'USER'] as const;
 export type CompactionTrigger = (typeof COMPACTION_TRIGGERS)[number];
 
 /** One tool result that was cut to its head and tail. */

@@ -1,8 +1,6 @@
 import {
-  AnalysisReportSchema,
+  EXIT_CODE_MEMORY_PRESSURE,
   newId,
-  validate,
-  type AnalysisReport,
   type ArtifactRef,
   type BoundaryContext,
   type CloseReason,
@@ -11,18 +9,22 @@ import {
   type InteractionSessionEvent,
   type InteractionSystemEvent,
   type KernelToInteractionEvent,
+  type ModelStream,
   type RunFinished,
+  type ShutdownSource,
 } from '@multiagentos/contracts';
 import { describeReason } from '../domain/interaction-messages.js';
-import { renderReport } from '../domain/report-view.js';
-import { ConsoleText as text, terminalText } from './console-text.js';
+import { ConsoleText as text, commandPreview, terminalText } from './console-text.js';
+import { MAX_INPUT_BYTES, exceedsInputLimit, inputBytes } from './input-limit.js';
 import type {
   ActivityLine,
   ConsoleView,
   LiveState,
   PendingItem,
   QuestionField,
+  ThinkingView,
 } from './console-view.js';
+import { ThinkingLog, type ThinkingBlock } from './thinking-log.js';
 
 export interface ConsoleDeps {
   readonly gateway: InteractionGatewayPort;
@@ -84,7 +86,7 @@ export const RUN_EXIT_CODES: Readonly<Record<CloseReason, number>> = {
   CANCELLED: 130,
   SHUTDOWN: 130,
   ENDED_BY_USER: 130,
-  INTERRUPTED: 75,
+  INTERRUPTED: EXIT_CODE_MEMORY_PRESSURE,
 };
 
 const INTERRUPT_WINDOW_MS = 2000;
@@ -103,13 +105,24 @@ function commandChoice(
   return undefined;
 }
 
+/** The wider answer a question about the web takes, when the user gave it. */
+function widerChoice(
+  item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
+  input: string,
+): 'ANY_HOST' | 'FOLDER' | undefined {
+  const answer = input.trim().toLowerCase();
+  if (item.wider === 'ANY_HOST' && /^(a|all|所有|全部)$/u.test(answer)) return 'ANY_HOST';
+  if (item.wider === 'FOLDER' && /^(f|folder|文件夹)$/u.test(answer)) return 'FOLDER';
+  return undefined;
+}
+
 function scopeOf(
   item: Extract<PendingItem, { kind: 'AUTHORIZATION' }>,
   yes: boolean,
   input = '',
-): 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' {
+): 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' | 'ANY_HOST' | 'FOLDER' {
   if (!yes) return 'DENY';
-  return commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
+  return widerChoice(item, input) ?? commandChoice(item, input) ?? (item.once ? 'ONCE' : 'ALLOW');
 }
 
 /** One AgentRun of the current run, for `/timeline`. */
@@ -121,27 +134,76 @@ interface TimelineEntry {
   to?: string;
 }
 
+/** The activity line of a compaction the user asked for: no AgentRun stands behind it. */
+const COMPACTION_LINE = 'compaction';
+
+const COMMANDS: ReadonlySet<string> = new Set([
+  '/help',
+  '/exit',
+  '/timeline',
+  '/think',
+  '/continue',
+  '/steer',
+  '/status',
+  '/sessions',
+  '/fork',
+  '/new',
+  '/resume',
+  '/delete',
+  '/undo',
+  '/compact',
+  '/diff',
+  '/checkpoints',
+  '/rewind',
+  '/recover',
+  '/output',
+]);
+
+/** Whether a line that starts with `/` is a command: a known one, or one unknown word alone. */
+function isCommandLine(input: string): boolean {
+  const [first = ''] = input.split(/\s+/u);
+  return COMMANDS.has(first) || (input.trim() === first && !first.slice(1).includes('/'));
+}
+
 /** Items in the order a tree is drawn: children under the parent that started them. */
 function inTree<
-  T extends { readonly agentRunId: string; readonly parentAgentRunId?: string | undefined },
+  T extends {
+    readonly agentRunId: string;
+    readonly parentAgentRunId?: string | undefined;
+    readonly missionId?: string | undefined;
+    readonly parentMissionId?: string | undefined;
+  },
 >(items: readonly T[]): { readonly item: T; readonly depth: number; readonly branch: string }[] {
-  const known = new Set(items.map((item) => item.agentRunId));
+  // A line is a task when it says which one, else its AgentRun; its parent likewise.
+  const idOf = (item: T) => item.missionId ?? item.agentRunId;
+  const parentOf = (item: T) =>
+    item.missionId !== undefined ? item.parentMissionId : item.parentAgentRunId;
+  const known = new Set(items.map(idOf));
   const ordered: { item: T; depth: number; branch: string }[] = [];
   const visit = (parent: string | undefined, depth: number, indent: string): void => {
-    const siblings = items.filter((item) =>
-      parent === undefined
-        ? item.parentAgentRunId === undefined || !known.has(item.parentAgentRunId)
-        : item.parentAgentRunId === parent,
-    );
+    const siblings = items.filter((item) => {
+      const above = parentOf(item);
+      return parent === undefined ? above === undefined || !known.has(above) : above === parent;
+    });
     for (const [index, item] of siblings.entries()) {
       const last = index === siblings.length - 1;
       ordered.push({ item, depth, branch: depth === 0 ? '' : `${indent}${last ? '└─ ' : '├─ '}` });
-      visit(item.agentRunId, depth + 1, depth === 0 ? '  ' : `${indent}${last ? '   ' : '│  '}`);
+      visit(idOf(item), depth + 1, depth === 0 ? '  ' : `${indent}${last ? '   ' : '│  '}`);
     }
   };
   visit(undefined, 0, '');
   return ordered;
 }
+
+/** The phases in which the run waits for the user, not for a machine. */
+const WAITS_FOR_USER: ReadonlySet<string> = new Set([
+  'AWAITING_AUTHORIZATION',
+  'AWAITING_ANSWER',
+  'PAUSED',
+]);
+
+/** The phases of the tool calls of one reply: any other phase means its tools are all back. */
+const TOOL_PHASES: ReadonlySet<string> = new Set(['QUEUED', 'CALLING_TOOL', 'RETRYING']);
 
 function secondsBetween(from: string, to: string): string {
   return `${(Math.max(0, Date.parse(to) - Date.parse(from)) / 1000).toFixed(1)}s`;
@@ -160,15 +222,44 @@ export class Console {
   /** The run ended from outside (INTERRUPTED): the next message opens the next run (5.2). */
   #continueOnInput = false;
   readonly #activity = new Map<string, ActivityLine>();
+  /** The background commands of each task (by task, or by AgentRun outside a Mission). */
+  readonly #jobs = new Map<string, NonNullable<ActivityLine['jobs']>>();
+  /**
+   * The parent of every task seen in this run, kept after its line goes: the background commands
+   * of a task that delivered run on, and are shown on its nearest ancestor still in the tree.
+   */
+  readonly #parentOf = new Map<string, string>();
   /** Every AgentRun of the current run, in the order it appeared (`/timeline`). */
   readonly #timeline: TimelineEntry[] = [];
   #timelineRun: string | undefined;
   readonly #listed: string[] = [];
+  /** The folder of each listed Session that is not of this one's: the user is asked before one is opened. */
+  readonly #elsewhere = new Map<string, string>();
+  /** The Session whose opening in this folder was asked about and awaits the second `/resume`. */
+  #confirming: string | undefined;
   /** When each running tool Unit started, for the duration on its folded line. */
   readonly #unitStarted = new Map<string, string>();
+  /**
+   * Per AgentRun, the tool Unit it is running now: a call of the same reply that waits behind it
+   * does not take its line, which shows what is being done, not what waits.
+   */
+  readonly #runningUnit = new Map<string, string>();
   /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
   readonly #fullOutputs: ArtifactRef[] = [];
   #sessionId: string | undefined;
+  /** What the model thinks while it runs, for the eye only (docs/M2/Console.md 4). */
+  readonly #thinking = new ThinkingLog();
+  /** The answers agents are writing for the user, by the call that writes them; only that they are. */
+  readonly #answering = new Map<string, { agentRunId: string; startedAt: string }>();
+  /** The tool calls agents are writing, by the call that writes them: which tool, on which file. */
+  readonly #generating = new Map<
+    string,
+    { agentRunId: string; startedAt: string; name: string; target?: string }
+  >();
+  /** The share of its limit the context took at the last assembly, and the Session it is of. */
+  #contextShare: { readonly sessionId: string; readonly percent: number } | undefined;
+  /** The Session the thinking belongs to. */
+  #thinkingSession: string | undefined;
   /** Set by /fork until the draft's first prompt. */
   #forkFrom: string | undefined;
   #workflowRunId: string | undefined;
@@ -194,7 +285,10 @@ export class Console {
       tenantId: 'local',
       projectId: 'local',
       ...(this.#sessionId === undefined ? {} : { sessionId: this.#sessionId }),
-      ...(this.#workflowRunId === undefined ? {} : { workflowRunId: this.#workflowRunId }),
+      // A run belongs to a Session: without one, the run that was last seen is not named.
+      ...(this.#sessionId === undefined || this.#workflowRunId === undefined
+        ? {}
+        : { workflowRunId: this.#workflowRunId }),
     };
   }
 
@@ -206,13 +300,182 @@ export class Console {
       waiting: Math.max(0, this.#pending.length - 1),
       queued: [...this.#queued],
       ...(this.#hint === undefined ? {} : { hint: this.#hint }),
+      thinking: this.#thinkingInView(),
+      ...(this.#contextShare !== undefined && this.#contextShare.sessionId === this.#sessionId
+        ? { context: this.#contextShare.percent }
+        : {}),
     };
     this.#deps.view.update(live);
   }
 
+  /**
+   * Every block the log still has, oldest first. Which of them are shown open, and where among the
+   * records they stand, is for the view to decide: it knows the screen.
+   */
+  #thinkingInView(): ThinkingView[] {
+    return this.#thinking.blocks().map((block) => ({
+      id: block.callId,
+      number: block.number,
+      label: block.label,
+      state: block.state,
+      startedAt: block.startedAt,
+      ...(block.endedAt === undefined ? {} : { endedAt: block.endedAt }),
+      text: block.text,
+    }));
+  }
+
+  #thinkingSeconds(block: ThinkingBlock): string {
+    const end = block.endedAt ?? this.#now().toISOString();
+    return `${(Math.max(0, Date.parse(end) - Date.parse(block.startedAt)) / 1000).toFixed(1)}s`;
+  }
+
+  /** A different Session starts a different story: nothing of the old one is kept. */
+  #streamBelongsTo(sessionId: string | undefined): void {
+    if (this.#thinkingSession === sessionId) return;
+    this.#thinkingSession = sessionId;
+    this.#thinking.clear();
+    this.#answering.clear();
+    this.#generating.clear();
+  }
+
+  /**
+   * The thinking of a model call, as it comes (docs/M2/Console.md 4). It is not an event of
+   * the run: it changes nothing but what is drawn, and a piece that does not fit a Session in
+   * view is dropped.
+   */
+  handleModelStream(stream: ModelStream): void {
+    if (this.#sessionId === undefined || stream.sessionId !== this.#sessionId) return;
+    this.#streamBelongsTo(stream.sessionId);
+    const label = this.#activity.get(stream.agentRunId)?.label ?? 'main';
+    if (stream.kind === 'END') {
+      this.#thinking.end(stream.callId, stream.at);
+      // The call is written: what comes next is told by the activity of the tool itself.
+      this.#generating.delete(stream.callId);
+    } else if (stream.kind === 'CONTEXT') {
+      this.#contextShare = {
+        sessionId: stream.sessionId,
+        percent: Math.min(100, Math.round((stream.used / stream.limit) * 100)),
+      };
+    } else if (stream.kind === 'TOOL') {
+      this.#thinking.end(stream.callId, stream.at);
+      const earlier = this.#generating.get(stream.callId);
+      if (earlier === undefined)
+        // The next call of an agent replaces what it wrote before.
+        for (const [id, other] of this.#generating)
+          if (other.agentRunId === stream.agentRunId) this.#generating.delete(id);
+      this.#generating.set(stream.callId, {
+        agentRunId: stream.agentRunId,
+        startedAt: earlier?.startedAt ?? stream.at,
+        name: terminalText(stream.name),
+        ...(stream.target === undefined ? {} : { target: terminalText(stream.target) }),
+      });
+    } else if (stream.kind === 'ANSWER') {
+      // The thinking is over when the answer begins: one clock runs, not two.
+      this.#thinking.end(stream.callId, stream.at);
+      if (!this.#answering.has(stream.callId)) {
+        // The next call of an agent replaces what it wrote before.
+        for (const [id, earlier] of this.#answering)
+          if (earlier.agentRunId === stream.agentRunId) this.#answering.delete(id);
+        this.#answering.set(stream.callId, {
+          agentRunId: stream.agentRunId,
+          startedAt: stream.at,
+        });
+      }
+    } else
+      this.#thinking.append(
+        {
+          callId: stream.callId,
+          agentRunId: stream.agentRunId,
+          label,
+        },
+        terminalText(stream.delta),
+        stream.at,
+      );
+    this.#refresh();
+  }
+
+  /** `/think`: the blocks there are, or the whole of one. */
+  #showThinking(argument: string | undefined): void {
+    const blocks = this.#thinking.blocks();
+    if (argument === undefined) {
+      if (blocks.length === 0) {
+        this.#notice(text.thinkingNone);
+        return;
+      }
+      this.#notice(
+        [
+          text.thinkingList,
+          ...blocks.map((block) =>
+            text.thinkingBlockLine(block.number, block.label, this.#thinkingSeconds(block)),
+          ),
+        ].join('\n'),
+      );
+      return;
+    }
+    const block = this.#thinking.byNumber(Number(argument));
+    if (block === undefined) {
+      const all = this.#thinking.blocks();
+      this.#notice(text.thinkingMissing(Number(argument), all[0]?.number, all.at(-1)?.number));
+      return;
+    }
+    this.#deps.view.print({
+      kind: 'THINKING',
+      text: [
+        text.thinkingHeader(block.label, this.#thinkingSeconds(block), block.state),
+        block.text,
+        ...(block.cut ? [text.thinkingCut] : []),
+      ].join('\n'),
+    });
+  }
+
   /** SubAgents under the AgentRun that started them, drawn as a tree (M2Design 11.1). */
   #activityTree(): ActivityLine[] {
-    return inTree([...this.#activity.values()]).map(({ item, branch }) => ({ ...item, branch }));
+    // An AgentRun that is writing its answer for the user says so on its own line, with its own
+    // time: that is what it does now, and a second line would run a second clock.
+    const answering = new Map(
+      [...this.#answering.values()].map((answer) => [answer.agentRunId, answer.startedAt]),
+    );
+    const generating = new Map(
+      [...this.#generating.values()].map((call) => [call.agentRunId, call]),
+    );
+    const jobsByLine = this.#jobsByLine();
+    return inTree(
+      [...this.#activity.values()].map((each) => {
+        const jobs = jobsByLine.get(each.missionId ?? each.agentRunId);
+        const line = jobs === undefined ? each : { ...each, jobs };
+        if (line.waitsForUser === true) return line;
+        const startedAt = answering.get(line.agentRunId);
+        if (startedAt !== undefined)
+          return { ...line, phase: text.answeringPhase, since: startedAt };
+        const call = generating.get(line.agentRunId);
+        return call === undefined
+          ? line
+          : {
+              ...line,
+              phase: text.generating(call.name, call.target),
+              since: call.startedAt,
+            };
+      }),
+    ).map(({ item, branch }) => ({ ...item, branch }));
+  }
+
+  /**
+   * The background commands each line shows: a task's own, and those of tasks below it whose
+   * lines are gone (they delivered, their commands run on), all together.
+   */
+  #jobsByLine(): Map<string, NonNullable<ActivityLine['jobs']>> {
+    const shown = new Set(
+      [...this.#activity.values()].map((line) => line.missionId ?? line.agentRunId),
+    );
+    const byLine = new Map<string, NonNullable<ActivityLine['jobs']>>();
+    for (const [key, jobs] of this.#jobs) {
+      let at: string | undefined = key;
+      while (at !== undefined && !shown.has(at)) at = this.#parentOf.get(at);
+      if (at === undefined) continue;
+      const before = byLine.get(at)?.startedAt ?? [];
+      byLine.set(at, { startedAt: [...before, ...jobs.startedAt] });
+    }
+    return byLine;
   }
 
   /** `/timeline`: when each AgentRun of this run started and ended, children below parents. */
@@ -283,7 +546,7 @@ export class Console {
    */
   exitWith(code: number): void {
     this.#exitCode = code;
-    void this.shutdown().catch(() => undefined);
+    void this.shutdown('EXIT_CODE').catch(() => undefined);
   }
 
   /** Resolves when the user asked to leave; the composition root then shuts down. */
@@ -298,13 +561,19 @@ export class Console {
   async submit(line: string): Promise<void> {
     const input = line.trim();
     if (input.length === 0) return;
+    if (exceedsInputLimit(input)) {
+      this.#notice(text.inputTooLarge(inputBytes(input), MAX_INPUT_BYTES));
+      return;
+    }
     this.#hint = undefined;
     const pending = this.#pending[0];
     if (pending !== undefined) {
       await this.#answer(pending, input);
       return;
     }
-    if (input.startsWith('/')) {
+    // A line that starts with a path ("/app/main.ts is broken", "/app has three scripts") is a
+    // message; only a known command, or a lone unknown word (a typo to point out), is a command.
+    if (input.startsWith('/') && isCommandLine(input)) {
       await this.#command(input);
       return;
     }
@@ -382,7 +651,7 @@ export class Console {
     }
     const now = this.#now().getTime();
     if (this.#interruptedAt !== undefined && now - this.#interruptedAt <= INTERRUPT_WINDOW_MS) {
-      await this.shutdown();
+      await this.shutdown('INTERRUPT_TWICE');
       return;
     }
     this.#interruptedAt = now;
@@ -391,8 +660,8 @@ export class Console {
   }
 
   /** Asks the Kernel to close the Session and stop the system; `exited()` then resolves. */
-  async shutdown(): Promise<void> {
-    await this.#deps.gateway.shutdown({ requestId: newId('req') }, this.#context());
+  async shutdown(source: ShutdownSource): Promise<void> {
+    await this.#deps.gateway.shutdown({ requestId: newId('req'), source }, this.#context());
     this.#exit?.();
   }
 
@@ -412,6 +681,10 @@ export class Console {
     const sessionId = this.#sessionId;
     const workflowRunId = this.#workflowRunId;
     const { name, text: note } = addressed(raw);
+    if (exceedsInputLimit(note)) {
+      this.#notice(text.inputTooLarge(inputBytes(note), MAX_INPUT_BYTES));
+      return;
+    }
     if (
       this.#runState !== 'RUNNING' ||
       sessionId === undefined ||
@@ -625,8 +898,20 @@ export class Console {
       await this.#answerQuestion(item, input);
       return;
     }
+    if (
+      item.kind === 'AUTHORIZATION' &&
+      item.detail !== undefined &&
+      /^(v|view|查看)$/iu.test(input.trim())
+    ) {
+      // Looking is not answering: the question stays where it is.
+      this.#notice(item.detail);
+      return;
+    }
     const choice = item.kind === 'AUTHORIZATION' ? commandChoice(item, input) : undefined;
-    const yes = choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input);
+    const wider = item.kind === 'AUTHORIZATION' ? widerChoice(item, input) : undefined;
+    const yes =
+      wider !== undefined ||
+      (choice !== undefined ? choice !== 'DENY' : /^(y|yes|是|好)$/iu.test(input));
     const no = choice !== undefined ? choice === 'DENY' : /^(n|no|否|不)$/iu.test(input);
     if (!yes && !no) {
       // An undo has no timer: the next message simply goes on, and the Kernel cancels it.
@@ -688,10 +973,13 @@ export class Console {
         this.#notice(text.help);
         break;
       case '/exit':
-        await this.shutdown();
+        await this.shutdown('EXIT_COMMAND');
         break;
       case '/timeline':
         this.#showTimeline();
+        break;
+      case '/think':
+        this.#showThinking(argument);
         break;
       case '/continue':
         await this.#resume(rest);
@@ -729,15 +1017,29 @@ export class Console {
         break;
       case '/resume': {
         const sessionId = listed(argument);
-        if (sessionId === undefined) this.#notice(text.notNow);
-        else {
-          this.#putBack();
-          const opened = await this.#deps.gateway.openSession(
-            { requestId: newId('req'), sessionId },
-            this.#context(),
-          );
-          if (opened.outcome === 'ACCEPTED') this.#sessionId = opened.sessionId;
+        if (sessionId === undefined) {
+          this.#notice(text.notNow);
+          break;
         }
+        // A Session of another folder is opened here only after the user was told what it means.
+        const folder = this.#elsewhere.get(sessionId);
+        if (folder !== undefined && this.#confirming !== sessionId) {
+          this.#confirming = sessionId;
+          this.#notice(text.confirmOtherFolder(folder, this.#listed.indexOf(sessionId) + 1));
+          break;
+        }
+        this.#confirming = undefined;
+        this.#putBack();
+        const opened = await this.#deps.gateway.openSession(
+          {
+            requestId: newId('req'),
+            sessionId,
+            ...(folder === undefined ? {} : { confirmWorkspaceChange: true }),
+          },
+          this.#context(),
+        );
+        if (opened.outcome === 'ACCEPTED') this.#sessionId = opened.sessionId;
+        else this.#notice(describeReason(opened.reasonCode));
         break;
       }
       case '/delete': {
@@ -748,6 +1050,21 @@ export class Console {
             { requestId: newId('req'), sessionId },
             this.#context(),
           );
+        break;
+      }
+      case '/recover': {
+        const sessionId = this.#sessionId;
+        const workflowRunId = this.#workflowRunId;
+        if (sessionId === undefined || workflowRunId === undefined || argument !== undefined) {
+          this.#notice(text.notNow);
+          break;
+        }
+        const recovered = await this.#deps.gateway.recoverRun(
+          { requestId: newId('req'), sessionId, workflowRunId },
+          this.#context(),
+        );
+        if (recovered.outcome === 'REJECTED') this.#notice(describeReason(recovered.reasonCode));
+        else this.#notice(text.recovered);
         break;
       }
       case '/undo': {
@@ -761,7 +1078,7 @@ export class Console {
           this.#notice(text.notNow);
           break;
         }
-        const undone = await this.#deps.gateway.undoTurns(
+        const undone = await this.#deps.gateway.undo(
           {
             requestId: newId('req'),
             sessionId,
@@ -784,12 +1101,58 @@ export class Console {
           { requestId: newId('req'), sessionId, workflowRunId },
           this.#context(),
         );
-        if (asked.outcome === 'REJECTED') this.#notice(describeReason(asked.reasonCode));
+        if (asked.outcome === 'REJECTED')
+          this.#notice(
+            asked.reasonCode === 'REQUEST_CONFLICT'
+              ? text.compactNotNow
+              : describeReason(asked.reasonCode),
+          );
+        else {
+          // From now on the screen says that the system works, and for how long, like for any tool.
+          this.#contextShare = undefined;
+          this.#activity.set(COMPACTION_LINE, {
+            agentRunId: COMPACTION_LINE,
+            label: text.system,
+            phase: text.phase.COMPACTING,
+            since: this.#now().toISOString(),
+          });
+          this.#refresh();
+        }
         break;
       }
       case '/diff':
-        await this.#showDiff(argument === undefined ? 1 : Number(argument));
+        // `#N` is the N-th line of /checkpoints; a bare number counts checkpoints back from the last.
+        if (argument?.startsWith('#') === true)
+          await this.#showCheckpointDiff(Number(argument.slice(1)));
+        else await this.#showDiff(argument === undefined ? 1 : Number(argument));
         break;
+      case '/checkpoints':
+        await this.#showCheckpoints();
+        break;
+      case '/rewind': {
+        // Back to the N-th line of /checkpoints, while the run is paused (Orchestration 7.5).
+        const sessionId = this.#sessionId;
+        const workflowRunId = this.#workflowRunId;
+        const seq = Number(argument?.replace(/^#/u, ''));
+        if (
+          sessionId === undefined ||
+          workflowRunId === undefined ||
+          !Number.isSafeInteger(seq) ||
+          seq < 1
+        ) {
+          this.#notice(text.notNow);
+          break;
+        }
+        const rewound = await this.#deps.gateway.rewindCheckpoint(
+          { requestId: newId('req'), sessionId, workflowRunId, checkpoint: seq },
+          this.#context(),
+        );
+        if (rewound.outcome === 'REJECTED')
+          this.#notice(
+            rewound.reasonCode === 'UNDO_NOT_AVAILABLE' ? text.rewindNeedsPause : text.noRewind,
+          );
+        break;
+      }
       case '/output': {
         const ref = this.#fullOutputs[Number(argument) - 1];
         if (ref === undefined) this.#notice(text.notNow);
@@ -808,8 +1171,55 @@ export class Console {
       this.#notice(text.notNow);
       return;
     }
-    const diff = await this.#deps.gateway.diffTurns(
+    const diff = await this.#deps.gateway.diff(
       { requestId: newId('req'), sessionId, n },
+      this.#context(),
+    );
+    if (diff.outcome === 'REJECTED') {
+      this.#notice(text.noDiff);
+      return;
+    }
+    const body = await this.#read(diff.diffRef);
+    this.#notice(diff.files.length === 0 ? text.noDiff : terminalText(body ?? ''));
+  }
+
+  /** The checkpoints of the Session, numbered for `/diff #N` (Orchestration 7.4). */
+  async #showCheckpoints(): Promise<void> {
+    const sessionId = this.#sessionId;
+    if (sessionId === undefined) {
+      this.#notice(text.notNow);
+      return;
+    }
+    const listed = await this.#deps.gateway.listCheckpoints(
+      { requestId: newId('req'), sessionId },
+      this.#context(),
+    );
+    if (listed.outcome === 'REJECTED' || listed.items.length === 0) {
+      this.#notice(text.noCheckpoints);
+      return;
+    }
+    let inputs = 0;
+    this.#notice(
+      listed.items
+        .map((item) =>
+          text.checkpointLine(
+            item.seq,
+            item.kind === 'INPUT' ? text.inputCheckpoint((inputs += 1)) : terminalText(item.label),
+            item.changedFiles,
+          ),
+        )
+        .join('\n'),
+    );
+  }
+
+  async #showCheckpointDiff(seq: number): Promise<void> {
+    const sessionId = this.#sessionId;
+    if (sessionId === undefined || !Number.isSafeInteger(seq) || seq < 1) {
+      this.#notice(text.notNow);
+      return;
+    }
+    const diff = await this.#deps.gateway.diff(
+      { requestId: newId('req'), sessionId, checkpoint: seq },
       this.#context(),
     );
     if (diff.outcome === 'REJECTED') {
@@ -833,27 +1243,51 @@ export class Console {
     if (event.type === 'SessionDeleted')
       this.#notice(text.sessionDeleted(event.outcome === 'DELETED'));
     else {
+      // This folder's Sessions first, then the others, numbered on through both.
+      const here = event.sessions.filter((session) => session.here).slice(0, 10);
+      const others = event.sessions.filter((session) => !session.here).slice(0, 10);
       this.#listed.splice(
         0,
         this.#listed.length,
-        ...event.sessions.map((session) => session.sessionId),
+        ...[...here, ...others].map((session) => session.sessionId),
       );
-      if (event.sessions.length === 0) this.#notice(text.noSessions);
-      else
-        this.#notice(
-          [
-            text.recentSessions,
-            ...event.sessions
-              .slice(0, 10)
+      this.#elsewhere.clear();
+      this.#confirming = undefined;
+      for (const session of others) this.#elsewhere.set(session.sessionId, session.repositoryRoot);
+      if (here.length + others.length === 0) this.#notice(text.noSessions);
+      else {
+        if (here.length > 0) {
+          this.#notice(text.recentSessions);
+          this.#deps.view.print({
+            kind: 'LIST',
+            text: here
               .map((session, index) =>
                 text.sessionLine(
                   index + 1,
                   terminalText(session.title ?? text.untitled),
-                  session.turnCount,
+                  session.inputCount,
                 ),
-              ),
-          ].join('\n'),
-        );
+              )
+              .join('\n'),
+          });
+        }
+        if (others.length > 0) {
+          this.#notice(text.otherFolderSessions);
+          this.#deps.view.print({
+            kind: 'LIST',
+            text: others
+              .map((session, index) =>
+                text.otherFolderSessionLine(
+                  here.length + index + 1,
+                  terminalText(session.title ?? text.untitled),
+                  session.inputCount,
+                  terminalText(session.repositoryRoot),
+                ),
+              )
+              .join('\n'),
+          });
+        }
+      }
     }
     this.#refresh();
     return Promise.resolve();
@@ -865,18 +1299,24 @@ export class Console {
       case 'SessionOpened':
         this.#sessionId = envelope.sessionId;
         this.#notice(
-          text.sessionOpened(terminalText(event.title ?? text.untitled), event.turnCount),
+          text.sessionOpened(terminalText(event.title ?? text.untitled), event.inputCount),
         );
         if (event.divergedFiles !== undefined)
           this.#notice(text.diverged(event.divergedFiles.length));
+        if (event.interruptedRun !== undefined)
+          this.#notice(text.interruptedRun(terminalText(event.interruptedRun.label)));
         break;
       case 'SessionFailed':
-        if (this.#sessionId === envelope.sessionId) this.#sessionId = undefined;
+        if (this.#sessionId === envelope.sessionId) {
+          this.#sessionId = undefined;
+          this.#workflowRunId = undefined;
+        }
         this.#deps.view.print({ kind: 'ERROR', text: text.sessionFailed[event.code] });
         break;
       case 'SessionClosed':
         if (this.#sessionId === envelope.sessionId) {
           this.#sessionId = undefined;
+          this.#workflowRunId = undefined;
           this.#continueOnInput = false;
         }
         break;
@@ -893,15 +1333,32 @@ export class Console {
       this.#timeline.length = 0;
     }
     switch (event.type) {
-      case 'RunStateChanged':
+      case 'RunStateChanged': {
+        this.#streamBelongsTo(this.#sessionId);
+        // Nothing streams once the run waits for the user or is over: no block stays open.
+        if (event.state !== 'RUNNING' && event.state !== 'PAUSING' && event.state !== 'PAUSED') {
+          this.#answering.clear();
+          this.#generating.clear();
+        }
+        const at = this.#now().toISOString();
+        if (['AWAITING_INPUT', 'CONVERGING', 'CLOSED'].includes(event.state))
+          this.#thinking.closeAll(at, 'DONE');
+        else if (event.state === 'INTERRUPTING') this.#thinking.closeAll(at, 'ABORTED');
         this.#runState = event.state;
+        // A requested compaction ends with its own event or with a change of the run's state (a
+        // fork that cancels it); the run does not change state while it is compacting.
+        this.#activity.delete(COMPACTION_LINE);
         if (event.state === 'INTERRUPTING') this.#aborting = true;
         // The tree stays while the run is held, so that a note can still name its task.
-        if (event.state === 'AWAITING_INPUT' || event.state === 'CONVERGING')
+        if (event.state === 'AWAITING_INPUT' || event.state === 'CONVERGING') {
           this.#activity.clear();
+          this.#runningUnit.clear();
+          this.#jobs.clear();
+        }
         if (event.state === 'PAUSED') this.#hint = text.paused;
         else if (event.state === 'RUNNING') this.#hint = undefined;
         break;
+      }
       case 'HumanRequest': {
         if (event.kind !== 'prompt') {
           await this.#askQuestion(event);
@@ -919,6 +1376,7 @@ export class Console {
         break;
       }
       case 'HumanResolved': {
+        if (event.resolution === 'WITHDRAWN') this.#notice(text.followUp);
         if (this.#openRequest === event.humanRequestId) this.#openRequest = undefined;
         const index = this.#pending.findIndex(
           (item) => item.kind === 'QUESTION' && item.humanRequestId === event.humanRequestId,
@@ -935,6 +1393,15 @@ export class Console {
           questionId: event.questionId,
           once: event.capability === 'workspace.write' && event.critical,
           ...(event.capability === 'command.exec' ? { options: event.options } : {}),
+          ...(event.capability === 'web.fetch'
+            ? { wider: 'ANY_HOST' as const }
+            : event.capability === 'web.search'
+              ? { wider: 'FOLDER' as const }
+              : {}),
+          // A long command is shown by its head; the whole of it is one key away.
+          ...(event.capability === 'command.exec' && commandPreview(event.command).cut
+            ? { detail: terminalText(event.command) }
+            : {}),
           text: await this.#questionText(event),
         });
         break;
@@ -954,13 +1421,37 @@ export class Console {
         break;
       }
       case 'ContextCompacted':
-        this.#notice(text.compacted(event.compactedTurns, event.prunedResults));
+        this.#activity.delete(COMPACTION_LINE);
+        this.#deps.view.print({
+          kind: 'STEP',
+          text: text.compacted(
+            event.compactedInputs,
+            event.prunedResults,
+            event.summaryRef !== undefined,
+          ),
+        });
         break;
       case 'CompactionFailed':
+        this.#activity.delete(COMPACTION_LINE);
         this.#notice(text.compactionFailed[event.reason]);
         break;
-      case 'WorkspaceReverted':
-        this.#notice(text.undone(event.revertedTurnIds.length));
+      case 'ExternalReadPaused':
+        this.#deps.view.print({
+          kind: 'ERROR',
+          text: text.externalPaused(
+            event.attempts.map((attempt) => ({
+              path: terminalText(attempt.path),
+              reason: attempt.reason,
+            })),
+          ),
+        });
+        break;
+      case 'CheckpointRolledBack':
+        this.#notice(
+          event.undo === true
+            ? text.undone(event.files.length)
+            : text.rewound(terminalText(event.label), event.files.length),
+        );
         break;
       case 'AuthorizationResolved': {
         const index = this.#pending.findIndex(
@@ -970,6 +1461,8 @@ export class Console {
         break;
       }
       case 'ActivityEvent': {
+        // A compaction that begins (the run's own, before a call) hides the share: it is about to change.
+        if (event.phase === 'COMPACTING') this.#contextShare = undefined;
         const { unit } = event;
         const tool =
           unit === undefined
@@ -993,18 +1486,39 @@ export class Console {
             label: terminalText(event.label),
             from: event.at,
           });
-        if (event.phase === 'ENDED' && entry !== undefined) entry.to = event.at;
-        this.#activity.set(event.agentRunId, {
-          agentRunId: event.agentRunId,
-          ...(event.parentAgentRunId === undefined
-            ? {}
-            : { parentAgentRunId: event.parentAgentRunId }),
-          label: terminalText(event.label),
-          phase: text.phase[event.phase],
-          since: event.at,
-          ...(shown === undefined ? {} : { tool: shown }),
-          ...('retry' in event ? { retry: event.retry } : {}),
-        });
+        // A segment ends when its task sleeps, as when it ends.
+        if ((event.phase === 'ENDED' || event.phase === 'SLEEPING') && entry !== undefined)
+          entry.to = event.at;
+        const parent = event.parentMissionId ?? event.parentAgentRunId;
+        if (parent !== undefined) this.#parentOf.set(event.missionId ?? event.agentRunId, parent);
+        // A task woken again: its new segment takes the place of the line it slept on.
+        if (event.missionId !== undefined)
+          for (const [agentRunId, line] of this.#activity)
+            if (line.missionId === event.missionId && agentRunId !== event.agentRunId)
+              this.#activity.delete(agentRunId);
+        // A call queued behind one that runs keeps the running one on the line.
+        const running = this.#runningUnit.get(event.agentRunId);
+        if (unit?.state === 'RUNNING') this.#runningUnit.set(event.agentRunId, unit.unitAttemptId);
+        else if (unit?.unitAttemptId === running || !TOOL_PHASES.has(event.phase))
+          this.#runningUnit.delete(event.agentRunId);
+        if (event.phase !== 'QUEUED' || running === undefined)
+          this.#activity.set(event.agentRunId, {
+            agentRunId: event.agentRunId,
+            ...(event.parentAgentRunId === undefined
+              ? {}
+              : { parentAgentRunId: event.parentAgentRunId }),
+            ...(event.missionId === undefined ? {} : { missionId: event.missionId }),
+            ...(event.parentMissionId === undefined
+              ? {}
+              : { parentMissionId: event.parentMissionId }),
+            label: terminalText(event.label),
+            phase: text.phase[event.phase],
+            // Waiting for the user is not work that is taking long: no seconds are counted for it.
+            ...(WAITS_FOR_USER.has(event.phase) ? { waitsForUser: true } : {}),
+            since: event.at,
+            ...(shown === undefined ? {} : { tool: shown }),
+            ...('retry' in event ? { retry: event.retry } : {}),
+          });
         if (unit?.state === 'RUNNING') this.#unitStarted.set(unit.unitAttemptId, event.at);
         if (unit?.state === 'DONE' && tool !== undefined) {
           const started = this.#unitStarted.get(unit.unitAttemptId);
@@ -1024,6 +1538,8 @@ export class Console {
         break;
       }
       case 'MessagePublished':
+        // What was being written is now the message itself.
+        this.#answering.clear();
         await this.#published(event.kind, event.agentLabel, event.messageRef);
         if (event.wrapUpReason !== undefined)
           this.#deps.view.print({
@@ -1031,8 +1547,14 @@ export class Console {
             text: text.earlyEnd[event.wrapUpReason] ?? event.wrapUpReason,
           });
         break;
+      case 'BackgroundJobs': {
+        const key = event.missionId ?? event.agentRunId;
+        if (event.startedAt.length === 0) this.#jobs.delete(key);
+        else this.#jobs.set(key, { startedAt: event.startedAt });
+        break;
+      }
       case 'RunFinished':
-        await this.#runFinished(event);
+        this.#runFinished(event);
         break;
     }
     this.#refresh();
@@ -1058,6 +1580,16 @@ export class Console {
       return text.webSearch(event.queries.map(terminalText), terminalText(event.provider));
     if (event.capability === 'web.fetch')
       return text.webFetch(terminalText(event.host), terminalText(event.url));
+    if (event.capability === 'budget.extend')
+      return text.budgetExtend(event.used, event.limit, event.add, event.tasks);
+    if (event.capability === 'tasks.extend')
+      return text.tasksExtend(event.started, event.limit, event.add);
+    if (event.capability === 'external.read')
+      return text.externalRead(
+        terminalText(event.root),
+        terminalText(event.path),
+        terminalText(event.provider),
+      );
     if (event.critical)
       return text.writeCritical(
         terminalText(event.path),
@@ -1093,11 +1625,7 @@ export class Console {
       });
   }
 
-  async #published(
-    kind: 'REPLY' | 'DEGRADED_REPLY' | 'RUN_RESULT',
-    agentLabel: string,
-    ref: ArtifactRef,
-  ) {
+  async #published(kind: 'REPLY' | 'DEGRADED_REPLY', agentLabel: string, ref: ArtifactRef) {
     const body = await this.#read(ref);
     if (kind === 'DEGRADED_REPLY') {
       let reason: string | undefined;
@@ -1115,28 +1643,19 @@ export class Console {
     this.#deps.view.print({ kind: 'REPLY', agentLabel, text: terminalText(body ?? '') });
   }
 
-  async #runFinished(event: RunFinished): Promise<void> {
+  #runFinished(event: RunFinished): void {
     this.#runState = 'CLOSED';
     this.#aborting = false;
     this.#activity.clear();
+    this.#runningUnit.clear();
+    this.#jobs.clear();
+    this.#parentOf.clear();
     this.#openRequest = undefined;
     this.#pending.splice(0);
-    if (event.resultRef !== undefined) {
-      const body = await this.#read(event.resultRef);
-      let report: AnalysisReport | undefined;
-      try {
-        const parsed = validate<AnalysisReport>(AnalysisReportSchema, JSON.parse(body ?? 'null'));
-        report = parsed.ok ? parsed.value : undefined;
-      } catch {
-        report = undefined;
-      }
-      if (report !== undefined)
-        this.#deps.view.print({ kind: 'REPORT', text: renderReport(report) });
-    }
     this.#notice(text.finished[event.closeReason]);
     this.#putBack();
     // An interrupted conversation stays open: the log is complete, and the next message starts
-    // a new Turn (refused with the reason while memory is still short). Only a one-shot command
+    // a new input (refused with the reason while memory is still short). Only a one-shot command
     // leaves, with code 75, through the exit code of its close reason below.
     if (event.closeReason === 'INTERRUPTED' && this.#finished === undefined)
       this.#continueOnInput = true;

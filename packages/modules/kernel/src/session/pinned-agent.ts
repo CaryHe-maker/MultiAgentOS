@@ -7,6 +7,7 @@ import {
   type PortResult,
   type ProtectedCapability,
   type ProtocolRegistry,
+  requestedCapabilitiesOf,
   type RegisterAgentRunRequest,
   type ThinkingEffort,
   type ToolDefinition,
@@ -51,6 +52,7 @@ export function pinnedAgentOf(
     description: tool.modelDescription,
     parameters: registry.jsonSchemaOf(tool.parametersContract),
     purpose: tool.purpose,
+    ...(tool.answer === undefined ? {} : { answer: tool.answer }),
   });
   const toolOf = (ref: { readonly id: string; readonly version: string }) =>
     tools.find((tool) => tool.id === ref.id && tool.version === ref.version);
@@ -71,14 +73,34 @@ export function pinnedAgentOf(
   // `ask_user` needs no capability: any Agent that declares it offers it (M2Design 3.4).
   const ask =
     agent.actions.askUser === undefined ? undefined : toolOf(agent.actions.askUser.toolRef);
+  // The task tools (Orchestration 4, 5, 3.7); stopping children needs `agent.spawn`, and the job
+  // tools need commands (Orchestration 6.2).
+  const { sleep, message, viewTasks, stop, jobOutput, jobList, jobKill } = agent.actions;
+  const declared = (
+    action: { readonly toolRef: { readonly id: string; readonly version: string } } | undefined,
+    needs?: ProtectedCapability,
+  ): ToolDefinition[] => {
+    if (action === undefined || (needs !== undefined && !requested.includes(needs))) return [];
+    const tool = toolOf(action.toolRef);
+    return tool === undefined ? [] : [tool];
+  };
+  const taskTools = [
+    ...declared(sleep),
+    ...declared(message),
+    ...declared(viewTasks),
+    ...declared(stop, 'agent.spawn'),
+    ...declared(jobOutput, 'command.exec'),
+    ...declared(jobList, 'command.exec'),
+    ...declared(jobKill, 'command.exec'),
+  ];
   const ordinary = [
     ...unitTools,
     ...(todos === undefined ? [] : [todos]),
     ...(spawn === undefined ? [] : [spawn]),
     ...(ask === undefined ? [] : [ask]),
+    ...taskTools,
     ...ends.map((end) => end.tool),
   ].map(specOf);
-  const final = ends.filter((end) => end.allowedInFinal).map((end) => specOf(end.tool));
 
   return {
     id: agent.id,
@@ -93,8 +115,10 @@ export function pinnedAgentOf(
     contextWindowTokens: model.limits.contextWindowTokens,
     cacheHitWeight: model.pricing.offPeak.inputCacheHit / model.pricing.offPeak.inputCacheMiss,
     instructions: prompt.template,
-    // A final call offers only the end tools allowed in it (ExecutorSet 6.1).
-    toolSpecs: (isFinal) => (isFinal ? final : ordinary),
+    // Every call lists the same tools, the final one too, so the cached prefix holds (D102); a
+    // final call is told which end tools it may call, and Workflow takes only those then.
+    toolSpecs: ordinary,
+    finalToolNames: ends.filter((end) => end.allowedInFinal).map((end) => end.tool.modelName),
   };
 }
 
@@ -136,6 +160,53 @@ export interface AgentCatalog {
   ): PortResult<PinnedDefinitionSet>;
 }
 
+/** The catalog as compaction reads it: an Agent by its reference, and the newest of an id. */
+export interface CompactionCatalog extends AgentCatalog {
+  latest(kind: 'AGENT', id: string): { readonly id: string; readonly version: string } | undefined;
+}
+
+/**
+ * The Agent a compaction of main's context is made as when this process has no AgentRun of main
+ * (`/compact` right after a Session is opened): main as the catalog has it, with what a start asks
+ * for under the preset (one function, shared with Workflow's registration). Every other
+ * compaction is made as the AgentRun it is for was registered (Kernel/Core 6a).
+ */
+export function compactionAgentFrom(
+  catalog: CompactionCatalog,
+  registry: Pick<ProtocolRegistry, 'jsonSchemaOf'>,
+  options: {
+    readonly preset: 'standard' | 'readonly';
+    readonly commands: boolean;
+    /** The Agent of the Turn-chat, whose context `/compact` compacts. */
+    readonly agentId: string;
+  },
+): () => PinnedAgent | undefined {
+  const made = new Map<string, PinnedAgent | undefined>();
+  return () => {
+    const named = catalog.latest('AGENT', options.agentId);
+    if (named === undefined) return undefined;
+    const key = `${named.id}@${named.version}`;
+    if (made.has(key)) return made.get(key);
+    const set = catalog.pinAgent(
+      { id: named.id, version: named.version },
+      { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' },
+    );
+    let agent: PinnedAgent | undefined;
+    if (set.ok) {
+      const { agent: definition } = set.value;
+      const pinned = pinnedAgentOf(
+        set.value,
+        definition.thinking.defaultEffort,
+        registry,
+        requestedCapabilitiesOf(definition.capabilities, options.preset, options.commands),
+      );
+      agent = pinned === 'FORBIDDEN' ? undefined : pinned;
+    }
+    made.set(key, agent);
+    return agent;
+  };
+}
+
 /**
  * `RunWork.pinAgent` over the catalog: the Agent must exist, have exactly the digest Workflow
  * pinned, and allow the effort it registered with (Kernel/Core 4).
@@ -156,9 +227,29 @@ export function pinAgentFrom(
     if (!set.ok) return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' });
     if (set.value.agent.digest !== agentRef.digest)
       return Promise.resolve({ ok: false, reasonCode: 'DEFINITION_MISMATCH' });
-    const agent = pinnedAgentOf(set.value, effort, registry, request.requestedCapabilities);
-    return Promise.resolve(
-      agent === 'FORBIDDEN' ? { ok: false, reasonCode: 'FORBIDDEN' } : { ok: true, agent },
+    // The tools are offered by `offeredCapabilities` when given; the ceiling stays the requested.
+    const agent = pinnedAgentOf(
+      set.value,
+      effort,
+      registry,
+      request.offeredCapabilities ?? request.requestedCapabilities,
     );
+    if (agent === 'FORBIDDEN') return Promise.resolve({ ok: false, reasonCode: 'FORBIDDEN' });
+    // A narrower input limit only narrows (D100).
+    const limit = request.inputLimit;
+    return Promise.resolve({
+      ok: true,
+      agent:
+        limit === undefined
+          ? agent
+          : {
+              ...agent,
+              budget: {
+                ...agent.budget,
+                perCallInputLimit: Math.min(agent.budget.perCallInputLimit, limit),
+                finalInputBudget: Math.min(agent.budget.finalInputBudget, limit),
+              },
+            },
+    });
   };
 }

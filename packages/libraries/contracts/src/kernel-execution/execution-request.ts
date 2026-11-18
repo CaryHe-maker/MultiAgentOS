@@ -1,9 +1,5 @@
 import { Type, type Static, type TSchema } from 'typebox';
-import {
-  AssembleContextPackSchema,
-  ModelToolSpecSchema,
-  OrientContextPackSchema,
-} from '../context/context-pack.js';
+import { AssembleContextPackSchema, ModelToolSpecSchema } from '../context/context-pack.js';
 import { StatusFactsSchema } from '../context/history-entry.js';
 import { ModelToolCallSchema } from '../executor/model-tool-call.js';
 import { RepositoryListInputSchema } from '../executor/repository-list.js';
@@ -23,6 +19,12 @@ const RepositoryScopeSchema = closed({
   /** The realpath of the repository root. */
   repositoryRoot: text(4096),
   exclusions: Type.Array(ExclusionRuleSchema),
+  /**
+   * Present for `external.read`: the root is a folder outside the workspace that the user allowed,
+   * and this call stays below `below` (relative to it, '' for all of it). Paths are shown in full
+   * and project instructions are not looked for (ExecutorSet 5e).
+   */
+  external: Type.Optional(closed({ below: Type.String({ maxLength: 1024 }) })),
 });
 /** Derived by Core from the ceiling of the AgentRun: what a write may touch (ExecutorSet 5b). */
 const WorkspaceScopeSchema = closed({
@@ -59,12 +61,6 @@ export type ExecutionScope = Static<typeof ExecutionScopeSchema>;
 
 const limits = { deadline: TimestampSchema, maxOutputBytes: count(1) };
 
-export const OrientExecutorInputSchema = closed(
-  { objective: text(4000), tokenBudget: count(1) },
-  'kernel.execution.OrientExecutorInput.v1',
-);
-export type OrientExecutorInput = Static<typeof OrientExecutorInputSchema>;
-
 /** The search input with defaults filled in. */
 export const SearchExecutorInputSchema = closed(
   {
@@ -72,6 +68,8 @@ export const SearchExecutorInputSchema = closed(
     mode: Type.Enum(SEARCH_MODES),
     maxItems: Type.Integer({ minimum: 1, maximum: 50 }),
     tokenBudget: count(1),
+    /** Only files below this directory, relative to the root. */
+    path: Type.Optional(text(1024)),
   },
   'kernel.execution.SearchExecutorInput.v1',
 );
@@ -85,11 +83,10 @@ const toolLimits = {
   maxFullOutputBytes: count(1),
 };
 const PlainLimitsSchema = closed(toolLimits);
-const OrientLimitsSchema = closed({ ...toolLimits, maxFiles: count(1) });
 const ModelLimitsSchema = closed({ ...limits, maxOutputTokens: count(1) });
 const AssembleLimitsSchema = closed(limits);
 export const ExecutionLimitsSchema = Type.Union(
-  [PlainLimitsSchema, OrientLimitsSchema, ModelLimitsSchema, AssembleLimitsSchema],
+  [PlainLimitsSchema, ModelLimitsSchema, AssembleLimitsSchema],
   { $id: 'kernel.execution.ExecutionLimits.v1' },
 );
 export type ExecutionLimits = Static<typeof ExecutionLimitsSchema>;
@@ -97,15 +94,13 @@ export type ExecutionLimits = Static<typeof ExecutionLimitsSchema>;
 const ResolvedHistoryEntrySchema = Type.Union([
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Enum(['HUMAN', 'NOTE']),
     text: Type.String(),
   }),
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('MODEL_TURN'),
     text: Type.Optional(Type.String()),
     toolCalls: Type.Array(ModelToolCallSchema),
@@ -113,8 +108,7 @@ const ResolvedHistoryEntrySchema = Type.Union([
   }),
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('TOOL_RESULT'),
     toolCallId: ToolCallIdSchema,
     toolName: text(64),
@@ -125,8 +119,7 @@ const ResolvedHistoryEntrySchema = Type.Union([
   }),
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('PROJECT_INSTRUCTIONS'),
     path: text(512),
     text: Type.String(),
@@ -134,8 +127,7 @@ const ResolvedHistoryEntrySchema = Type.Union([
   }),
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('FEEDBACK'),
     text: Type.String(),
     toolCallId: Type.Optional(ToolCallIdSchema),
@@ -143,8 +135,7 @@ const ResolvedHistoryEntrySchema = Type.Union([
   /** The summary of a compaction, in words; it is shown to the model as material, not as an order. */
   closed({
     seq: count(1),
-    turnId: Type.Optional(IdSchemas.turnId),
-    category: Type.Enum(['PINNED', 'NORMAL']),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
     kind: Type.Literal('SUMMARY'),
     text: Type.String(),
   }),
@@ -156,10 +147,18 @@ export const AssembleExecutorInputSchema = Type.Refine(
   closed(
     {
       final: Type.Boolean(),
+      /**
+       * What the request may hold besides the INHERITED part (D100): a task that started with its
+       * caller's context is not charged for it. The pack's own budget is this plus that part, at
+       * most `capTokens`.
+       */
       tokenBudget: count(1),
+      /** The most the whole request may hold: the model's window less the output and a margin. */
+      capTokens: Type.Optional(count(1)),
       instructions: Type.String({ maxLength: 100000 }),
       toolSpecs: Type.Array(ModelToolSpecSchema),
-      orientPack: Type.Optional(OrientContextPackSchema),
+      /** Of a final call: the end tools it may call, which its status names (D102). */
+      finishTools: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: 8 })),
       history: Type.Array(ResolvedHistoryEntrySchema),
       status: StatusFactsSchema,
       /**
@@ -192,6 +191,11 @@ export const ModelExecutorInputSchema = closed(
     contextPack: AssembleContextPackSchema,
     final: Type.Boolean(),
     finalMode: Type.Optional(Type.Enum(['AUTO', 'FORCED'])),
+    /**
+     * Of a final call: the end tools it may call (D102). The request lists every tool, so these,
+     * not every control tool, are the answers that count; a forced call is forced to the first.
+     */
+    finishTools: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: 8 })),
     /** A summary request: no tool may be called, and these sections must be in the answer. */
     compaction: Type.Optional(closed({ requiredSections: Type.Array(text(100), { minItems: 1 }) })),
   },
@@ -247,12 +251,6 @@ const request = <K extends string, I extends TSchema, S extends TSchema, L exten
 
 export const ExecutionRequestSchema = Type.Union(
   [
-    request(
-      'REPOSITORY_ORIENT',
-      OrientExecutorInputSchema,
-      RepositoryScopeSchema,
-      OrientLimitsSchema,
-    ),
     request(
       'REPOSITORY_SEARCH',
       SearchExecutorInputSchema,

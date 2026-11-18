@@ -6,16 +6,25 @@ import { RetentionNoticeSchema } from './retention.js';
 /** The longest a `run_command` may run (M2Design 6.1: default 2 minutes, parameter limit 10). */
 export const COMMAND_DEFAULT_TIMEOUT_MS = 120_000;
 export const COMMAND_MAX_TIMEOUT_MS = 600_000;
+/**
+ * The longest command text (Orchestration D85): a model writes a script into a file with a
+ * heredoc, and a refused call throws away all it wrote (8000 refused three in L2).
+ */
+export const COMMAND_MAX_CHARS = 32_000;
 
 /** The parameters of the `run_command` tool. */
 export const RunCommandArgsSchema = closed(
   {
-    command: text(8000),
+    command: text(COMMAND_MAX_CHARS),
     /** Relative to the repository root. */
     workdir: Type.Optional(Type.String({ maxLength: 1024 })),
     timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: COMMAND_MAX_TIMEOUT_MS })),
     /** Needs `command.network`, which is asked every time and only main has. */
     network: Type.Optional(Type.Boolean()),
+    /** Starts it and answers at once; it runs on as a job of the task (Orchestration 6.1). */
+    runInBackground: Type.Optional(Type.Boolean()),
+    /** At `timeoutMs` the command moves to the background instead of being stopped; default true. */
+    promoteOnTimeout: Type.Optional(Type.Boolean()),
   },
   'executor.RunCommandArgs.v1',
 );
@@ -24,10 +33,12 @@ export type RunCommandArgs = Static<typeof RunCommandArgsSchema>;
 /** What Workflow submits: the tool's arguments with the defaults filled in. */
 export const CommandInputSchema = closed(
   {
-    command: text(8000),
+    command: text(COMMAND_MAX_CHARS),
     workdir: Type.String({ maxLength: 1024 }),
     timeoutMs: Type.Integer({ minimum: 1, maximum: COMMAND_MAX_TIMEOUT_MS }),
     network: Type.Boolean(),
+    background: Type.Optional(Type.Boolean()),
+    promoteOnTimeout: Type.Optional(Type.Boolean()),
   },
   'executor.CommandInput.v1',
 );
@@ -35,7 +46,12 @@ export type CommandInput = Static<typeof CommandInputSchema>;
 
 /** What the Executor gets once Core has decided the rest (workdir, network) into the scope. */
 export const CommandExecutorInputSchema = closed(
-  { command: text(8000), timeoutMs: Type.Integer({ minimum: 1, maximum: COMMAND_MAX_TIMEOUT_MS }) },
+  {
+    command: text(COMMAND_MAX_CHARS),
+    timeoutMs: Type.Integer({ minimum: 1, maximum: COMMAND_MAX_TIMEOUT_MS }),
+    background: Type.Optional(Type.Boolean()),
+    promoteOnTimeout: Type.Optional(Type.Boolean()),
+  },
   'kernel.execution.CommandExecutorInput.v1',
 );
 export type CommandExecutorInput = Static<typeof CommandExecutorInputSchema>;
@@ -50,6 +66,11 @@ export const CommandOutputSchema = closed(
     sandboxDenials: count(),
     /** Present when the preview left something out. */
     retention: Type.Optional(RetentionNoticeSchema),
+    /**
+     * Present when the command runs on as a job (Orchestration 6.1): started in the background, or
+     * moved there at its timeout. The exit fields are then null and false.
+     */
+    job: Type.Optional(closed({ jobKey: text(64), promoted: Type.Boolean() })),
   },
   'executor.CommandOutput.v1',
 );

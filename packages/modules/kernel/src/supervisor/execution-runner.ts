@@ -6,6 +6,7 @@ import type {
   ExecutorEnvironment,
   ExecutorOutcome,
   ExecutorRegistry,
+  ModelProgress,
   ProviderCredentials,
   RequestState,
   SandboxRunner,
@@ -16,6 +17,7 @@ import { StopUnconfirmedError } from '@multiagentos/contracts';
 import { createExecutorEnvironment } from './environment.js';
 import { ExecutionTable, type ExecutionEntry } from './execution-table.js';
 import { toExecutionFact, toTerminationFact } from './fact-mapper.js';
+import type { JobTable } from './job-table.js';
 
 export interface ExecutionRunnerDeps {
   readonly executors: ExecutorRegistry;
@@ -27,6 +29,10 @@ export interface ExecutionRunnerDeps {
   /** After SIGKILL a command is waited for this long more (M2Design 4.7). */
   readonly killGraceMs: number;
   readonly now: () => Date;
+  /** The side channel of a streaming model call; absent means calls are not streamed. */
+  readonly progress?: (progress: ModelProgress) => void;
+  /** Keeps the commands that detach (Orchestration 6.1); without it a command never detaches. */
+  readonly jobs?: JobTable;
 }
 
 interface TerminationExtras {
@@ -48,6 +54,8 @@ export class ExecutionRunner {
   readonly #killGraceMs: number;
   readonly #facts: { report(fact: ExecutionFact): Promise<void> };
   readonly #cancelGraceMs: number;
+  readonly #progress: ((progress: ModelProgress) => void) | undefined;
+  readonly #jobs: JobTable | undefined;
   readonly #now: () => Date;
   readonly #table = new ExecutionTable();
   readonly #cancelledEpochs = new Map<string, number>();
@@ -63,6 +71,8 @@ export class ExecutionRunner {
     this.#killGraceMs = deps.killGraceMs;
     this.#facts = deps.facts;
     this.#cancelGraceMs = deps.cancelGraceMs;
+    this.#progress = deps.progress;
+    this.#jobs = deps.jobs;
     this.#now = deps.now;
   }
 
@@ -96,6 +106,8 @@ export class ExecutionRunner {
   public cancelRun(request: CancelRunExecutionsRequest): void {
     const previous = this.#cancelledEpochs.get(request.workflowRunId) ?? 0;
     this.#cancelledEpochs.set(request.workflowRunId, Math.max(previous, request.runEpoch));
+    // The run converges or is aborted: its background commands end with it (Orchestration 6.3).
+    this.#jobs?.stopRun(request.workflowRunId);
 
     for (const entry of this.#table.values()) {
       if (entry.request.workflowRunId !== request.workflowRunId || entry.terminal) continue;
@@ -105,6 +117,37 @@ export class ExecutionRunner {
         this.#abort(entry, 'EXECUTION_CANCELLED');
       }
     }
+  }
+
+  /**
+   * The runner an execution gets: a command that detaches is handed to the job table, keyed by
+   * the execution, and the Executor sees only its key (Orchestration 6.1).
+   */
+  #sandboxFor(request: ExecutionRequest): SandboxRunner {
+    const jobs = this.#jobs;
+    const sandbox = this.#sandbox;
+    if (jobs === undefined)
+      return {
+        run: (options) => {
+          const attached = { ...options };
+          delete attached.detach;
+          return sandbox.run(attached);
+        },
+      };
+    return {
+      run: async (options) => {
+        const result = await sandbox.run(options);
+        if (result.kind !== 'DETACHED' || result.process === undefined) return result;
+        const { process, ...rest } = result;
+        const owner = {
+          jobKey: request.executionId,
+          sessionId: request.sessionId,
+          workflowRunId: request.workflowRunId,
+        };
+        jobs.adopt(owner, process, '');
+        return { ...rest, jobKey: request.executionId };
+      },
+    };
   }
 
   /**
@@ -190,8 +233,9 @@ export class ExecutionRunner {
     const environment = createExecutorEnvironment(entry.request, entry.abortController.signal, {
       credentials: this.#credentials,
       subprocess: this.#subprocess,
-      sandbox: this.#sandbox,
+      sandbox: this.#sandboxFor(entry.request),
       now: this.#now,
+      ...(this.#progress === undefined ? {} : { progress: this.#progress }),
     });
 
     this.#active += 1;
@@ -367,8 +411,6 @@ function runExecutor(
   environment: ExecutorEnvironment,
 ): Promise<ExecutorOutcome> {
   switch (request.executionKind) {
-    case 'REPOSITORY_ORIENT':
-      return registry.REPOSITORY_ORIENT.execute(request.input, environment);
     case 'REPOSITORY_SEARCH':
       return registry.REPOSITORY_SEARCH.execute(request.input, environment);
     case 'REPOSITORY_LIST':

@@ -130,7 +130,7 @@ describe('process entry exit codes', () => {
     };
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', bin, 'run', '--repo', tmpdir(), 'analyze', 'X'],
+      ['--import', 'tsx', bin, 'run', '--repo', tmpdir(), 'X'],
       {
         cwd: process.cwd(),
         env,

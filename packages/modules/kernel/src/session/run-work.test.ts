@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import {
   InteractionInboxEventSchema,
   MEDIA_TYPES,
@@ -18,7 +21,7 @@ import {
   testFileReadOutput,
   testUnitDefinition,
 } from '@multiagentos/contracts/test-support';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TestExecution, testPinnedAgent, testRunWork } from '../test-support/run-work.js';
 import { SessionActor } from './session-actor.js';
 import { KernelOutbox, type ToInteraction, type ToWorkflow } from './session-outbox.js';
@@ -60,6 +63,8 @@ async function setup(
   } = {},
 ) {
   const trusted = new Set<string>(options.trusted ?? []);
+  /** How many times the answer "for this folder" was kept. */
+  let webSearchTrust = 0;
   const toWorkflow: ToWorkflow[] = [];
   const toInteraction: ToInteraction[] = [];
   const faults: unknown[] = [];
@@ -108,6 +113,10 @@ async function setup(
           ...(options.memoryLevel === undefined ? {} : { memoryLevel: options.memoryLevel }),
           readProjectFile: () => Promise.resolve(options.file ?? { exists: false }),
           isTrusted: (_path, sha256) => trusted.has(sha256),
+          trustWebSearch: () => {
+            webSearchTrust += 1;
+            return Promise.resolve();
+          },
           trust: (_path, sha256) => {
             trusted.add(sha256);
             return Promise.resolve();
@@ -222,7 +231,7 @@ async function setup(
     return asked.event.questionId;
   };
   const answer = (
-    scope: 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY',
+    scope: 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' | 'ANY_HOST' | 'FOLDER',
     questionId = question(),
   ) =>
     actor.call(() =>
@@ -268,6 +277,7 @@ async function setup(
     question,
     readFile,
     trusted,
+    trustedWebSearch: () => webSearchTrust,
     reports,
     interactionTypes,
     questions,
@@ -487,8 +497,8 @@ describe('a refusal', () => {
       { status: 'REJECTED', reasonCode: 'USER_DECLINED' },
     ]);
     expect(kernel.run().control).toMatchObject({ phase: 'RUNNING' });
-    expect(kernel.run().control.turnId).toBeDefined();
-    expect(kernel.toWorkflow.map((entry) => entry.event.type)).not.toContain('TurnClosed');
+    expect(kernel.run().control.openInput).toBeDefined();
+    expect(kernel.toWorkflow.map((entry) => entry.event.type)).not.toContain('InputSettled');
     expect(
       kernel.interactionTypes().filter((type) => type === 'AuthorizationRequest'),
     ).toHaveLength(1);
@@ -700,6 +710,30 @@ describe('project instructions', () => {
 });
 
 describe('convergence', () => {
+  it('ends the wake timers with the run, so none keeps the process alive after it', async () => {
+    const kernel = await setup();
+    await kernel.register();
+    const wake = (seconds: number) =>
+      kernel.actor.call(() =>
+        kernel.run().work.scheduleWake({
+          ...kernel.inRun,
+          requestId: newId('req'),
+          missionId: 'msc_01M7SLEEPER00000000000000',
+          timerId: `sleep-${String(seconds)}`,
+          seconds,
+        }),
+      );
+    await wake(3600);
+    await wake(600);
+    const armed = (ms: number) => kernel.timers.some((timer) => timer.delayMs === ms);
+    expect(armed(3_600_000) && armed(600_000)).toBe(true);
+    await kernel.actor.call(() =>
+      kernel.actor.closeRun(kernel.run(), { closeReason: 'CANCELLED' }),
+    );
+    await kernel.settled();
+    expect(armed(3_600_000) || armed(600_000)).toBe(false);
+  });
+
   it('cancels the question, and the suspended Unit ends with the run', async () => {
     const kernel = await setup();
     await kernel.register();
@@ -736,7 +770,7 @@ describe('convergence', () => {
     await kernel.finish();
     await kernel.settled();
     expect(kernel.reports()).toEqual([]);
-    expect(types().slice(-2)).toEqual(['TurnClosed', 'RunClosed']);
+    expect(types().slice(-2)).toEqual(['InputSettled', 'RunClosed']);
   });
 
   it('writes a RunSummary that counts every accepted Unit once', async () => {
@@ -755,7 +789,7 @@ describe('convergence', () => {
     const [summary] = kernel.summaries;
     expect(summary).toMatchObject({
       closeReason: 'CANCELLED',
-      turns: 1,
+      inputs: 1,
       units: { submitted: 2, ok: 1, rejected: 0, failed: 0, notDelivered: 1 },
       agentRuns: [{ agentRunId: kernel.agentRunId, rounds: 0, finalCallUsed: false }],
     });
@@ -985,6 +1019,72 @@ describe('the web tools (Kernel/Core 5f)', () => {
     expect(webQuestions(kernel)).toHaveLength(2);
   });
 
+  it('allows every public site with one answer: the questions open meanwhile are answered, and no other is asked', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    for (const url of [
+      'https://a.example.net/',
+      'https://b.example.net/',
+      'https://c.example.net/',
+    ])
+      await kernel.submit(fetchUnit, { url });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(3);
+    await kernel.answer('ANY_HOST', webQuestions(kernel)[0]?.questionId);
+    await kernel.settled();
+    // All three run, though only one question was answered.
+    expect(kernel.execution.started).toHaveLength(3);
+    await kernel.submit(fetchUnit, { url: 'https://d.example.net/' });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(3);
+    expect(kernel.execution.started).toHaveLength(4);
+  });
+
+  it('still refuses a private address and a denied domain after every public site was allowed', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(fetchUnit, { url: 'https://a.example.net/' });
+    await kernel.settled();
+    await kernel.answer('ANY_HOST');
+    await kernel.settled();
+    for (const url of [
+      'http://127.0.0.1/',
+      'http://169.254.169.254/',
+      'https://x.blocked.example/',
+    ])
+      await kernel.submit(fetchUnit, { url });
+    await kernel.settled();
+    expect(kernel.reports().slice(-3)).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'ADDRESS_FORBIDDEN' },
+      { status: 'REJECTED', reasonCode: 'ADDRESS_FORBIDDEN' },
+      { status: 'REJECTED', reasonCode: 'DOMAIN_DENIED' },
+    ]);
+  });
+
+  it('keeps the answer for the folder, and the run goes on as if it had said yes', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(searchUnit, { queries: ['one'] });
+    await kernel.settled();
+    await kernel.answer('FOLDER');
+    await kernel.settled();
+    await kernel.submit(searchUnit, { queries: ['two'] });
+    await kernel.settled();
+    expect(webQuestions(kernel)).toHaveLength(1);
+    expect(kernel.execution.started).toHaveLength(2);
+    expect(kernel.trustedWebSearch()).toBe(1);
+  });
+
+  it('does not keep it for the folder when the answer was for the run', async () => {
+    const kernel = await setup(agent, options);
+    await kernel.register(undefined, [...caps]);
+    await kernel.submit(searchUnit, { queries: ['one'] });
+    await kernel.settled();
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    expect(kernel.trustedWebSearch()).toBe(0);
+  });
+
   it('refuses an address into a private network and a denied domain, without asking and without a run', async () => {
     const kernel = await setup(agent, options);
     await kernel.register(undefined, [...caps]);
@@ -1187,10 +1287,12 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     ledgers: new RunLedgers(
       {
         runTokenLimit: minShare(testAgentBudget) * 40,
-        turnTokenLimit: minShare(testAgentBudget) * 20,
+        inputTokenLimit: minShare(testAgentBudget) * 20,
       },
       testAgentBudget,
     ),
+    // These cases are about shares, not about how many tasks a run starts (D62).
+    taskQuota: { perRun: 100_000 },
     agentShare: (agentRef) => {
       const agent = agents[agentRef.id];
       return agent === undefined
@@ -1212,7 +1314,7 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
               ledgers: new RunLedgers(
                 {
                   runTokenLimit: minShare(testAgentBudget) * 40,
-                  turnTokenLimit: minShare(testAgentBudget) * 20,
+                  inputTokenLimit: minShare(testAgentBudget) * 20,
                 },
                 testAgentBudget,
               ),
@@ -1277,41 +1379,45 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     (response as { reasonCode?: string }).reasonCode ?? (response as { outcome: string }).outcome;
   const delegationIdOf = (response: unknown) => (response as { delegationId: string }).delegationId;
 
-  it('reserves the shares of the tasks and says what each got, kept within the Agent limits (B2 in part)', async () => {
+  it('opens every task with the least its Agent can work with, whatever was asked (B2 in part)', async () => {
     const kernel = await open();
+    const least = minShare(childBudget);
     const response = await reserve(kernel, [
       { name: 'a', agent: 'worker', roots: ['src/a'] },
       { name: 'b', agent: 'worker', roots: ['src/b'], tokens: 1 },
       { name: 'c', agent: 'explorer', tokens: 10_000_000 },
     ]);
+    // A task is topped up as it needs more (M2Design 7.3, rule 5), so nothing is reserved that
+    // is not used; what was asked only bounds how far.
     expect(response).toMatchObject({
       outcome: 'ACCEPTED',
       shares: [
-        { name: 'a', tokens: defaultShare },
-        { name: 'b', tokens: minShare(childBudget), clamped: 'MIN' },
-        { name: 'c', tokens: 2 * defaultShare, clamped: 'MAX' },
+        { name: 'a', tokens: least },
+        { name: 'b', tokens: least, clamped: 'MIN' },
+        { name: 'c', tokens: least },
       ],
     });
     expect(delegationIdOf(response)).toMatch(/^dlg_/u);
   });
 
-  it('refuses all of it when the shares are more than the parent can lend, and says how much it can (B2)', async () => {
+  it('refuses all of it only when even the smallest shares do not fit, and says what it can lend (B2)', async () => {
     const kernel = await open();
-    const response = await reserve(kernel, [{ name: 'a', agent: 'explorer', tokens: 1 }]);
-    expect(response).toMatchObject({ outcome: 'ACCEPTED' });
-    // Far more than the Turn holds.
-    const refused = await reserve(
-      kernel,
-      Array.from({ length: 12 }, (_, index) => ({
-        name: `t${String(index)}`,
-        agent: 'explorer',
-        tokens: 2 * defaultShare,
-      })),
-    );
+    const least = minShare(childBudget);
+    // Far more tasks than the Turn can fund at their smallest.
+    const many = Array.from({ length: 4000 }, (_, index) => ({
+      name: `t${String(index)}`,
+      agent: 'explorer',
+    }));
+    const refused = await reserve(kernel, many);
     expect(refused).toMatchObject({
       outcome: 'REJECTED',
       reasonCode: 'BUDGET_INSUFFICIENT',
       delegable: expect.any(Number) as number,
+      least: many.length * least,
+    });
+    // Nothing was taken: a call that fits is still accepted.
+    expect(await reserve(kernel, [{ name: 'a', agent: 'explorer' }])).toMatchObject({
+      outcome: 'ACCEPTED',
     });
   });
 
@@ -1450,6 +1556,33 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     ).toBe('ACCEPTED');
   });
 
+  it('lets the parent write what it has not lent while its children hold their roots (D17)', async () => {
+    const kernel = await open();
+    const dlg = delegationIdOf(
+      await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src/a'] }]),
+    );
+    await registerChild(kernel, {
+      id: newId('agr'),
+      agent: 'worker',
+      delegationId: dlg,
+      taskName: 'a',
+      roots: ['src/a'],
+    });
+    // Inside what it lent: refused without asking.
+    await kernel.submit(fileWrite, { path: 'src/a/x.ts', content: 'x' });
+    await kernel.settled();
+    expect(kernel.reports().at(-1)).toMatchObject({
+      status: 'REJECTED',
+      reasonCode: 'WRITE_SCOPE_DELEGATED',
+    });
+    // Outside it: the write goes on to the usual question.
+    const before = kernel.reports().length;
+    await kernel.submit(fileWrite, { path: 'docs/notes.md', content: 'x' });
+    await kernel.settled();
+    expect(kernel.reports()).toHaveLength(before);
+    expect(kernel.interactionTypes()).toContain('AuthorizationRequest');
+  });
+
   it('refuses the parent a write while its children hold the roots, and lets it write again after (P6)', async () => {
     const kernel = await open();
     const dlg = delegationIdOf(
@@ -1516,6 +1649,281 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
         ),
       ),
     ).toBe('DELEGATION_NOT_FOUND');
+  });
+
+  describe('MissionScopes (Orchestration 8.1, 8.2)', () => {
+    const leadAgent = testPinnedAgent({
+      id: 'lead',
+      capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+      units: [fileRead, fileWrite, publish],
+      budget: childBudget,
+    });
+    agents['lead'] = leadAgent;
+    const segment = (
+      kernel: Kernel,
+      over: {
+        id: string;
+        agent: string;
+        missionId: string;
+        parentMissionId?: string;
+        delegationId?: string;
+        taskName?: string;
+        roots?: string[];
+        capabilities?: RegisterAgentRunRequest['requestedCapabilities'];
+      },
+    ) =>
+      kernel.actor.call(() =>
+        kernel.run().work.registerAgentRun({
+          ...kernel.inRun,
+          requestId: newId('req'),
+          agentRunId: over.id,
+          nodeId: pathDerivedId('nod', over.id),
+          agentRef: ref(over.agent),
+          effort: 'high',
+          workspaceViewId: 'main',
+          requestedCapabilities:
+            over.capabilities ??
+            (over.agent === 'explorer' ? ['repo.read'] : ['repo.read', 'workspace.write']),
+          writeRoots: over.roots ?? [],
+          display: { label: over.id },
+          ...(over.delegationId === undefined
+            ? {}
+            : { delegationId: over.delegationId, taskName: over.taskName ?? '' }),
+          mission: {
+            missionId: over.missionId,
+            ...(over.parentMissionId === undefined
+              ? {}
+              : { parentMissionId: over.parentMissionId }),
+          },
+        }),
+      );
+    const end = (kernel: Kernel, agentRunId: string, missionContinues = false) =>
+      kernel.actor.call(() =>
+        kernel.run().work.endAgentRun({
+          ...kernel.inRun,
+          requestId: newId('req'),
+          agentRunId,
+          ...(missionContinues ? { missionContinues } : {}),
+        }),
+      );
+    // The root registered by `open` is a task of its own: its id is the AgentRun's.
+    const rootOf = (kernel: Kernel) => kernel.agentRunId;
+    const mission = () => pathDerivedId('msc', newId('ses'));
+
+    it('registers the later segments of a task that slept, one at a time, until it ends', async () => {
+      const kernel = await open();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src/a'] }]),
+      );
+      const task = mission();
+      const first = newId('agr');
+      const base = {
+        agent: 'worker',
+        missionId: task,
+        parentMissionId: rootOf(kernel),
+        roots: ['src/a'],
+      };
+      expect(
+        reasonOf(await segment(kernel, { ...base, id: first, delegationId: dlg, taskName: 'a' })),
+      ).toBe('ACCEPTED');
+      // A second segment while the first runs is refused.
+      expect(reasonOf(await segment(kernel, { ...base, id: newId('agr') }))).toBe('MISSION_BUSY');
+      await end(kernel, first, true);
+      const second = newId('agr');
+      expect(reasonOf(await segment(kernel, { ...base, id: second }))).toBe('ACCEPTED');
+      // It may not claim a share again, nor name another parent.
+      expect(
+        reasonOf(
+          await segment(kernel, { ...base, id: newId('agr'), delegationId: dlg, taskName: 'a' }),
+        ),
+      ).toBe('MISSION_BUSY');
+      await end(kernel, second, true);
+      expect(
+        reasonOf(await segment(kernel, { ...base, id: newId('agr'), parentMissionId: mission() })),
+      ).toBe('INVALID_INPUT');
+      const third = newId('agr');
+      expect(reasonOf(await segment(kernel, { ...base, id: third }))).toBe('ACCEPTED');
+      await end(kernel, third);
+      expect(reasonOf(await segment(kernel, { ...base, id: newId('agr') }))).toBe('MISSION_CLOSED');
+    });
+
+    it('lets a later segment only narrow what the first one could do', async () => {
+      const kernel = await open();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'a', agent: 'worker', roots: ['src/a'] }]),
+      );
+      const task = mission();
+      const first = newId('agr');
+      const base = { agent: 'worker', missionId: task, parentMissionId: rootOf(kernel) };
+      await segment(kernel, {
+        ...base,
+        id: first,
+        delegationId: dlg,
+        taskName: 'a',
+        roots: ['src/a'],
+      });
+      await end(kernel, first, true);
+      expect(reasonOf(await segment(kernel, { ...base, id: newId('agr'), roots: ['src'] }))).toBe(
+        'CAPABILITY_NOT_SUBSET',
+      );
+      expect(
+        reasonOf(await segment(kernel, { ...base, id: newId('agr'), roots: ['src/a/inner'] })),
+      ).toBe('ACCEPTED');
+    });
+
+    it('keeps the write roots of a sleeping task held, and frees them when it ends', async () => {
+      const kernel = await open();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [
+          { name: 'a', agent: 'worker', roots: ['src'] },
+          { name: 'b', agent: 'worker', roots: ['src/b'] },
+        ]),
+      );
+      const parent = rootOf(kernel);
+      const taskA = mission();
+      const a = newId('agr');
+      await segment(kernel, {
+        id: a,
+        agent: 'worker',
+        missionId: taskA,
+        parentMissionId: parent,
+        delegationId: dlg,
+        taskName: 'a',
+        roots: ['src'],
+      });
+      await end(kernel, a, true);
+      const b = {
+        id: newId('agr'),
+        agent: 'worker',
+        missionId: mission(),
+        parentMissionId: parent,
+        delegationId: dlg,
+        taskName: 'b',
+        roots: ['src/b'],
+      };
+      // `a` sleeps, yet its roots are still its own.
+      expect(reasonOf(await segment(kernel, b))).toBe('WRITE_SCOPE_CONFLICT');
+      // `a` wakes and ends for good: its roots are free.
+      const wake = newId('agr');
+      await segment(kernel, {
+        id: wake,
+        agent: 'worker',
+        missionId: taskA,
+        parentMissionId: parent,
+        roots: ['src'],
+      });
+      await end(kernel, wake);
+      expect(reasonOf(await segment(kernel, { ...b, id: newId('agr') }))).toBe('ACCEPTED');
+    });
+
+    it('starts a task whose caller already went to sleep, but not one whose parent task ended', async () => {
+      const kernel = await open();
+      const lead = newId('agr');
+      const leadMission = mission();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'lead', agent: 'lead', roots: ['src'] }]),
+      );
+      await segment(kernel, {
+        id: lead,
+        agent: 'lead',
+        missionId: leadMission,
+        parentMissionId: rootOf(kernel),
+        delegationId: dlg,
+        taskName: 'lead',
+        roots: ['src'],
+        capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+      });
+      const inner = delegationIdOf(
+        await reserve(kernel, [{ name: 'w', agent: 'worker', roots: ['src/w'] }], lead),
+      );
+      // The lead's segment goes to sleep before its worker starts.
+      await end(kernel, lead, true);
+      const worker = {
+        id: newId('agr'),
+        agent: 'worker',
+        missionId: mission(),
+        parentMissionId: leadMission,
+        delegationId: inner,
+        taskName: 'w',
+        roots: ['src/w'],
+      };
+      expect(reasonOf(await segment(kernel, worker))).toBe('ACCEPTED');
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            ...worker,
+            id: newId('agr'),
+            missionId: mission(),
+            parentMissionId: mission(),
+          }),
+        ),
+      ).toBe('MISSION_NOT_FOUND');
+    });
+
+    it('lets a task below the root spawn, and none at the deepest level (Orchestration 3.6)', async () => {
+      const kernel = await open();
+      const lead = newId('agr');
+      const leadMission = mission();
+      const dlg = delegationIdOf(
+        await reserve(kernel, [{ name: 'lead', agent: 'lead', roots: ['src'] }]),
+      );
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            id: lead,
+            agent: 'lead',
+            missionId: leadMission,
+            parentMissionId: rootOf(kernel),
+            delegationId: dlg,
+            taskName: 'lead',
+            roots: ['src'],
+            capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+          }),
+        ),
+      ).toBe('ACCEPTED');
+      const inner = delegationIdOf(
+        await reserve(kernel, [{ name: 'deep', agent: 'lead', roots: ['src/deep'] }], lead),
+      );
+      const deep = {
+        id: newId('agr'),
+        agent: 'lead',
+        missionId: mission(),
+        parentMissionId: leadMission,
+        delegationId: inner,
+        taskName: 'deep',
+        roots: ['src/deep'],
+      };
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            ...deep,
+            capabilities: ['repo.read', 'workspace.write', 'agent.spawn'],
+          }),
+        ),
+      ).toBe('CAPABILITY_NOT_SUBSET');
+      expect(
+        reasonOf(
+          await segment(kernel, {
+            ...deep,
+            id: newId('agr'),
+            capabilities: ['repo.read', 'workspace.write'],
+          }),
+        ),
+      ).toBe('ACCEPTED');
+    });
+  });
+
+  it('accepts the references of a handover to keep, and answers a repeat as the same request (Core 5g)', async () => {
+    const kernel = await open();
+    const request = {
+      ...kernel.inRun,
+      requestId: newId('req'),
+      refs: [testArtifactRef('a'), testArtifactRef('b')],
+    };
+    const first = await kernel.actor.call(() => kernel.run().work.retainArtifacts(request));
+    const again = await kernel.actor.call(() => kernel.run().work.retainArtifacts(request));
+    expect(first).toEqual({ requestId: request.requestId, outcome: 'ACCEPTED' });
+    expect(again).toEqual(first);
   });
 });
 
@@ -1648,7 +2056,7 @@ describe('run control of Kernel/Core 5e', () => {
     expect(await prompt(kernel)).toMatchObject({ accepted: true });
     await kernel.settled();
     expect(kernel.run().control.phase).toBe('AWAITING_INPUT');
-    expect(eventsOf(kernel, 'TurnClosed')[0]).toMatchObject({ reason: 'ABORTED' });
+    expect(eventsOf(kernel, 'InputSettled')[0]).toMatchObject({ reason: 'ABORTED' });
     expect(eventsOf(kernel, 'RunClosed')).toEqual([]);
   });
 
@@ -1682,7 +2090,7 @@ describe('run control of Kernel/Core 5e', () => {
 
   it('interrupts a paused run when the pause lasts too long', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
+      actor: { timeouts: { inputMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
     });
     await kernel.register();
     await pause(kernel);
@@ -1696,7 +2104,7 @@ describe('run control of Kernel/Core 5e', () => {
 
   it('forgets the pause limit once the run is continued', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
+      actor: { timeouts: { inputMs: 60_000, orchestrationMs: 60_000, pauseMs: 5_000 } },
     });
     await kernel.register();
     await pause(kernel);
@@ -1708,7 +2116,7 @@ describe('run control of Kernel/Core 5e', () => {
 
   it('times a Turn out, without counting a pause', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
+      actor: { timeouts: { inputMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
     });
     await kernel.register();
     // A model call is out, so the run is working: the clock runs.
@@ -1730,7 +2138,7 @@ describe('run control of Kernel/Core 5e', () => {
     kernel.advance(6_000);
     rest?.due();
     await kernel.settled();
-    expect(eventsOf(kernel, 'RunInterrupted')[0]).toMatchObject({ reason: 'TURN_TIMEOUT' });
+    expect(eventsOf(kernel, 'RunInterrupted')[0]).toMatchObject({ reason: 'INPUT_TIMEOUT' });
     // Execution answers what it was running with INTERRUPTED; here the stand-in does it.
     for (const { unitAttemptId } of kernel.execution.started)
       await kernel.actor.call(() =>
@@ -1739,12 +2147,12 @@ describe('run control of Kernel/Core 5e', () => {
     await kernel.actor.call(() => kernel.actor.endAgentRun(kernel.run(), kernel.agentRunId));
     await prompt(kernel);
     await kernel.settled();
-    expect(eventsOf(kernel, 'TurnClosed')[0]).toMatchObject({ reason: 'TIMEOUT' });
+    expect(eventsOf(kernel, 'InputSettled')[0]).toMatchObject({ reason: 'TIMEOUT' });
   });
 
   it('does not count the time the whole run waits for the user', async () => {
     const kernel = await setup(undefined, {
-      actor: { timeouts: { turnMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
+      actor: { timeouts: { inputMs: 10_000, orchestrationMs: 60_000, pauseMs: 60_000 } },
     });
     await kernel.register();
     // A question to the user is open and nothing runs.
@@ -1816,5 +2224,286 @@ describe('run control of Kernel/Core 5e', () => {
         (entry) => entry.event.type === 'HumanResolved' && entry.event.resolution === 'CANCELLED',
       ),
     ).toBe(true);
+  });
+});
+
+describe('reading outside the workspace (Kernel/Core 5h)', () => {
+  const external = { protectedCapabilities: ['external.read'] } as const;
+  const readUnit = testUnitDefinition('FILE_READ', { ...external, id: 'external-read' });
+  const listUnit = testUnitDefinition('REPOSITORY_LIST', { ...external, id: 'external-list' });
+  const searchUnit = testUnitDefinition('REPOSITORY_SEARCH', {
+    ...external,
+    id: 'external-search',
+  });
+  const caps = ['repo.read', 'external.read'] as const;
+  const agent = testPinnedAgent({
+    units: [fileRead, readUnit, listUnit, searchUnit, publish],
+    capabilities: [...caps],
+  });
+  type Kernel = Awaited<ReturnType<typeof setup>>;
+
+  let base = '';
+  let home = '';
+  const folders = async () => {
+    base = await realpath(await mkdtemp(join(tmpdir(), 'ext-run-')));
+    home = join(base, 'home');
+    await mkdir(home, { recursive: true });
+    for (const [path, text] of Object.entries({
+      'proj/.git/HEAD': 'ref',
+      'proj/src/a.ts': 'x',
+      'proj/docs/d.md': 'y',
+      'other/b.ts': 'z',
+    })) {
+      await mkdir(dirname(join(base, path)), { recursive: true });
+      await writeFile(join(base, path), text);
+    }
+  };
+  afterEach(async () => {
+    if (base !== '') await rm(base, { recursive: true, force: true });
+    base = '';
+  });
+  const open = async () => {
+    await folders();
+    const kernel = await setup(agent, { runWork: { external: { homeDir: home } } });
+    await kernel.register(undefined, [...caps]);
+    return kernel;
+  };
+  const externalQuestions = (kernel: Kernel) =>
+    kernel.questions().filter((q) => q.capability === 'external.read');
+  const failAttempt = async (kernel: Kernel, index: number) => {
+    const attempt = kernel.execution.started[index];
+    if (attempt === undefined) throw new Error('no attempt');
+    await kernel.actor.call(() => {
+      kernel.run().work.attempts.registerExecution(attempt.unitAttemptId, `exe_fail${index}`);
+      kernel.run().work.attempts.submitResultCheck({
+        unitAttemptId: attempt.unitAttemptId,
+        executionId: `exe_fail${index}`,
+        outcome: 'REJECTED',
+        reasonCode: 'NOT_FOUND',
+      } as never);
+    });
+    await kernel.settled();
+  };
+  const paused = (kernel: Kernel) =>
+    kernel.toInteraction.flatMap((entry) =>
+      entry.event.type === 'ExternalReadPaused' ? [entry.event] : [],
+    );
+
+  it('asks once for each external repository, whichever of the three tools comes next', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: join(base, 'proj', 'src', 'a.ts') });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toMatchObject([
+      { root: join(base, 'proj'), path: join(base, 'proj', 'src', 'a.ts'), provider: 'deepseek' },
+    ]);
+    expect(kernel.execution.started).toEqual([]);
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    // The executor gets the folder that was allowed and the path below it, nothing absolute.
+    expect(kernel.execution.started[0]?.spec).toMatchObject({
+      scope: {
+        kind: 'REPOSITORY',
+        repositoryRoot: join(base, 'proj'),
+        external: { below: 'src/a.ts' },
+      },
+      input: { path: 'src/a.ts' },
+    });
+    await kernel.submit(listUnit, { path: join(base, 'proj', 'docs') });
+    await kernel.submit(searchUnit, { query: 'alpha', path: join(base, 'proj') });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toHaveLength(1);
+    expect(kernel.execution.started[1]?.spec).toMatchObject({
+      scope: { external: { below: 'docs' } },
+      input: { path: 'docs' },
+    });
+    // The whole repository is asked about as itself: no path in the input.
+    expect(kernel.execution.started[2]?.spec.input).toEqual({ query: 'alpha' });
+    expect(kernel.execution.started[2]?.spec.scope).toMatchObject({ external: { below: '' } });
+    // Another repository asks again.
+    await kernel.submit(readUnit, { path: join(base, 'other', 'b.ts') });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toHaveLength(2);
+  });
+
+  it('is not the workspace: its own reads keep their scope and nothing external shows in it', async () => {
+    const kernel = await open();
+    await kernel.submit(fileRead, { path: 'a.ts' });
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    expect(kernel.execution.started[0]?.spec.scope).toEqual({
+      kind: 'REPOSITORY',
+      repositoryRoot: '/repository',
+      exclusions: expect.any(Array) as unknown,
+    });
+  });
+
+  it('answers a path that cannot be read without asking anyone, and says nothing of why', async () => {
+    const kernel = await open();
+    for (const path of [
+      join(base, 'missing'),
+      'relative/path.ts',
+      '/etc/passwd',
+      '/',
+      home,
+      join(home, '.ssh', 'id_rsa'),
+    ])
+      await kernel.submit(readUnit, { path });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toEqual([]);
+    expect(kernel.execution.started).toEqual([]);
+    expect(
+      kernel.reports().map((report) => ('reasonCode' in report ? report.reasonCode : '')),
+    ).toEqual(Array.from({ length: 6 }, () => 'EXTERNAL_PATH_UNAVAILABLE'));
+  });
+
+  it('is refused to an Agent that does not have the capability', async () => {
+    await folders();
+    const kernel = await setup(agent, { runWork: { external: { homeDir: home } } });
+    await kernel.register(undefined, ['repo.read']);
+    await kernel.submit(readUnit, { path: join(base, 'proj', 'src', 'a.ts') });
+    await kernel.settled();
+    expect(kernel.reports()).toMatchObject([
+      { status: 'REJECTED', reasonCode: 'CAPABILITY_NOT_GRANTED' },
+    ]);
+  });
+
+  it('pauses the run after two failures in a row, and tells the user what was tried', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: join(base, 'missing-1') });
+    await kernel.settled();
+    expect(paused(kernel)).toEqual([]);
+    await kernel.submit(readUnit, { path: join(base, 'missing-2') });
+    await kernel.settled();
+    expect(paused(kernel)).toMatchObject([
+      {
+        attempts: [
+          { path: join(base, 'missing-1'), reason: 'UNAVAILABLE' },
+          { path: join(base, 'missing-2'), reason: 'UNAVAILABLE' },
+        ],
+      },
+    ]);
+    expect(kernel.run().control.phase).toBe('PAUSING');
+  });
+
+  it('counts what the executor refuses too, and a success in between starts the count over', async () => {
+    const kernel = await open();
+    const file = join(base, 'proj', 'src', 'a.ts');
+    await kernel.submit(readUnit, { path: file });
+    await kernel.answer('ALLOW');
+    await kernel.settled();
+    await failAttempt(kernel, 0);
+    expect(paused(kernel)).toEqual([]);
+    // A success: the one failure is forgiven.
+    await kernel.submit(readUnit, { path: file });
+    await kernel.settled();
+    await kernel.finish(1);
+    await kernel.settled();
+    await kernel.submit(readUnit, { path: file });
+    await kernel.settled();
+    await failAttempt(kernel, 2);
+    expect(paused(kernel)).toEqual([]);
+    // Two in a row: the failure of the executor and a path that does not exist.
+    await kernel.submit(readUnit, { path: join(base, 'missing') });
+    await kernel.settled();
+    expect(paused(kernel)).toMatchObject([
+      { attempts: [{ reason: 'FAILED' }, { reason: 'UNAVAILABLE' }] },
+    ]);
+  });
+
+  it('does not pause for a relative path, which names a file of the repository and no guess at the machine', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: 'TASK.md' });
+    await kernel.submit(readUnit, { path: 'notes' });
+    await kernel.settled();
+    expect(paused(kernel)).toEqual([]);
+  });
+
+  it('starts the count from zero once the run is continued', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: join(base, 'missing-1') });
+    await kernel.submit(readUnit, { path: join(base, 'missing-2') });
+    await kernel.settled();
+    expect(paused(kernel)).toHaveLength(1);
+    kernel.execution.onDrained?.();
+    await kernel.settled();
+    expect(kernel.run().control.phase).toBe('PAUSED');
+    await kernel.actor.call(() => kernel.actor.resumeRun(kernel.run()));
+    await kernel.settled();
+    // One failure is not two: the earlier two were counted and spent.
+    await kernel.submit(readUnit, { path: join(base, 'missing-3') });
+    await kernel.settled();
+    expect(paused(kernel)).toHaveLength(1);
+    expect(kernel.run().control.phase).toBe('RUNNING');
+    await kernel.submit(readUnit, { path: join(base, 'missing-4') });
+    await kernel.settled();
+    expect(paused(kernel)).toHaveLength(2);
+  });
+
+  it('also starts the count over when the user paused the run, not the system', async () => {
+    const kernel = await open();
+    await kernel.submit(readUnit, { path: join(base, 'missing-1') });
+    await kernel.settled();
+    await kernel.actor.call(() => kernel.actor.pauseRun(kernel.run()));
+    kernel.execution.onDrained?.();
+    await kernel.settled();
+    await kernel.actor.call(() => kernel.actor.resumeRun(kernel.run()));
+    await kernel.settled();
+    // One failure before the pause and one after are not two in a row.
+    await kernel.submit(readUnit, { path: join(base, 'missing-2') });
+    await kernel.settled();
+    expect(paused(kernel)).toEqual([]);
+    await kernel.submit(readUnit, { path: join(base, 'missing-3') });
+    await kernel.settled();
+    expect(paused(kernel)).toHaveLength(1);
+  });
+
+  it('counts a refusal by the user, and does not ask again for what the AgentRun was refused', async () => {
+    const kernel = await open();
+    const file = join(base, 'proj', 'src', 'a.ts');
+    await kernel.submit(readUnit, { path: file });
+    await kernel.settled();
+    await kernel.answer('DENY');
+    await kernel.settled();
+    await kernel.submit(readUnit, { path: join(base, 'other', 'b.ts') });
+    await kernel.settled();
+    expect(externalQuestions(kernel)).toHaveLength(1);
+    expect(
+      kernel.reports().map((report) => ('reasonCode' in report ? report.reasonCode : '')),
+    ).toEqual(['USER_DECLINED', 'USER_DECLINED']);
+    expect(paused(kernel)).toMatchObject([
+      { attempts: [{ reason: 'DECLINED' }, { reason: 'DECLINED' }] },
+    ]);
+  });
+});
+
+describe('a checkpoint (Orchestration 7.3, D63)', () => {
+  it('waits ten seconds at most for the work in flight, then is skipped without an error', async () => {
+    const kernel = await setup(testPinnedAgent(), {
+      runWork: {
+        checkpoint: () => Promise.resolve('snap_1'),
+        // Never cleared: a command in flight runs on (a long or hung one).
+        holdMutating: () => undefined,
+        releaseMutating: () => undefined,
+        heldMutating: () => [],
+      },
+    });
+    const answer = await kernel.actor.call(() =>
+      kernel.run().work.takeCheckpoint({
+        ...kernel.inRun,
+        requestId: newId('req'),
+        checkpointId: newId('ckp'),
+        kind: 'ROOT_SPAWN',
+        label: 'before starting the parts',
+      }),
+    );
+    expect(answer).toMatchObject({ outcome: 'ACCEPTED' });
+    const wait = kernel.timers.find((timer) => timer.delayMs === 10_000);
+    expect(wait).toBeDefined();
+    wait?.due();
+    await kernel.actor.idle();
+    const taken = kernel.toWorkflow
+      .map((entry) => entry.event)
+      .find((event) => event.type === 'CheckpointTaken');
+    expect(taken).toMatchObject({ type: 'CheckpointTaken', outcome: 'SKIPPED' });
   });
 });

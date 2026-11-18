@@ -1,17 +1,14 @@
 import {
-  AnalysisReportSchema,
   MEDIA_TYPES,
   MessagePublishInputSchema,
   ModelRawOutputSchema,
-  ReportPublishInputSchema,
   ReplyArgsSchema,
   canonicalJson,
+  parseToolArguments,
   validate,
-  type AnalysisReport,
   type MessagePublishInput,
   type ModelRawOutput,
   type ReplyArgs,
-  type ReportPublishInput,
   type UnitInput,
 } from '@multiagentos/contracts';
 import type { ResultCheck } from './run-attempts.js';
@@ -25,7 +22,10 @@ const notDispatched = (reasonCode: 'INVALID_INPUT' | 'INVALID_ARTIFACT_REF'): Bu
   reasonCode,
 });
 
-/** Takes the `text` argument of one `reply` call out of the model output it was part of. */
+/**
+ * Takes the `text` argument of one `reply` call out of the model output it was part of, or, with
+ * no call named, the text the model wrote without a tool call (D97).
+ */
 async function replyText(
   input: Extract<MessagePublishInput, { kind: 'REPLY' }>,
   artifacts: SessionArtifacts,
@@ -35,9 +35,13 @@ async function replyText(
   try {
     const output = validate<ModelRawOutput>(ModelRawOutputSchema, JSON.parse(content.text));
     if (!output.ok) return { refused: notDispatched('INVALID_INPUT') };
+    if (input.source.toolCallId === undefined) {
+      const written = output.value.text?.trim() ?? '';
+      return written === '' ? { refused: notDispatched('INVALID_INPUT') } : { text: written };
+    }
     const call = output.value.toolCalls.find((c) => c.toolCallId === input.source.toolCallId);
     if (call === undefined) return { refused: notDispatched('INVALID_INPUT') };
-    const args = validate<ReplyArgs>(ReplyArgsSchema, JSON.parse(call.argumentsText));
+    const args = validate<ReplyArgs>(ReplyArgsSchema, parseToolArguments(call.argumentsText));
     return args.ok ? { text: args.value.text } : { refused: notDispatched('INVALID_INPUT') };
   } catch {
     return { refused: notDispatched('INVALID_INPUT') };
@@ -64,36 +68,6 @@ export async function publishMessage(
   return {
     outcome: 'COMPLETED',
     output: { kind: value.kind, ...(wrapUpReason === undefined ? {} : { wrapUpReason }) },
-    outputRef,
-  };
-}
-
-/** Fills in the goal from `goalRef`, because Workflow never holds the user's words. */
-export async function publishReport(
-  unitInput: UnitInput,
-  artifacts: SessionArtifacts,
-  maxReportBytes: number,
-): Promise<BuiltInResult> {
-  const input = validate<ReportPublishInput>(ReportPublishInputSchema, unitInput);
-  if (!input.ok) return notDispatched('INVALID_INPUT');
-  const goal = await artifacts.read(input.value.goalRef);
-  if (!goal.ok) return notDispatched('INVALID_ARTIFACT_REF');
-  const report = validate<AnalysisReport>(AnalysisReportSchema, {
-    ...input.value.report,
-    goal: goal.text,
-  });
-  if (!report.ok) return notDispatched('INVALID_INPUT');
-  const body = canonicalJson(report.value);
-  if (Buffer.byteLength(body, 'utf8') > maxReportBytes)
-    return { outcome: 'REJECTED', reasonCode: 'LIMIT_EXCEEDED' };
-  const outputRef = await artifacts.put(body, MEDIA_TYPES.analysisReport, 'SESSION');
-  return {
-    outcome: 'COMPLETED',
-    output: {
-      conclusionCount: report.value.conclusions.length,
-      unconfirmedCount: report.value.unconfirmed.length,
-      degraded: report.value.degraded,
-    },
     outputRef,
   };
 }

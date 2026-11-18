@@ -4,11 +4,16 @@ import type {
   CancelRunExecutionsRequest,
   ExecutionFact,
   ExecutionRequest,
+  JobControlRequest,
+  JobControlResult,
+  JobEndedFact,
   FabricPort,
   InteractionGatewayPort,
   InteractionInboxEvent,
   InteractionSessionEvent,
   InteractionSystemEvent,
+  ModelProgress,
+  ModelStream,
   SupervisorShutdownRequest,
   WorkflowGatewayPort,
   WorkflowInboxEvent,
@@ -26,6 +31,15 @@ export const SCHEMA_IDS = {
   registerAgentRun: 'kernel.unit.RegisterAgentRunRequest.v1',
   reserveDelegation: 'kernel.unit.ReserveDelegationRequest.v1',
   releaseDelegation: 'kernel.unit.ReleaseDelegationRequest.v1',
+  retainArtifacts: 'kernel.unit.RetainArtifactsRequest.v1',
+  scheduleWake: 'kernel.unit.ScheduleWakeRequest.v1',
+  controlJob: 'kernel.unit.ControlJobRequest.v1',
+  haltAgentRun: 'kernel.unit.HaltAgentRunRequest.v1',
+  restoreMission: 'kernel.unit.RestoreMissionRequest.v1',
+  closeMission: 'kernel.unit.CloseMissionRequest.v1',
+  withdrawQuestion: 'kernel.unit.WithdrawQuestionRequest.v1',
+  withdrawOpenInput: 'kernel.unit.WithdrawOpenInputRequest.v1',
+  takeCheckpoint: 'kernel.unit.TakeCheckpointRequest.v1',
   reportCompactionSource: 'kernel.unit.ReportCompactionSourceRequest.v1',
   ackCompaction: 'kernel.unit.AckCompactionRequest.v1',
   submitUnit: 'kernel.unit.SubmitUnitRequest.v1',
@@ -41,9 +55,12 @@ export const SCHEMA_IDS = {
   listSessions: 'kernel.control.ListSessionsRequest.v1',
   deleteSession: 'kernel.control.DeleteSessionRequest.v1',
   answerAuthorization: 'kernel.control.AnswerAuthorizationRequest.v1',
-  undoTurns: 'kernel.control.UndoTurnsRequest.v1',
+  undo: 'kernel.control.UndoRequest.v1',
+  recoverRun: 'kernel.control.RecoverRunRequest.v1',
   confirmUndo: 'kernel.control.ConfirmUndoRequest.v1',
-  diffTurns: 'kernel.control.DiffTurnsRequest.v1',
+  diff: 'kernel.control.DiffRequest.v1',
+  listCheckpoints: 'kernel.control.ListCheckpointsRequest.v1',
+  rewindCheckpoint: 'kernel.control.RewindCheckpointRequest.v1',
   updateActivity: 'kernel.unit.UpdateActivityRequest.v1',
   answerHuman: 'kernel.control.AnswerHumanRequest.v1',
   pauseRun: 'kernel.control.PauseRunRequest.v1',
@@ -61,6 +78,10 @@ export const SCHEMA_IDS = {
   cancelExecution: 'kernel.execution.CancelExecutionRequest.v1',
   supervisorShutdown: 'kernel.execution.SupervisorShutdownRequest.v1',
   executionFact: 'kernel.execution.ExecutionFact.v1',
+  jobControl: 'kernel.execution.JobControlRequest.v1',
+  jobEnded: 'kernel.execution.JobEndedFact.v1',
+  modelProgress: 'kernel.execution.ModelProgress.v1',
+  modelStream: 'kernel.control.ModelStream.v1',
   workflowRunEvent: 'kernel.unit.WorkflowInboxEvent.v1',
   workflowSessionEvent: 'kernel.session.WorkflowSessionEvent.v1',
   workflowSystemEvent: 'kernel.session.WorkflowSystemEvent.v1',
@@ -74,6 +95,15 @@ export const WORKFLOW_SYSCALLS = [
   'registerAgentRun',
   'reserveDelegation',
   'releaseDelegation',
+  'retainArtifacts',
+  'scheduleWake',
+  'controlJob',
+  'haltAgentRun',
+  'restoreMission',
+  'closeMission',
+  'withdrawQuestion',
+  'withdrawOpenInput',
+  'takeCheckpoint',
   'reportCompactionSource',
   'ackCompaction',
   'submitUnit',
@@ -99,9 +129,12 @@ export const INTERACTION_SYSCALLS = [
   'steerRun',
   'compactContext',
   'readArtifact',
-  'undoTurns',
+  'undo',
+  'recoverRun',
   'confirmUndo',
-  'diffTurns',
+  'diff',
+  'listCheckpoints',
+  'rewindCheckpoint',
   'shutdown',
 ] as const satisfies readonly (keyof InteractionGatewayPort)[];
 
@@ -273,6 +306,7 @@ export interface SupervisorPort {
   execute(request: ExecutionRequest): Promise<void>;
   cancelRun(request: CancelRunExecutionsRequest): Promise<void>;
   cancelExecution(request: CancelExecutionRequest): Promise<void>;
+  controlJob(request: JobControlRequest): Promise<JobControlResult>;
   shutdown(request: SupervisorShutdownRequest): Promise<void>;
 }
 
@@ -289,6 +323,7 @@ export function createSupervisorPort(
     cancelRun: (request) => fabric.request(SCHEMA_IDS.cancelRunExecutions, request, contextOf({})),
     cancelExecution: (request) =>
       fabric.request(SCHEMA_IDS.cancelExecution, request, contextOf({})),
+    controlJob: (request) => fabric.request(SCHEMA_IDS.jobControl, request, contextOf({})),
     shutdown: (request) => fabric.request(SCHEMA_IDS.supervisorShutdown, request, contextOf({})),
   };
 }
@@ -302,4 +337,97 @@ export function createExecutionFactSink(
     report: (fact) =>
       fabric.send('kernel-core.execution-facts', SCHEMA_IDS.executionFact, fact, contextOf(fact)),
   };
+}
+
+/** For the Supervisor: tells the Kernel core that a background command ended (Orchestration 6.4). */
+export function createJobFactSink(
+  fabric: FabricPort,
+  contextOf: (fact: JobEndedFact) => BoundaryContext,
+): { report(fact: JobEndedFact): Promise<void> } {
+  return {
+    report: (fact) =>
+      fabric.send('kernel-core.job-facts', SCHEMA_IDS.jobEnded, fact, contextOf(fact)),
+  };
+}
+
+/**
+ * The side channel of a running model call (docs/M2/Console.md 4): what the person watching
+ * may see before the call is over. It is not an event of the ordered sequences: no `eventId`, no
+ * `seq`, nothing is awaited and nothing is retried. A message that cannot be delivered, or that
+ * finds the receiver busy, is dropped, so watching can never slow or change the work.
+ */
+const SIDE_CHANNEL_BACKLOG = 64;
+
+/** Sends without waiting and without ever failing; drops what exceeds the backlog. */
+function lossy<T>(send: (message: T) => Promise<void>): (message: T) => void {
+  let pending = 0;
+  return (message) => {
+    if (pending >= SIDE_CHANNEL_BACKLOG) return;
+    pending += 1;
+    void send(message)
+      .catch(() => undefined)
+      .finally(() => {
+        pending -= 1;
+      });
+  };
+}
+
+const progressContext = (progress: ModelProgress, correlationId: string): BoundaryContext => ({
+  correlationId,
+  tenantId: 'local',
+  projectId: 'local',
+  sessionId: progress.sessionId,
+  workflowRunId: progress.workflowRunId,
+});
+
+/** For the Supervisor: tells the Kernel core how a model call is going. */
+export function createModelProgressSink(
+  fabric: FabricPort,
+  correlationOf: (progress: ModelProgress) => string,
+): (progress: ModelProgress) => void {
+  return lossy((progress) =>
+    fabric.send(
+      'kernel-core.model-progress',
+      SCHEMA_IDS.modelProgress,
+      progress,
+      progressContext(progress, correlationOf(progress)),
+    ),
+  );
+}
+
+/** For the Kernel core: receives what the Supervisor tells of a model call. */
+export function serveModelProgress(
+  fabric: FabricPort,
+  handle: (progress: ModelProgress) => void,
+): void {
+  fabric.subscribe<ModelProgress>('kernel-core.model-progress', (envelope) => {
+    if (envelope.producer !== 'supervisor') return Promise.resolve();
+    handle(envelope.payload);
+    return Promise.resolve();
+  });
+}
+
+/** For the Kernel core: passes it on to UserInteraction. */
+export function createModelStreamSender(
+  fabric: FabricPort,
+  correlationOf: (stream: ModelStream) => string,
+): (stream: ModelStream) => void {
+  return lossy((stream) =>
+    fabric.send('inbox.user-interaction-stream', SCHEMA_IDS.modelStream, stream, {
+      correlationId: correlationOf(stream),
+      tenantId: 'local',
+      projectId: 'local',
+      sessionId: stream.sessionId,
+      workflowRunId: stream.workflowRunId,
+    }),
+  );
+}
+
+/** For UserInteraction: receives the thinking of the model calls of the Session in view. */
+export function serveModelStream(fabric: FabricPort, handle: (stream: ModelStream) => void): void {
+  fabric.subscribe<ModelStream>('inbox.user-interaction-stream', (envelope) => {
+    if (envelope.producer !== 'kernel-core') return Promise.resolve();
+    handle(envelope.payload);
+    return Promise.resolve();
+  });
 }

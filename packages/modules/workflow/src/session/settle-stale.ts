@@ -20,6 +20,8 @@ export function settleStaleRecords(records: readonly SessionLogRecord[]): readon
   const openAgentRuns = new Map<string, OpenAgentRun>();
   const openNodes = new Map<string, { workflowRunId: string; turnId?: string }>();
   const openTurns = new Map<string, string>();
+  /** Inputs of the user whose work did not come to rest, by their checkpoint. */
+  const openInputs = new Map<string, string>();
   const openRuns = new Set<string>();
   const unanswered = new Map<string, { agentRunId: string } & OpenAgentRun>();
 
@@ -76,6 +78,17 @@ export function settleStaleRecords(records: readonly SessionLogRecord[]): readon
       case 'TURN_ENDED':
         if (record.turnId !== undefined) openTurns.delete(record.turnId);
         break;
+      case 'HUMAN_ANSWERED':
+        if (record.kind === 'prompt' && record.checkpointId !== undefined)
+          openInputs.set(record.checkpointId, record.workflowRunId);
+        break;
+      case 'MISSION_WOKEN':
+        if (record.checkpointId !== undefined)
+          openInputs.set(record.checkpointId, record.workflowRunId);
+        break;
+      case 'INPUT_SETTLED':
+        openInputs.delete(record.checkpointId);
+        break;
       case 'WORKFLOW_RUN_STARTED':
         openRuns.add(record.workflowRunId);
         break;
@@ -107,8 +120,12 @@ export function settleStaleRecords(records: readonly SessionLogRecord[]): readon
   for (const [nodeId, node] of openNodes) {
     settled.push({ type: 'NODE_ENDED', nodeId, status: 'INTERRUPTED', ...node });
   }
+  // A log written before checkpoints replaced Turns closes its open Turn the way it did then.
   for (const [turnId, workflowRunId] of openTurns) {
     settled.push({ type: 'TURN_ENDED', turnId, workflowRunId, reason: 'PROCESS_EXITED' });
+  }
+  for (const [checkpointId, workflowRunId] of openInputs) {
+    settled.push({ type: 'INPUT_SETTLED', checkpointId, workflowRunId, reason: 'PROCESS_EXITED' });
   }
   for (const workflowRunId of openRuns) {
     settled.push({ type: 'WORKFLOW_RUN_ENDED', workflowRunId, closeReason: 'PROCESS_EXITED' });
@@ -117,7 +134,7 @@ export function settleStaleRecords(records: readonly SessionLogRecord[]): readon
     settled.push({
       type: 'STALE_UNITS_SETTLED',
       requestIds: [...openUnits.keys()],
-      turnIds: [...openTurns.keys()],
+      ...(openTurns.size === 0 ? {} : { turnIds: [...openTurns.keys()] }),
       workflowRunIds: [...openRuns],
     });
   }

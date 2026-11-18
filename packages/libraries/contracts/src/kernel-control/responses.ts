@@ -54,6 +54,8 @@ export const SyscallRejectedSchema = Type.Union(
       issuer: Type.Literal('CORE'),
       reasonCode: Type.Literal('BUDGET_INSUFFICIENT'),
       delegable: count(),
+      /** The least the tasks of the call need in all: each its Agent's smallest share. */
+      least: Type.Optional(count()),
     }),
   ],
   { $id: 'kernel.control.SyscallRejected.v1' },

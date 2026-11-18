@@ -66,6 +66,7 @@ async function setup() {
     persistence,
     registry: createProtocolRegistry(),
     pinAgent: () => Promise.reject(new Error('unused')),
+    compactionAgent: () => undefined,
     mainBudget: {
       perCallInputLimit: 1_000,
       maxOutputTokens: 100,

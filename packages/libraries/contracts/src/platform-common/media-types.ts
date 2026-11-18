@@ -3,7 +3,6 @@ export const MEDIA_TYPES = {
   contextPack: 'application/vnd.multiagentos.context-pack+json',
   fileText: 'text/plain; charset=utf-8',
   modelOutput: 'application/vnd.multiagentos.model-output+json',
-  analysisReport: 'application/vnd.multiagentos.analysis-report+json',
   runSummary: 'application/vnd.multiagentos.run-summary+json',
   reasoning: 'application/vnd.multiagentos.reasoning+json',
   markdown: 'text/markdown; charset=utf-8',

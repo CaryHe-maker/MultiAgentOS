@@ -148,7 +148,7 @@ function stack() {
                     command,
                     outcome: 'READY',
                     inheritedArtifacts: [],
-                    fromTurnCount: 0,
+                    fromInputCount: 0,
                   } as ReportSessionCommandRequest['result'])
                 : ({ command, outcome: 'READY' } as ReportSessionCommandRequest['result']);
           const { sessionId } = event;

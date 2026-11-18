@@ -2,24 +2,32 @@ schemaVersion: v1
 kind: TOOL
 id: run-subagents
 version: v0.1.0
-description: Control tool that starts SubAgent tasks and returns their joined results.
+description: Control tool that starts SubAgent tasks that run while the caller goes on.
 purpose: CONTROL
 modelName: run_subagents
 modelDescription: >-
-  Start up to 8 subtasks that run in parallel, and get all their results back when every one has
-  finished. Each task has a unique name, an agent (explorer reads and reports, worker changes
-  files), a goal that stands on its own (the agent does not see your conversation), and optional
-  dependsOn (names of other tasks of this call; a task starts after them and receives their
-  results), acceptance (what its result must show), inputs (artifacts you hand over), effort and
-  budget (a token share). Each result you get back is cut after 8000 characters. A worker must have writeScope: the repository paths it may change, which must lie
-  within what you may write and must not overlap the scope of a worker that can run at the same
-  time. An explorer has no writeScope. While the tasks run you cannot write or run commands.
-  Call it on its own.
+  Start up to 8 subtasks that run in parallel. Returns at once; each result comes to you
+  when its task ends (sleep with until children to wait). Each task has a unique name, an agent
+  (explorer, worker, or one of the specialists fixer, reviewer, tester, integrator,
+  researcher), a goal, a writeScope, and optionally role (one line every task sees), dependsOn (names of tasks of
+  this call it waits for and whose results it gets), inputs (artifacts you hand over), effort and
+  budget. A task finishes when its goal is done, so the goal says what done means. writeScope is required in every task: for a
+  worker or specialist the repository paths it may change, inside what you may write and not
+  overlapping a task that can run at the same time (until it ends only it writes there and your
+  commands see it read-only); for an explorer []. split: true lets a worker with a large part start subtasks of
+  its own inside its writeScope. A worker or explorer starts with your context, so its goal says
+  only what its part is; a specialist starts from its goal alone. continues starts a task from the
+  history of an ended task of yours (same agent): use it to send a defect back to its owner. plan
+  (what is delivered, how it is checked, the parts and owners, shared files) must come with your first
+  call; every task sees it. A task that breaks a rule is not started and you are told
+  why; the others start. A result shows the summary, the report when short, and the checks the task
+  ran; read a long report or a handed-over result with read_output by its ref_N/toolCallId. You
+  cannot reply or finish while a task you started runs.
 parametersContract:
   kind: contract
   id: workflow.RunSubagentsArgs
   version: v1
-riskClass: READ_ONLY
-sideEffect: NONE
+riskClass: MEDIUM
+sideEffect: WORKSPACE_WRITE
 isIdempotent: false
 contentStatus: FINAL

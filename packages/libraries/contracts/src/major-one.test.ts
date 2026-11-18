@@ -84,7 +84,8 @@ describe('Schema-enforced constraints', () => {
     const accepts = (value: string) =>
       isValid(ReadProjectFileRequestSchema, { ...base, path: value });
     expect(accepts('AGENTS.md')).toBe(true);
-    expect(accepts('.multiagentos/workflows/research.yaml')).toBe(true);
+    expect(accepts('docs/AGENTS.md')).toBe(true);
+    expect(accepts('.multiagentos/workflows/research.yaml')).toBe(false);
     expect(accepts('../AGENTS.md')).toBe(false);
     expect(accepts('.env')).toBe(false);
     expect(accepts('.multiagentos/workflows/../x.yaml')).toBe(false);
@@ -92,7 +93,7 @@ describe('Schema-enforced constraints', () => {
 
   it('ties templateRef to the run mode', () => {
     const start = { type: 'RunStart', preset: 'standard', initialInput: true };
-    const templateRef = { id: 'analyze', version: 'v1.0.0' };
+    const templateRef = { id: 'mission', version: 'v0.1.0' };
     expect(isValid(RunStartSchema, { ...start, mode: 'CHAT' })).toBe(true);
     expect(isValid(RunStartSchema, { ...start, mode: 'CHAT', templateRef })).toBe(false);
     expect(isValid(RunStartSchema, { ...start, mode: 'ORCHESTRATION' })).toBe(false);
@@ -105,7 +106,7 @@ describe('Schema-enforced constraints', () => {
       kind: 'prompt',
       inputId: newId('inp'),
       contentRef: { ...artifact, mediaType: 'text/plain; charset=utf-8' },
-      turnId: newId('trn'),
+      checkpointId: newId('ckp'),
     };
     const humanRequestId = `hrq_${'b'.repeat(32)}`;
     expect(isValid(HumanAnsweredSchema, { ...answer, origin: 'initial' })).toBe(true);
@@ -125,12 +126,14 @@ describe('Schema-enforced constraints', () => {
 
   it('forbids a turn in AWAITING_INPUT', () => {
     const changed = { type: 'RunStateChanged' };
-    const turnId = newId('trn');
+    const checkpointId = newId('ckp');
     expect(isValid(RunStateChangedSchema, { ...changed, state: 'AWAITING_INPUT' })).toBe(true);
-    expect(isValid(RunStateChangedSchema, { ...changed, state: 'AWAITING_INPUT', turnId })).toBe(
-      false,
+    expect(
+      isValid(RunStateChangedSchema, { ...changed, state: 'AWAITING_INPUT', checkpointId }),
+    ).toBe(false);
+    expect(isValid(RunStateChangedSchema, { ...changed, state: 'RUNNING', checkpointId })).toBe(
+      true,
     );
-    expect(isValid(RunStateChangedSchema, { ...changed, state: 'RUNNING', turnId })).toBe(true);
   });
 
   it('carries retry exactly in the RETRYING phase', () => {
@@ -153,7 +156,7 @@ describe('Schema-enforced constraints', () => {
       status: {
         round: 1,
         maxRounds: 10,
-        budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+        budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
         final: false,
       },
     };
@@ -169,7 +172,7 @@ describe('Schema-enforced constraints', () => {
       unitRunId: pathDerivedId('unr', 'agr_test0001/round-1/1'),
       unitRef: { kind: 'UNIT', id: 'file-read', version: 'v1.0.0', digest: 'd'.repeat(64) },
       executionKind: 'FILE_READ',
-      budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+      budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
       status: 'REJECTED',
       reasonCode: 'QUOTA_EXHAUSTED',
       quota: 'TOOL_UNITS',

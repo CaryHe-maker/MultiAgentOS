@@ -9,6 +9,7 @@ import {
 } from '@multiagentos/contracts';
 import {
   decideUnit,
+  ANY_HOST,
   type AuthorizationEntry,
   type CommandAnalysis,
   type Capability,
@@ -28,8 +29,12 @@ export interface Lease {
 
 export type Resolution = AuthorizationResolved['resolution'];
 
-/** What the user answers: ALLOW and ONCE for the uncertain level, the four of a command otherwise. */
-export type AnswerScope = 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY';
+/**
+ * What the user answers: ALLOW and ONCE for the uncertain level, the four of a command otherwise.
+ * ANY_HOST is for `web.fetch` (every public website, for this run) and FOLDER for `web.search`
+ * (allowed for this folder from now on; Session management keeps it, see `run-work`).
+ */
+export type AnswerScope = 'ALLOW' | 'ONCE' | 'COMMAND' | 'PREFIX' | 'DENY' | 'ANY_HOST' | 'FOLDER';
 
 export type AccessDecision =
   | { readonly kind: 'ALLOWED' }
@@ -55,6 +60,8 @@ export interface RunAuthorizationDeps {
   readonly repositoryRoot: string;
   readonly provider: string;
   readonly repositoryExclusions: readonly string[];
+  /** The user allowed the web search for this folder before: the run starts with that answer. */
+  readonly webSearchTrusted: boolean;
   readonly now: () => Date;
 }
 
@@ -120,6 +127,15 @@ export class RunAuthorization {
       ...DEFAULT_REPOSITORY_EXCLUSIONS,
       ...deps.repositoryExclusions,
     ]);
+    if (deps.webSearchTrusted)
+      this.#entries = [
+        {
+          scope: 'RUN',
+          effect: 'ALLOW',
+          capability: 'web.search',
+          resourceKey: REPOSITORY_ROOT_PATH,
+        },
+      ];
   }
 
   public get lease(): Readonly<Lease> | undefined {
@@ -262,6 +278,68 @@ export class RunAuthorization {
     };
   }
 
+  /**
+   * More tokens for the work of this input (M2Design 7.3, rule 6): one question at a time,
+   * whoever is short; nothing is remembered, since the next shortage is a new question.
+   */
+  askBudget(
+    wants: { readonly used: number; readonly limit: number; readonly add: number },
+    tasks: number,
+    waiter: string,
+    agentRunId: string,
+  ): AccessCheck {
+    const key = `budget.extend\u0000`;
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'budget.extend', critical: false, key },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'budget.extend',
+        used: wants.used,
+        limit: wants.limit,
+        add: wants.add,
+        tasks,
+      },
+    };
+  }
+
+  /**
+   * More subtasks for the run (D62): one question at a time, whoever reached the limit; the calls
+   * that reach it while it is open wait for the same answer.
+   */
+  askTasks(
+    wants: { readonly started: number; readonly limit: number; readonly add: number },
+    waiter: string,
+    agentRunId: string,
+  ): AccessCheck {
+    const key = `tasks.extend\u0000`;
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'tasks.extend', critical: false, key },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'tasks.extend',
+        started: wants.started,
+        limit: wants.limit,
+        add: wants.add,
+      },
+    };
+  }
+
   /** `web.fetch`: once for each host; AgentRuns that reach for the same new host share the question. */
   askWebFetch(url: string, host: string, waiter: string, agentRunId: string): AccessCheck {
     const key = resourceKey('web.fetch', host);
@@ -282,6 +360,41 @@ export class RunAuthorization {
         host,
       },
     };
+  }
+
+  /** `external.read`: once for each external folder, for the run (Kernel/Core 5h). */
+  askExternalRead(root: string, path: string, waiter: string, agentRunId: string): AccessCheck {
+    const key = resourceKey('external.read', root);
+    const joined = this.#join(key, waiter, agentRunId);
+    if (joined !== undefined) return joined;
+    const questionId = this.#open(
+      { capability: 'external.read', critical: false, key },
+      waiter,
+      agentRunId,
+    );
+    return {
+      decision: { kind: 'PENDING', questionId },
+      requested: {
+        type: 'AuthorizationRequest',
+        questionId,
+        capability: 'external.read',
+        root,
+        path,
+        provider: this.#deps.provider,
+      },
+    };
+  }
+
+  /** The external folders the user allowed in this run, for finding which one covers a path. */
+  externalRoots(): readonly string[] {
+    return this.#entries.flatMap((entry) =>
+      entry.capability === 'external.read' &&
+      entry.scope === 'RUN' &&
+      entry.effect === 'ALLOW' &&
+      'resourceKey' in entry
+        ? [entry.resourceKey]
+        : [],
+    );
   }
 
   /**
@@ -398,6 +511,8 @@ export class RunAuthorization {
     const question = this.#questions.get(questionId);
     if (question === undefined || scope === 'DENY') return true;
     if (question.command !== undefined) return question.command.options.includes(scope as 'ONCE');
+    if (scope === 'ANY_HOST') return question.capability === 'web.fetch';
+    if (scope === 'FOLDER') return question.capability === 'web.search';
     if (scope === 'COMMAND' || scope === 'PREFIX') return false;
     return question.critical === (scope === 'ONCE');
   }
@@ -410,11 +525,43 @@ export class RunAuthorization {
       if (scope === 'DENY' && question.key !== undefined) this.#distrusted.add(question.key);
       return settled;
     }
+    // Not an access to remember: the run takes the answer and acts on it.
+    if (question.capability === 'budget.extend' || question.capability === 'tasks.extend')
+      return settled;
     this.#remember(question, question.capability, scope);
     return settled;
   }
 
+  /**
+   * The questions still open that an answer has covered since: the user said "every public
+   * website" and the other hosts being asked about no longer need an answer. Nothing else is
+   * settled here: a question is covered only by an entry for the very thing it asks.
+   */
+  settleCovered(): readonly QuestionResolved[] {
+    const any = this.#entries.some(
+      (entry) =>
+        entry.scope === 'RUN' &&
+        entry.effect === 'ALLOW' &&
+        entry.capability === 'web.fetch' &&
+        'resourceKey' in entry &&
+        entry.resourceKey === ANY_HOST,
+    );
+    if (!any) return [];
+    return [...this.#questions.values()].flatMap((question) => {
+      if (question.capability !== 'web.fetch' || question.critical) return [];
+      const settled = this.#settle(question.questionId, 'GRANTED');
+      return settled === undefined ? [] : [settled];
+    });
+  }
+
   #remember(question: Question, capability: Capability, scope: AnswerScope): void {
+    if (scope === 'ANY_HOST') {
+      this.#entries = [
+        ...this.#entries,
+        { scope: 'RUN', effect: 'ALLOW', capability, resourceKey: ANY_HOST },
+      ];
+      return;
+    }
     if (question.command !== undefined && scope !== 'DENY') {
       this.#rememberCommand(question, question.command, scope);
       return;

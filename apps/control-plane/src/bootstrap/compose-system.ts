@@ -1,4 +1,5 @@
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
   DefinitionCatalog,
@@ -12,7 +13,9 @@ import {
   SessionIndexLineSchema,
   SessionRefLineSchema,
   TrustedInstructionLineSchema,
+  TrustedWebSearchLineSchema,
   canonicalJson,
+  commandsOffered as commandsOfferedFor,
   createProtocolRegistry,
   newId,
   sha256Hex,
@@ -40,6 +43,7 @@ import {
   createInteractionGatewayPort,
   createWorkflowGatewayPort,
   serveInteractionInbox,
+  serveModelStream,
   serveWorkflowInbox,
 } from '@multiagentos/fabric';
 import {
@@ -48,7 +52,9 @@ import {
   createSubprocessRunner,
   createSupervisor,
   agentShareFrom,
+  compactionAgentFrom,
   pinAgentFrom,
+  probeLandlock,
   probeSandbox,
   type MemorySample,
   type SandboxProbe,
@@ -144,24 +150,48 @@ function forNamespaces(
   return Object.freeze(limited);
 }
 
+/** The Agent of a Turn-chat, and the Agents that run the root of a WorkflowRun. */
+const CHAT_AGENT = 'chat';
+const ROOT_AGENTS = [CHAT_AGENT, 'main'] as const;
+
+/** Field by field the most of the roots' budgets: what the run's ledger must be able to fund. */
+function largestBudget(budgets: readonly AgentBudgetOf[]): AgentBudgetOf {
+  const [first, ...rest] = budgets;
+  if (first === undefined) throw new ConfigError('no root Agent');
+  return rest.reduce(
+    (most, each) => ({
+      perCallInputLimit: Math.max(most.perCallInputLimit, each.perCallInputLimit),
+      maxOutputTokens: Math.max(most.maxOutputTokens, each.maxOutputTokens),
+      finalInputBudget: Math.max(most.finalInputBudget, each.finalInputBudget),
+      finalMaxOutputTokens: Math.max(most.finalMaxOutputTokens, each.finalMaxOutputTokens),
+    }),
+    first,
+  );
+}
+type AgentBudgetOf = PinnedDefinitionSet['agent']['budget'];
+
 /**
- * The built-ins of this process (Module/Workflow 4): the Agent `main`, the templates, and every
- * Agent a template names, each at the version the catalog pins.
+ * The built-ins of this process (Module/Workflow 4): the root Agents `chat` and `main`, the
+ * templates, and every Agent a template names, each at the version the catalog pins.
  */
 function builtIns(catalog: DefinitionCatalog) {
   const context = { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' };
   const templates = catalog
     .list()
     .filter((each): each is TemplateDefinition => each.kind === 'TEMPLATE');
-  const main = catalog.latest('AGENT', 'main');
-  if (main === undefined) throw new ConfigError('the built-in Agent main is missing');
-  // The Agents `run_subagents` may start are built in with main, whatever the template (M2Design 3.9).
+  // The roots: chat runs a Turn-chat, main is the root of the template mission.
+  const roots = ROOT_AGENTS.map((id) => {
+    const found = catalog.latest('AGENT', id);
+    if (found === undefined) throw new ConfigError(`the built-in Agent ${id} is missing`);
+    return found;
+  });
+  // The Agents `run_subagents` may start are built in with the roots, whatever the template (M2Design 3.9).
   const spawnable = catalog
     .list()
     .filter((each) => each.kind === 'AGENT' && each.spawnable !== undefined)
     .map(({ id, version }) => ({ id, version }));
   const refs = [
-    { id: main.id, version: main.version },
+    ...roots.map(({ id, version }) => ({ id, version })),
     ...spawnable,
     ...templates.flatMap((template) =>
       template.nodes.flatMap((node) => (node.kind === 'AGENT' ? [node.agent] : [])),
@@ -206,8 +236,11 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
         }
       : undefined;
   assertStartupChecks(config.kernel, [...builtin.sets.values()], registry, options.credentials);
-  const main = builtin.sets.get('main');
-  if (main === undefined) throw new ConfigError('the built-in Agent main is missing');
+  const rootBudgets = ROOT_AGENTS.map((id) => {
+    const set = builtin.sets.get(id);
+    if (set === undefined) throw new ConfigError(`the built-in Agent ${id} is missing`);
+    return set.agent.budget;
+  });
 
   const subprocess = options.subprocess ?? createSubprocessRunner();
   // Writes rest on snapshots, and snapshots on git: without it the system only reads (M2Design 4.6).
@@ -227,10 +260,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
   if (!sandbox.available && preset !== 'readonly')
     log(`Commands cannot run isolated here (${sandbox.reason}). ${sandbox.hint}
 `);
-  // Commands are offered when they can run isolated, or when the user chose to be asked about
-  // running them without isolation (M2Design 6.2).
-  const commandsOffered =
-    sandbox.available || config.kernel.sandbox.unavailable === 'ask-unisolated';
+  const commandsOffered = commandsOfferedFor(sandbox.available, config.kernel.sandbox.unavailable);
+  // Without a sandbox, Landlock holds what a command writes (D79). Probed once: the runner uses
+  // it, and the Kernel queues a line of the read-only list as a read only when it holds (D87).
+  const landlock = sandbox.available ? false : (probeLandlock() ?? false);
   const analyzeCommand = createCommandAnalyzer(await createCommandParser(), config.kernel.command);
   const snapshotsOf = (sessionId: string): string =>
     join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots');
@@ -246,6 +279,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       'session-index': SessionIndexLineSchema,
       'session-refs': SessionRefLineSchema,
       'trusted-instructions': TrustedInstructionLineSchema,
+      'trusted-web-search': TrustedWebSearchLineSchema,
       'artifact-owners': ArtifactOwnerLineSchema,
     });
 
@@ -257,9 +291,14 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       persistence: forNamespaces(persistence, ['kernel-core', 'kernel-execution']),
       registry,
       pinAgent: pinAgentFrom(catalog, registry),
+      compactionAgent: compactionAgentFrom(catalog, registry, {
+        preset,
+        commands: commandsOffered,
+        agentId: CHAT_AGENT,
+      }),
       agentShare: agentShareFrom(catalog),
       ...(compactionPrompt === undefined ? {} : { compactionPrompt }),
-      mainBudget: main.agent.budget,
+      mainBudget: largestBudget(rootBudgets),
       config: config.kernel,
       repositoryRoot: options.repositoryRoot,
       preset,
@@ -281,6 +320,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       commands: {
         analyze: analyzeCommand,
         sandbox: () => (sandbox.available ? 'AVAILABLE' : 'UNAVAILABLE'),
+        ...(landlock === false ? {} : { unisolatedReadOnly: true }),
         probe: sandbox.available
           ? { available: true }
           : { available: false, reason: sandbox.reason },
@@ -314,6 +354,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       definitionVersions: builtin.definitionVersions,
       config: config.workflow,
       now,
+      git: inGitWorkTree(options.repositoryRoot),
     });
     serveWorkflowInbox(workflowFabric, workflow.runner);
 
@@ -324,6 +365,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       now,
     });
     serveInteractionInbox(interactionFabric, userInteraction.console);
+    // The thinking of the model calls, beside the ordered events (Console 4).
+    serveModelStream(interactionFabric, (stream) =>
+      userInteraction.console.handleModelStream(stream),
+    );
 
     const moduleHost = new ModuleHost({
       startTimeoutMs: MODULE_START_TIMEOUT_MS,
@@ -350,6 +395,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       config: config.kernel,
       dataDir: config.dataDir,
       subprocess,
+      landlock,
       now,
     });
 
@@ -381,7 +427,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       console,
       templateRef: (id) => {
         const template = builtin.templates.get(id);
-        return template === undefined ? undefined : { id, version: template.version };
+        // A pre-orchestrated template runs as a specialist of a long task, never by itself (D39).
+        return template === undefined || template.playbook !== undefined
+          ? undefined
+          : { id, version: template.version };
       },
       whenStopped: () => supervisor.whenStopped(),
       run: (command) => control.run(() => command(console)),
@@ -398,5 +447,16 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       // The original composition error is more useful than a cleanup failure.
     }
     throw error;
+  }
+}
+
+/**
+ * Whether a folder lies in a git work tree: a `.git` (a folder, or the file of a worktree) in it
+ * or in a folder above it. Only what the model is offered depends on it (git_inspect).
+ */
+export function inGitWorkTree(folder: string): boolean {
+  for (let current = folder; ; current = dirname(current)) {
+    if (existsSync(join(current, '.git'))) return true;
+    if (dirname(current) === current) return false;
   }
 }

@@ -28,7 +28,9 @@ template: |
   - Files involved: every file read or changed, one line each, and what about it matters.
   - Outputs that may be read again: for each long tool result that may still be needed, its
     toolCallId, copied exactly from the line "[toolCallId: ...]" that ends the result (for example
-    call_012), and what it holds, so that it can be read back with read_output.
+    call_012), and what it holds, so that it can be read back with read_output. A reference
+    that a subagent task handed over is written ref_N/toolCallId (for example ref_3/call_012);
+    copy it exactly the same way.
   - Open items: what is not done yet, and what the next step is.
   - Keep names, paths, identifiers and numbers exactly. Do not invent anything that is not in the
     material.

@@ -20,6 +20,7 @@ import {
   type BoundaryContext,
   type CloseReason,
   type ExecutionFact,
+  type JobEndedFact,
   type FabricPort,
   type GatewayForward,
   type HealthStatus,
@@ -39,7 +40,9 @@ import {
   SCHEMA_IDS,
   WORKFLOW_SYSCALLS,
   createInteractionEventSender,
+  createModelStreamSender,
   createSupervisorPort,
+  serveModelProgress,
   createWorkflowEventSender,
 } from '@multiagentos/fabric';
 import {
@@ -81,9 +84,12 @@ import {
 import { SessionManager } from './session/session-manager.js';
 import { KernelOutbox } from './session/session-outbox.js';
 import { ArtifactSweep } from './session/artifact-sweep.js';
-import { SessionRefs, TrustRecords } from './session/session-refs.js';
+import { SessionRefs, TrustRecords, WebSearchTrust } from './session/session-refs.js';
 
 /** What the user is told when memory runs short (Kernel/Monitor 4a). */
+/** Released artifacts are swept when this many bytes of them are waiting (Kernel/Execution 6d). */
+const RELEASED_SWEEP_BYTES = 20 * 1024 * 1024;
+
 export interface MemoryNotice {
   readonly source: MemorySource;
   readonly level: MemoryLevel;
@@ -100,14 +106,16 @@ export interface SessionKernelDeps {
   readonly registry: ProtocolRegistry;
   /** The definitions one AgentRun runs with (Interface/Definitions 3). */
   readonly pinAgent: (request: RegisterAgentRunRequest) => Promise<PinResult>;
+  /** Main as the catalog has it, for a compaction with no AgentRun of main (`compactionAgentFrom`). */
+  readonly compactionAgent: RunWorkDeps['compactionAgent'];
   /**
    * The instruction of the summary request of a compaction (Prompt `compaction-system`). Without
-   * it nothing is compacted, and a context that outgrows its window ends as it did before stage 8.
+   * it nothing is compacted, and a context that outgrows its window ends as it does without compaction.
    */
   readonly compactionPrompt?: CompactionPrompt;
   /** The share and budget of an Agent a `run_subagents` task names (M2Design 7.3). */
   readonly agentShare?: RunWorkDeps['agentShare'];
-  /** The per-call budget the run and Turn limits are checked against (Kernel/Monitor 6). */
+  /** The per-call budget the run and input limits are checked against (Kernel/Monitor 6). */
   readonly mainBudget: AgentBudget;
   readonly config: KernelConfig;
   /** This process's repository: a realpath. */
@@ -138,6 +146,11 @@ export interface SessionKernelDeps {
   readonly commands?: {
     readonly analyze: CommandSupport['analyze'];
     readonly sandbox: () => 'AVAILABLE' | 'UNAVAILABLE';
+    /**
+     * Without a sandbox, whether Landlock holds the writes of a command (D79): a line of the
+     * read-only list then reaches nothing it could change and does not queue behind writes (D87).
+     */
+    readonly unisolatedReadOnly?: boolean;
     /** What the probe found, for the audit of every Session. */
     readonly probe?: { readonly available: boolean; readonly reason?: string };
   };
@@ -160,9 +173,7 @@ const executionConfigOf = (config: KernelConfig): ExecutionConfig => ({
   executionLimits: config.executionLimits,
   retryBackoffBaseMs: config.retryBackoffBaseMs,
   retryAfterMaxMs: config.retryAfterMaxMs,
-  maxReportBytes: config.maxReportBytes,
-  maxSnapshotFiles: config.maxSnapshotFiles,
-  orientBudget: config.budget.orientBudget,
+  ...(config.budget.reserveShare === undefined ? {} : { reserveShare: config.budget.reserveShare }),
   searchBudget: config.budget.searchBudget,
   cancelGraceMs: config.cancelGraceMs,
   pauseDrainMs: config.pauseDrainMs,
@@ -206,6 +217,13 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const toWorkflow = createWorkflowEventSender(fabric, correlationOf);
   const toInteraction = createInteractionEventSender(fabric, correlationOf);
   const outbox = new KernelOutbox({ toWorkflow, toInteraction }, fault, now);
+  // The thinking of model calls on its way to the console (docs/M2/Console.md 4): beside the
+  // ordered events, never logged, and only for calls this Kernel started.
+  const streamToInteraction = createModelStreamSender(fabric, correlationOf);
+  const watchedCalls = new Map<
+    string,
+    { readonly sessionId: string; readonly agentRunId: string }
+  >();
   const refs = new SessionRefs(
     persistence.appendLog('kernel-core', { scope: 'SYSTEM', file: 'session-refs' }),
     repositoryRoot,
@@ -213,6 +231,10 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   );
   const trust = new TrustRecords(
     persistence.appendLog('kernel-core', { scope: 'SYSTEM', file: 'trusted-instructions' }),
+    now,
+  );
+  const webTrust = new WebSearchTrust(
+    persistence.appendLog('kernel-core', { scope: 'SYSTEM', file: 'trusted-web-search' }),
     now,
   );
   const sessionArtifacts = new Map<string, SessionArtifacts>();
@@ -289,6 +311,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
     host: RunHost,
     artifacts: SessionArtifacts,
     audit: (entry: object) => void,
+    snapshots?: WorkspaceSnapshots,
   ): RunWork => {
     const holder: { work?: RunWork } = {};
     const execution = new RunExecution({
@@ -297,11 +320,34 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       config: executionConfig,
       artifacts,
       dispatch: (request) => supervisor.execute(request),
+      modelStarted: (call) =>
+        void watchedCalls.set(call.executionId, { sessionId, agentRunId: call.agentRunId }),
       cancelRun: (request) => supervisor.cancelRun(request),
       cancelExecution: (request) => supervisor.cancelExecution(request),
       retrying: (retry) => holder.work?.retrying(retry),
+      released: (bytes) => {
+        // Released bodies are reclaimed by the sweep: it runs when enough of them are waiting.
+        releasedBytes += bytes;
+        if (releasedBytes < RELEASED_SWEEP_BYTES) return;
+        releasedBytes = 0;
+        void sweep.run();
+      },
       afterAssemble: (info) => holder.work?.afterAssemble(info) ?? Promise.resolve('PROCEED'),
       compactionDue: (info) => holder.work?.compactionDue(info) ?? false,
+      // How full the conversation's context is, told to the console beside the ordered events.
+      contextLevel: (level) => {
+        if (holder.work?.isMain(level.agentRunId) !== true) return;
+        streamToInteraction({
+          sessionId,
+          workflowRunId: host.workflowRunId,
+          agentRunId: level.agentRunId,
+          callId: level.executionId,
+          at: now().toISOString(),
+          kind: 'CONTEXT',
+          used: level.used,
+          limit: level.limit,
+        });
+      },
       modelAnswered: (info) => {
         holder.work?.modelAnswered(info);
       },
@@ -336,14 +382,19 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       limits: {
         maxAttempts: config.maxConcurrentAttempts,
         maxExec: config.maxConcurrentExec,
+        maxWeb: config.maxConcurrentWeb,
         serial: config.serialExecution,
       },
+      ...(deps.commands?.unisolatedReadOnly === true ? { unisolatedReadOnly: true } : {}),
     });
     executions.set(host.workflowRunId, execution);
     const ledgers = new RunLedgers(
       {
         runTokenLimit: config.budget.runTokenLimit,
-        turnTokenLimit: config.budget.turnTokenLimit,
+        inputTokenLimit: config.budget.inputTokenLimit,
+        ...(config.budget.reserveShare === undefined
+          ? {}
+          : { reserveShare: config.budget.reserveShare }),
       },
       deps.mainBudget,
     );
@@ -393,10 +444,19 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       repositoryRoot,
       repositoryExclusions: config.repositoryExclusions,
       pinAgent: deps.pinAgent,
+      compactionAgent: deps.compactionAgent,
       ...(deps.agentShare === undefined ? {} : { agentShare: deps.agentShare }),
+      ...(config.budget.extension === undefined
+        ? {}
+        : { budgetExtension: config.budget.extension }),
+      ...(config.tasks === undefined ? {} : { taskQuota: config.tasks }),
       inputIsValid,
       preset: deps.preset,
       web: { deniedDomains: config.web.deniedDomains, searchProvider: config.web.search.provider },
+      external: {
+        homeDir: homedir(),
+        ...(deps.dataDir === undefined ? {} : { dataDir: deps.dataDir }),
+      },
       ...(deps.commands === undefined
         ? {}
         : {
@@ -404,6 +464,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               analyze: deps.commands.analyze,
               sandbox: deps.commands.sandbox,
               unavailablePolicy: config.sandbox.unavailable,
+              approval: config.command.approval,
               ...(deps.dataDir === undefined ? {} : { dataDir: deps.dataDir }),
               homeReadOnly: toolchains(),
               homeMaskedFiles: config.sandbox.homeMaskedFiles.map(expandHome),
@@ -413,6 +474,9 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       readProjectFile: (path, scope) => execution.readProjectFile(path, scope),
       isTrusted: (path, sha256) => trust.isTrusted(repositoryRoot, path, sha256),
       trust: (path, sha256) => trust.record(repositoryRoot, path, sha256, 'USER_CONFIRMED'),
+      webSearchTrusted: () => webTrust.isTrusted(repositoryRoot),
+      trustWebSearch: () => webTrust.record(repositoryRoot),
+      retainArtifacts: (refs) => artifacts.retain(refs),
       storeQuestionContent: (text) => artifacts.put(text, MEDIA_TYPES.fileText, 'SESSION'),
       createAttempt: (spec, attempts) => execution.createAttempt(spec, attempts),
       cancelExecutions: (runEpoch) => {
@@ -422,6 +486,23 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         execution.pause(drained);
       },
       resumeExecutions: () => execution.resume(),
+      abortAgentRunExecutions: (agentRunId) => {
+        execution.abortAgentRun(agentRunId);
+      },
+      // Checkpoints (Orchestration 7.3): the barrier is the run's, the snapshot the Session's.
+      ...(snapshots === undefined
+        ? {}
+        : {
+            checkpoint: (checkpointId, kind, label) =>
+              snapshots.checkpoint(checkpointId, kind, label),
+            holdMutating: (clear) => {
+              execution.holdMutating(clear);
+            },
+            releaseMutating: () => {
+              execution.releaseMutating();
+            },
+            heldMutating: () => execution.heldMutating(),
+          }),
       abortExecutions: () => {
         execution.abort();
       },
@@ -454,6 +535,8 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       deps.diagnostic?.(`artifact sweep failed: ${String(error)}\n`);
     },
   });
+
+  let releasedBytes = 0;
 
   const removeSessionFiles = async (sessionId: string): Promise<void> => {
     await persistence.sessionDirectory('kernel-core', sessionId).remove();
@@ -511,6 +594,12 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               now,
             });
       await snapshots?.load();
+      // Another folder's Session: its snapshots begin again before the folder is made its own, so a
+      // crash in between is repeated on the next open and never leaves old snapshots under it.
+      if (session.workspaceChanged) {
+        await snapshots?.startEpoch();
+        await session.rebind();
+      }
       const auditLog = persistence.appendLog<object>('kernel-core', {
         scope: 'SESSION',
         sessionId,
@@ -538,7 +627,16 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
               audit({ type: 'ARTIFACT_NOT_INHERITED', artifactId: ref.artifactId });
           },
           storeUserInput: (input) => artifacts.storeUserInput(input),
-          openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit),
+          titleOf: async (ref) => {
+            try {
+              return Buffer.from(await deps.artifacts.get(ref))
+                .toString('utf8')
+                .slice(0, 80);
+            } catch {
+              return undefined;
+            }
+          },
+          openRunWork: (host) => openRunWork(sessionId, host, artifacts, audit, snapshots),
           writeRunSummary: async (summary) => {
             try {
               const checked = assertValid(RunSummarySchema, summary);
@@ -558,7 +656,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         onFatal: fault,
         interruptBackstopMs: config.cancelGraceMs + config.convergenceMarginMs + 10_000,
         timeouts: {
-          turnMs: config.turnTimeoutSeconds * 1000,
+          inputMs: config.inputTimeoutSeconds * 1000,
           orchestrationMs: config.orchestrationTimeoutSeconds * 1000,
           pauseMs: config.maxPauseSeconds * 1000,
         },
@@ -576,11 +674,18 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const core = new SessionCore({
     manager,
     artifactsOf: (sessionId) => sessionArtifacts.get(sessionId),
+    controlJob: (request) => supervisor.controlJob(request),
   });
 
   const memoryEvents = persistence.appendLog<object>('kernel-core', {
     scope: 'SYSTEM',
     file: 'memory-events',
+  });
+  // Who asked the system to stop, for whoever looks into why a conversation ended: the Session
+  // log and Workflow know only that the run closed with SHUTDOWN, as before.
+  const shutdownRequests = persistence.appendLog<object>('kernel-core', {
+    scope: 'SYSTEM',
+    file: 'shutdown-requests',
   });
   let started = false;
   // The sampler's only way out is this one message to Core (Kernel/Monitor 4a).
@@ -630,6 +735,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
       if (started) return;
       await refs.load();
       await trust.load();
+      await webTrust.load();
       // Before any service opens (Infrastructure/ModuleHost 3); a failure does not block startup.
       await sweep.run();
       manager.startSweepTimer();
@@ -638,6 +744,15 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         if (envelope.producer !== 'gateway')
           throw new Error('Kernel core request has an invalid producer');
         const forward = envelope.payload;
+        if (forward.requestType === 'shutdown')
+          await shutdownRequests
+            .append({
+              at: now().toISOString(),
+              type: 'SHUTDOWN_REQUESTED',
+              source: forward.request.source,
+              requestId: forward.request.requestId,
+            })
+            .catch(fault);
         const response = await core.handle(
           forward,
           'sessionId' in forward ? forward.sessionId : undefined,
@@ -648,15 +763,49 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
         }
         return response;
       });
+      serveModelProgress(fabric, (progress) => {
+        const call = watchedCalls.get(progress.executionId);
+        if (call === undefined || call.sessionId !== progress.sessionId) return;
+        const stream = {
+          sessionId: progress.sessionId,
+          workflowRunId: progress.workflowRunId,
+          agentRunId: call.agentRunId,
+          callId: progress.executionId,
+          at: progress.at,
+        };
+        if (progress.kind === 'END') {
+          watchedCalls.delete(progress.executionId);
+          streamToInteraction({ ...stream, kind: 'END' });
+        } else if (progress.kind === 'ANSWER') streamToInteraction({ ...stream, kind: 'ANSWER' });
+        else if (progress.kind === 'TOOL')
+          streamToInteraction({
+            ...stream,
+            kind: 'TOOL',
+            name: progress.name,
+            ...(progress.target === undefined ? {} : { target: progress.target }),
+          });
+        else streamToInteraction({ ...stream, kind: 'REASONING', delta: progress.delta });
+      });
       fabric.subscribe<ExecutionFact>('kernel-core.execution-facts', async (envelope) => {
         if (envelope.producer !== 'supervisor')
           throw new Error('Kernel core execution fact has an invalid producer');
         const fact = envelope.payload;
+        // The side channel is lossy: its END may never come, but the call's fact always does.
+        watchedCalls.delete(fact.executionId);
         const actor = manager.actor(fact.sessionId);
         const execution = executions.get(fact.workflowRunId);
         // A fact of a Session that already closed has nothing left to settle.
         if (actor === undefined || execution === undefined) return;
         await actor.call(() => execution.handleFact(fact));
+      });
+      // A background command ended (Orchestration 6.4): the run's Workflow decides whose it was.
+      fabric.subscribe<JobEndedFact>('kernel-core.job-facts', async (envelope) => {
+        if (envelope.producer !== 'supervisor')
+          throw new Error('Kernel core job fact has an invalid producer');
+        const fact = envelope.payload;
+        const actor = manager.actor(fact.sessionId);
+        if (actor === undefined) return;
+        await actor.call(() => actor.run(fact.workflowRunId)?.work.jobEnded(fact));
       });
       started = true;
     },

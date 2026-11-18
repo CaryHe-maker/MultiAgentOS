@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Persistence
 
-> 状态：已评审（阶段 1）。
+> 状态：已实现；发布前再与代码核对一次。
 
 ## 1. 定位
 
@@ -74,7 +74,3 @@ M2Design 第 10.1 节的实现：
 | `dataDir` | 组合根、Persistence、ArtifactStore | `~/.multiagentos`；必须是绝对路径，且与仓库互不包含（M1 的规则） |
 | `instanceLock.heartbeatMs` | Persistence | 10000 |
 | `instanceLock.staleAfterMs` | Persistence | 60000 |
-
-## 8. 阶段
-
-全部内容属于阶段 1。阶段 2 增加 `copyLogFrom`（Fork）与 `snapshot-index`；阶段 3 增加隔离目录。

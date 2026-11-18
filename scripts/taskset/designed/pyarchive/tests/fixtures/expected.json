@@ -1,0 +1,17 @@
+{
+ "unzip_l": {
+  "deflate9.zip": "Archive:  deflate9.zip\n  Length      Date    Time    Name\n---------  ---------- -----   ----\n        0  2023-11-14 22:13   proj/\n       19  2023-11-14 22:13   proj/run.sh\n        0  2023-11-14 22:13   proj/empty.txt\n    30682  2023-11-14 22:13   proj/README.txt\n        0  2023-11-14 22:13   proj/src/\n        0  2023-11-14 22:13   proj/src/deep/\n    20000  2023-11-14 22:13   proj/src/deep/zeros.bin\n     5000  2023-11-14 22:13   proj/src/deep/data.bin\n      750  2023-11-14 22:13   proj/src/main.py\n---------                     -------\n    56451                     9 files\n",
+  "deflate1.zip": "Archive:  deflate1.zip\n  Length      Date    Time    Name\n---------  ---------- -----   ----\n        0  2023-11-14 22:13   proj/\n       19  2023-11-14 22:13   proj/run.sh\n        0  2023-11-14 22:13   proj/empty.txt\n    30682  2023-11-14 22:13   proj/README.txt\n        0  2023-11-14 22:13   proj/src/\n        0  2023-11-14 22:13   proj/src/deep/\n    20000  2023-11-14 22:13   proj/src/deep/zeros.bin\n     5000  2023-11-14 22:13   proj/src/deep/data.bin\n      750  2023-11-14 22:13   proj/src/main.py\n---------                     -------\n    56451                     9 files\n",
+  "stored.zip": "Archive:  stored.zip\n  Length      Date    Time    Name\n---------  ---------- -----   ----\n        0  2023-11-14 22:13   proj/\n       19  2023-11-14 22:13   proj/run.sh\n        0  2023-11-14 22:13   proj/empty.txt\n    30682  2023-11-14 22:13   proj/README.txt\n        0  2023-11-14 22:13   proj/src/\n        0  2023-11-14 22:13   proj/src/deep/\n    20000  2023-11-14 22:13   proj/src/deep/zeros.bin\n     5000  2023-11-14 22:13   proj/src/deep/data.bin\n      750  2023-11-14 22:13   proj/src/main.py\n---------                     -------\n    56451                     9 files\n",
+  "stream.zip": "Archive:  stream.zip\n  Length      Date    Time    Name\n---------  ---------- -----   ----\n    30682  2023-11-14 22:13   -\n---------                     -------\n    30682                     1 file\n"
+ },
+ "zip": "This is Zip 3.0 (July 5th 2008), by Info-ZIP.",
+ "modes": {
+  "README.txt": 384,
+  "src/main.py": 420,
+  "src/deep/data.bin": 420,
+  "src/deep/zeros.bin": 420,
+  "empty.txt": 420,
+  "run.sh": 493
+ }
+}

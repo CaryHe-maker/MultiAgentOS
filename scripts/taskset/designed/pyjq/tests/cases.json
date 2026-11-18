@@ -1,0 +1,1405 @@
+{
+ "jq": "jq-1.7",
+ "cases": [
+  {
+   "name": "identity_pretty",
+   "argv": [
+    "."
+   ],
+   "stdin": "{\"a\": {\"b\": [1, {\"c\": 2}, [3, 4]], \"d\": null}, \"e\": \"x\", \"f\": [true, false], \"g\": {\"h\": {\"i\": 9}}}",
+   "files": {},
+   "stdout": "{\n  \"a\": {\n    \"b\": [\n      1,\n      {\n        \"c\": 2\n      },\n      [\n        3,\n        4\n      ]\n    ],\n    \"d\": null\n  },\n  \"e\": \"x\",\n  \"f\": [\n    true,\n    false\n  ],\n  \"g\": {\n    \"h\": {\n      \"i\": 9\n    }\n  }\n}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "identity_compact",
+   "argv": [
+    "-c",
+    "."
+   ],
+   "stdin": "{\"a\": {\"b\": [1, {\"c\": 2}, [3, 4]], \"d\": null}, \"e\": \"x\", \"f\": [true, false], \"g\": {\"h\": {\"i\": 9}}}",
+   "files": {},
+   "stdout": "{\"a\":{\"b\":[1,{\"c\":2},[3,4]],\"d\":null},\"e\":\"x\",\"f\":[true,false],\"g\":{\"h\":{\"i\":9}}}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "tab_and_indent",
+   "argv": [
+    "--tab",
+    "."
+   ],
+   "stdin": "{\"a\": [1, {\"b\": 2}]}",
+   "files": {},
+   "stdout": "{\n\t\"a\": [\n\t\t1,\n\t\t{\n\t\t\t\"b\": 2\n\t\t}\n\t]\n}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "indent_7_and_0",
+   "argv": [
+    "--indent",
+    "7",
+    "."
+   ],
+   "stdin": "{\"a\": [1, 2]}",
+   "files": {},
+   "stdout": "{\n       \"a\": [\n              1,\n              2\n       ]\n}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "sort_keys",
+   "argv": [
+    "-S",
+    "-c",
+    "."
+   ],
+   "stdin": "{\"b\": 1, \"a\": {\"d\": 1, \"c\": 2}}",
+   "files": {},
+   "stdout": "{\"a\":{\"c\":2,\"d\":1},\"b\":1}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "ascii_output",
+   "argv": [
+    "-a",
+    "."
+   ],
+   "stdin": "\"h\u00e9llo \u2713 \ud83d\ude00\"",
+   "files": {},
+   "stdout": "\"h\\u00e9llo \\u2713 \\ud83d\\ude00\"\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "raw_output_and_join",
+   "argv": [
+    "-r",
+    ".[]"
+   ],
+   "stdin": "[\"a\\nb\", \"c\", 1, null, {\"x\": 1}]",
+   "files": {},
+   "stdout": "a\nb\nc\n1\nnull\n{\n  \"x\": 1\n}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "join_output",
+   "argv": [
+    "-j",
+    ".[]"
+   ],
+   "stdin": "[\"a\", \"b\", 1]",
+   "files": {},
+   "stdout": "ab1",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "multiple_inputs",
+   "argv": [
+    "-c",
+    ".a"
+   ],
+   "stdin": "{\"a\": 1} {\"a\": [2]}\n{\"a\": \"three\"}  {}",
+   "files": {},
+   "stdout": "1\n[2]\n\"three\"\nnull\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "empty_input_object_and_array",
+   "argv": [
+    "."
+   ],
+   "stdin": "{} []",
+   "files": {},
+   "stdout": "{}\n[]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "unicode_escapes",
+   "argv": [
+    "-c",
+    "."
+   ],
+   "stdin": "\"\\u00e9\\ud83d\\ude00\\t\\u0000\\u001f\\\"\\\\/\"",
+   "files": {},
+   "stdout": "\"\u00c3\u00a9\u00f0\u009f\u0098\u0080\\t\\u0000\\u001f\\\"\\\\/\"\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "string_escapes_output",
+   "argv": [
+    "."
+   ],
+   "stdin": "\"line\\nnext\\ttab \\u007f \\u2028 \u00e9\"",
+   "files": {},
+   "stdout": "\"line\\nnext\\ttab \\u007f \u00e2\u0080\u00a8 \u00c3\u00a9\"\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "number_literals_preserved",
+   "argv": [
+    "-c",
+    "."
+   ],
+   "stdin": "[1.000, 3e2, 100000000000000000000, -0, 0.1, 1E-7, 12345678901234567890123]",
+   "files": {},
+   "stdout": "[1.000,3E+2,100000000000000000000,-0,0.1,1E-7,12345678901234567890123]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "number_arithmetic_output",
+   "argv": [
+    "-c",
+    "[.[] * 1]"
+   ],
+   "stdin": "[1.000, 3e2, 100000000000000000000, 0.1, 1e1000]",
+   "files": {},
+   "stdout": "[1,300,1e+20,0.1,1.7976931348623157e+308]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "numbers_computed",
+   "argv": [
+    "-n",
+    "-c",
+    "[1/3, 2/2, 0.1 + 0.2, 1e17, 1e-5, 3.0, -0.0 * 1, 10 / 4, pow(2; 64)]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[0.3333333333333333,1,0.30000000000000004,1E+17,0.00001,3.0,-0,2.5,18446744073709552000]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "large_and_special_numbers",
+   "argv": [
+    "-n",
+    "-c",
+    "[infinite, -infinite, nan | tostring], [nan] | sort"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[\"-1.7976931348623157e+308\",\"1.7976931348623157e+308\",\"null\"]\n[null]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "field_access",
+   "argv": [
+    "-c",
+    ".a.b, .a.d, .e, .missing, .a.b[1].c"
+   ],
+   "stdin": "{\"a\": {\"b\": [1, {\"c\": 2}, [3, 4]], \"d\": null}, \"e\": \"x\", \"f\": [true, false], \"g\": {\"h\": {\"i\": 9}}}",
+   "files": {},
+   "stdout": "[1,{\"c\":2},[3,4]]\nnull\n\"x\"\nnull\n2\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "quoted_and_bracket_keys",
+   "argv": [
+    "-c",
+    ".\"a\", .[\"e\"], .a[\"b\"][2][-1]"
+   ],
+   "stdin": "{\"a\": {\"b\": [1, {\"c\": 2}, [3, 4]], \"d\": null}, \"e\": \"x\", \"f\": [true, false], \"g\": {\"h\": {\"i\": 9}}}",
+   "files": {},
+   "stdout": "{\"b\":[1,{\"c\":2},[3,4]],\"d\":null}\n\"x\"\n4\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "optional_access",
+   "argv": [
+    "-c",
+    "[.[] | .a?], [.[] | try .a catch \"err\"]"
+   ],
+   "stdin": "[{\"a\": 1}, \"str\", [1], null]",
+   "files": {},
+   "stdout": "[1,null]\n[1,\"err\",\"err\",null]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "array_index_and_slice",
+   "argv": [
+    "-c",
+    ".[0], .[-1], .[10], .[2:4], .[:2], .[-2:], .[1:-1]"
+   ],
+   "stdin": "[0, 1, 2, 3, 4, 5]",
+   "files": {},
+   "stdout": "0\n5\nnull\n[2,3]\n[0,1]\n[4,5]\n[1,2,3,4]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "string_slice",
+   "argv": [
+    "-c",
+    ".[2:5], .[-3:]"
+   ],
+   "stdin": "\"abcdefgh\"",
+   "files": {},
+   "stdout": "\"cde\"\n\"fgh\"\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "iterate_objects_and_arrays",
+   "argv": [
+    "-c",
+    ".[]"
+   ],
+   "stdin": "{\"a\": 1, \"b\": [2], \"c\": {\"d\": 3}}",
+   "files": {},
+   "stdout": "1\n[2]\n{\"d\":3}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "recursive_descent",
+   "argv": [
+    "-c",
+    "[.. | numbers]"
+   ],
+   "stdin": "{\"a\": {\"b\": [1, {\"c\": 2}, [3, 4]], \"d\": null}, \"e\": \"x\", \"f\": [true, false], \"g\": {\"h\": {\"i\": 9}}}",
+   "files": {},
+   "stdout": "[1,2,3,4,9]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "comma_and_pipe",
+   "argv": [
+    "-c",
+    ".a, .e | type"
+   ],
+   "stdin": "{\"a\": {\"b\": [1, {\"c\": 2}, [3, 4]], \"d\": null}, \"e\": \"x\", \"f\": [true, false], \"g\": {\"h\": {\"i\": 9}}}",
+   "files": {},
+   "stdout": "\"object\"\n\"string\"\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "parentheses_precedence",
+   "argv": [
+    "-n",
+    "-c",
+    "[1, 2 | . * 10], [(1, 2) | . * 10], (1 + 2) * 3"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[10,20]\n[10,20]\n9\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "object_construction",
+   "argv": [
+    "-c",
+    "{name, age: .age, \"k-1\": 1, (.name): .dept, $__loc__}"
+   ],
+   "stdin": "{\"name\": \"ann\", \"age\": 3, \"dept\": \"eng\"}",
+   "files": {},
+   "stdout": "{\"name\":\"ann\",\"age\":3,\"k-1\":1,\"ann\":\"eng\",\"__loc__\":{\"file\":\"<top-level>\",\"line\":1}}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "object_construction_cartesian",
+   "argv": [
+    "-c",
+    "{a: (1, 2), b: (3, 4)}"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "{\"a\":1,\"b\":3}\n{\"a\":1,\"b\":4}\n{\"a\":2,\"b\":3}\n{\"a\":2,\"b\":4}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "object_variable_shorthand",
+   "argv": [
+    "-c",
+    ". as $x | 5 as $n | {$n, $x, \"lit\": \"v\"}"
+   ],
+   "stdin": "\"x\"",
+   "files": {},
+   "stdout": "{\"n\":5,\"x\":\"x\",\"lit\":\"v\"}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "array_construction",
+   "argv": [
+    "-c",
+    "[.[] | . * 2], [], [empty], [.[] | select(. > 1)]"
+   ],
+   "stdin": "[1, 2, 3]",
+   "files": {},
+   "stdout": "[2,4,6]\n[]\n[]\n[2,3]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "string_interpolation",
+   "argv": [
+    "-r",
+    "\"name=\\(.name) age=\\(.age + 1) tags=\\(.tags) nested=\\(\"x\\(1 + 2)y\")\""
+   ],
+   "stdin": "{\"name\": \"ann\", \"age\": 30, \"tags\": [\"a\"]}",
+   "files": {},
+   "stdout": "name=ann age=31 tags=[\"a\"] nested=x3y\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "arithmetic",
+   "argv": [
+    "-n",
+    "-c",
+    "[1 + 2, 5 - 3, 2 * 3, 7 / 2, 7 % 3, -7 % 3, 7 % -3, 5.5 % 2, -(3)]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[3,2,6,3.5,1,-1,1,1,-3]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "addition_types",
+   "argv": [
+    "-n",
+    "-c",
+    "[null + 1, 1 + null, \"a\" + \"b\", [1] + [2], {\"a\": 1} + {\"b\": 2, \"a\": 3}, null + null]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[1,1,\"ab\",[1,2],{\"a\":3,\"b\":2},null]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "subtraction_multiplication_division",
+   "argv": [
+    "-n",
+    "-c",
+    "[[1, 2, 3, 2] - [2], \"x\" * 3, \"x\" * 0, {\"a\": {\"b\": 1}} * {\"a\": {\"c\": 2}}, \"a,b,c\" / \",\", 4 / 2]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[[1,3],\"xxx\",\"\",{\"a\":{\"b\":1,\"c\":2}},[\"a\",\"b\",\"c\"],2]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "type_errors_exit",
+   "argv": [
+    "-n",
+    "{} - 1"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "",
+   "exit": 5,
+   "stderr": "jq: error (at <unknown>): object ({}) and number (1) cannot be subtracted\n"
+  },
+  {
+   "name": "division_by_zero_error",
+   "argv": [
+    "-n",
+    "1 / 0"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "",
+   "exit": 5,
+   "stderr": "jq: error (at <unknown>): number (1) and number (0) cannot be divided because the divisor is zero\n"
+  },
+  {
+   "name": "comparisons_and_ordering",
+   "argv": [
+    "-n",
+    "-c",
+    "[1 < 2, \"a\" < \"b\", [1] < [1, 0], {} < [], null < false, false < true, true < 0, 0 < \"\", \"\" < [], [] < {}, {\"a\": 1} < {\"a\": 2}, {\"a\": 2} < {\"b\": 1}, 1 == 1.0, \"1\" == 1]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[true,true,true,false,true,true,true,true,true,true,true,true,true,false]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "logic_and_alternative",
+   "argv": [
+    "-n",
+    "-c",
+    "[true and false, true or false, (false, null, 1) | not], [null // 1, false // \"f\", (empty // 2), (1, null) // 3, ([null, false][] // \"none\")]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[true,false,true,true,false]\n[1,\"f\",2,1,\"none\"]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "conditionals",
+   "argv": [
+    "-c",
+    ".[] | if . > 2 then \"big\" elif . == 2 then \"two\" else \"small\" end, (if . == 1 then \"one\" end)"
+   ],
+   "stdin": "[1, 2, 3]",
+   "files": {},
+   "stdout": "\"small\"\n\"one\"\n\"two\"\n2\n\"big\"\n3\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "variables_and_scope",
+   "argv": [
+    "-c",
+    ".[] as $x | ($x * 2) as $y | [$x, $y]"
+   ],
+   "stdin": "[1, 2]",
+   "files": {},
+   "stdout": "[1,2]\n[2,4]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "destructuring",
+   "argv": [
+    "-c",
+    ". as [$a, {b: $c, d: [$e]}] | [$a, $c, $e]"
+   ],
+   "stdin": "[1, {\"b\": 2, \"d\": [3]}]",
+   "files": {},
+   "stdout": "[1,2,3]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "alternative_destructuring",
+   "argv": [
+    "-c",
+    ".[] as [$a] ?// {a: $a} ?// $a | $a"
+   ],
+   "stdin": "[[1], {\"a\": 2}, 3]",
+   "files": {},
+   "stdout": "1\n2\n3\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "def_functions",
+   "argv": [
+    "-n",
+    "-c",
+    "def double: . * 2; def addvalue(f): f as $x | map(. + $x); def fac: if . <= 1 then 1 else . * (. - 1 | fac) end; [2 | double], ([1, 2] | addvalue(10)), (10 | fac)"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[4]\n[11,12]\n3628800\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "def_with_dollar_params_and_closures",
+   "argv": [
+    "-n",
+    "-c",
+    "def f($a; $b): $a + $b; def g(x): [x, x]; def outer: 3 as $v | def inner: $v * 2; inner; [f(1; 2), g(1, 2), outer]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[3,[1,2,1,2],6]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "recursion_deep",
+   "argv": [
+    "-n",
+    "def r: if . < 1000 then . + 1 | r else . end; 0 | r"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "1000\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "reduce_and_foreach",
+   "argv": [
+    "-c",
+    "reduce .[] as $x (0; . + $x), [foreach .[] as $x (0; . + $x)], [foreach .[] as $x (0; . + $x; [$x, .])]"
+   ],
+   "stdin": "[1, 2, 3]",
+   "files": {},
+   "stdout": "6\n[1,3,6]\n[[1,1],[2,3],[3,6]]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "reduce_pairs",
+   "argv": [
+    "-c",
+    "reduce .[] as [$k, $v] ({}; .[$k] += [$v])"
+   ],
+   "stdin": "[[\"a\", 1], [\"b\", 2], [\"a\", 3]]",
+   "files": {},
+   "stdout": "{\"a\":[1,3],\"b\":[2]}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "try_catch_and_error",
+   "argv": [
+    "-n",
+    "-c",
+    "[try error(\"custom\") catch ., try (1 / 0) catch \"div\", try error({\"code\": 1}) catch .code, (try error catch .), [.[]?], (try ([1] | .[1.5]) catch \"x\")]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[\"custom\",\"div\",1,null,[],null]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "error_null_and_halt_error",
+   "argv": [
+    "-n",
+    "\"bye\\n\" | halt_error(3)"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "",
+   "exit": 3,
+   "stderr": "bye\n"
+  },
+  {
+   "name": "label_break",
+   "argv": [
+    "-n",
+    "-c",
+    "[label $out | 1, 2, break $out, 3], [label $f | range(10) | ., (select(. == 3) | break $f)]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[1,2]\n[0,1,2,3]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "limit_first_last_nth_until",
+   "argv": [
+    "-n",
+    "-c",
+    "[limit(3; range(10))], first(range(5; 10)), ([range(5)] | last), nth(2; range(10; 20)), (0 | until(. > 100; . * 2 + 1)), [1 | while(. < 50; . * 3)], [limit(0; 1, 2)]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[0,1,2]\n5\n4\n12\n127\n[1,3,9,27]\n[]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "range_forms",
+   "argv": [
+    "-n",
+    "-c",
+    "[range(4)], [range(2; 5)], [range(0; 10; 3)], [range(5; 0; -2)], [range(1; 2; 0.3)]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[0,1,2,3]\n[2,3,4]\n[0,3,6,9]\n[5,3,1]\n[1,1.3,1.6,1.9000000000000001]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "repeat_and_recurse",
+   "argv": [
+    "-c",
+    "[limit(5; 1 | repeat(. * 2))], [recurse(.children[]?) | .name], [2 | recurse(. * .; . < 100)]"
+   ],
+   "stdin": "{\"name\": \"root\", \"children\": [{\"name\": \"a\", \"children\": [{\"name\": \"a1\"}]}, {\"name\": \"b\"}]}",
+   "files": {},
+   "stdout": "[2,2,2,2,2]\n[\"root\",\"a\",\"a1\",\"b\"]\n[2,4,16]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "env_and_builtins",
+   "argv": [
+    "-n",
+    "-c",
+    "$ENV.PYJQ_TEST, env.PYJQ_TEST, (builtins | length > 100)"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "\"env-value\"\n\"env-value\"\ntrue\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "input_and_inputs",
+   "argv": [
+    "-c",
+    "[., input], [inputs]"
+   ],
+   "stdin": "1 2 3 4 5",
+   "files": {},
+   "stdout": "[1,2]\n[3,4,5]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "null_input_inputs",
+   "argv": [
+    "-n",
+    "-c",
+    "[inputs | .a]"
+   ],
+   "stdin": "{\"a\": 1} {\"a\": 2}",
+   "files": {},
+   "stdout": "[1,2]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "slurp",
+   "argv": [
+    "-s",
+    "-c",
+    "., length"
+   ],
+   "stdin": "1 [2] {\"a\": 3}",
+   "files": {},
+   "stdout": "[1,[2],{\"a\":3}]\n3\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "raw_input",
+   "argv": [
+    "-R",
+    "-c",
+    "."
+   ],
+   "stdin": "line one\nline two\n\nlast",
+   "files": {},
+   "stdout": "\"line one\"\n\"line two\"\n\"\"\n\"last\"\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "raw_input_slurp",
+   "argv": [
+    "-R",
+    "-s",
+    "-c",
+    "split(\"\\n\")"
+   ],
+   "stdin": "a\nb\nc\n",
+   "files": {},
+   "stdout": "[\"a\",\"b\",\"c\",\"\"]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "exit_status_e",
+   "argv": [
+    "-e",
+    ".a"
+   ],
+   "stdin": "{\"a\": false}",
+   "files": {},
+   "stdout": "false\n",
+   "exit": 1,
+   "stderr": ""
+  },
+  {
+   "name": "exit_status_e_null",
+   "argv": [
+    "-e",
+    ".[]"
+   ],
+   "stdin": "[1, null]",
+   "files": {},
+   "stdout": "1\nnull\n",
+   "exit": 1,
+   "stderr": ""
+  },
+  {
+   "name": "exit_status_e_true",
+   "argv": [
+    "-e",
+    ".a"
+   ],
+   "stdin": "{\"a\": 1}",
+   "files": {},
+   "stdout": "1\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "args_arg_argjson",
+   "argv": [
+    "-n",
+    "-c",
+    "--arg",
+    "x",
+    "hello",
+    "--argjson",
+    "y",
+    "{\"n\": [1, 2]}",
+    "[$x, $y.n[1], $ARGS.named]"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[\"hello\",2,{\"x\":\"hello\",\"y\":{\"n\":[1,2]}}]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "positional_args",
+   "argv": [
+    "-n",
+    "-c",
+    "$ARGS",
+    "--args",
+    "a",
+    "b"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "{\"positional\":[\"a\",\"b\"],\"named\":{}}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "positional_jsonargs",
+   "argv": [
+    "-n",
+    "-c",
+    "$ARGS.positional",
+    "--jsonargs",
+    "1",
+    "{\"a\": 2}"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[1,{\"a\":2}]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "slurpfile_rawfile",
+   "argv": [
+    "-n",
+    "-c",
+    "--slurpfile",
+    "s",
+    "data.json",
+    "--rawfile",
+    "r",
+    "raw.txt",
+    "[$s, $r]"
+   ],
+   "stdin": "null",
+   "files": {
+    "data.json": "1 [2]",
+    "raw.txt": "raw\ncontent"
+   },
+   "stdout": "[[1,[2]],\"raw\\ncontent\"]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "filter_from_file",
+   "argv": [
+    "-c",
+    "-f",
+    "prog.jq"
+   ],
+   "stdin": "[3, 1, 2]",
+   "files": {
+    "prog.jq": "# comment\nsort | map(. * 10)\n"
+   },
+   "stdout": "[10,20,30]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "input_files_and_filename",
+   "argv": [
+    "-c",
+    "[., input_filename]",
+    "a.json",
+    "b.json"
+   ],
+   "stdin": "null",
+   "files": {
+    "a.json": "1",
+    "b.json": "2 3"
+   },
+   "stdout": "[12,\"b.json\"]\n[3,\"b.json\"]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "syntax_error_exit",
+   "argv": [
+    "-n",
+    "1 +"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "",
+   "exit": 3,
+   "stderr": "jq: error: syntax error, unexpected end of file (Unix shell quoting issues?) at <top-level>, line 1:\n1 +  \njq: 1 compile error\n"
+  },
+  {
+   "name": "comments_in_program",
+   "argv": [
+    "-n",
+    "-c",
+    "1 # comment\n+ 2 # another"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "3\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "path_and_paths",
+   "argv": [
+    "-c",
+    "path(.a.b[1].c), [paths], [paths(type == \"number\")]"
+   ],
+   "stdin": "{\"a\": {\"b\": [0, {\"c\": 1}]}}",
+   "files": {},
+   "stdout": "[\"a\",\"b\",1,\"c\"]\n[[\"a\"],[\"a\",\"b\"],[\"a\",\"b\",0],[\"a\",\"b\",1],[\"a\",\"b\",1,\"c\"]]\n[[\"a\",\"b\",0],[\"a\",\"b\",1,\"c\"]]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "getpath_setpath_delpaths",
+   "argv": [
+    "-c",
+    "getpath([\"a\", \"b\"]), setpath([\"a\", \"x\"]; 1), delpaths([[\"a\", \"b\"], [\"e\"]]), getpath([\"no\", \"pe\"])"
+   ],
+   "stdin": "{\"a\": {\"b\": 5}, \"e\": 1}",
+   "files": {},
+   "stdout": "5\n{\"a\":{\"b\":5,\"x\":1},\"e\":1}\n{\"a\":{}}\nnull\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "del_forms",
+   "argv": [
+    "-c",
+    "del(.a), del(.b[1, 2]), del(.. | numbers?)"
+   ],
+   "stdin": "{\"a\": 1, \"b\": [1, 2, 3], \"c\": \"x\"}",
+   "files": {},
+   "stdout": "{\"b\":[1,2,3],\"c\":\"x\"}\n{\"a\":1,\"b\":[1],\"c\":\"x\"}\n{\"b\":[],\"c\":\"x\"}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "del_array_elements",
+   "argv": [
+    "-c",
+    "del(.[1, 3]), del(.[] | select(. % 2 == 0))"
+   ],
+   "stdin": "[0, 1, 2, 3, 4, 5]",
+   "files": {},
+   "stdout": "[0,2,4,5]\n[1,3,5]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "assignment_ops",
+   "argv": [
+    "-c",
+    ".a = 1, .b |= . + 1, .c += 10, .d -= 1, .e *= 2, .f /= 2, .g %= 3, .h //= \"dflt\""
+   ],
+   "stdin": "{\"b\": 1, \"c\": 1, \"d\": 1, \"e\": 3, \"f\": 9, \"g\": 7, \"h\": null}",
+   "files": {},
+   "stdout": "{\"b\":1,\"c\":1,\"d\":1,\"e\":3,\"f\":9,\"g\":7,\"h\":null,\"a\":1}\n{\"b\":2,\"c\":1,\"d\":1,\"e\":3,\"f\":9,\"g\":7,\"h\":null}\n{\"b\":1,\"c\":11,\"d\":1,\"e\":3,\"f\":9,\"g\":7,\"h\":null}\n{\"b\":1,\"c\":1,\"d\":0,\"e\":3,\"f\":9,\"g\":7,\"h\":null}\n{\"b\":1,\"c\":1,\"d\":1,\"e\":6,\"f\":9,\"g\":7,\"h\":null}\n{\"b\":1,\"c\":1,\"d\":1,\"e\":3,\"f\":4.5,\"g\":7,\"h\":null}\n{\"b\":1,\"c\":1,\"d\":1,\"e\":3,\"f\":9,\"g\":1,\"h\":null}\n{\"b\":1,\"c\":1,\"d\":1,\"e\":3,\"f\":9,\"g\":7,\"h\":\"dflt\"}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "update_with_empty",
+   "argv": [
+    "-c",
+    "(.[] | select(. > 2)) |= empty, map_values(empty)"
+   ],
+   "stdin": "[1, 2, 3, 4, 5]",
+   "files": {},
+   "stdout": "[1,2]\n[]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "update_paths_multiple",
+   "argv": [
+    "-c",
+    ".[] .x |= . * 10, (.. | numbers) |= . + 1"
+   ],
+   "stdin": "[{\"x\": 1}, {\"x\": 2}]",
+   "files": {},
+   "stdout": "[{\"x\":10},{\"x\":20}]\n[{\"x\":2},{\"x\":3}]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "assignment_rhs_cartesian",
+   "argv": [
+    "-c",
+    ".a = (1, 2), .a |= (1, 2)"
+   ],
+   "stdin": "{\"a\": 0}",
+   "files": {},
+   "stdout": "{\"a\":1}\n{\"a\":2}\n{\"a\":1}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "to_from_with_entries",
+   "argv": [
+    "-c",
+    "to_entries, (to_entries | from_entries), with_entries(.value += 1), ([{\"key\": \"a\", \"value\": 1}, {\"key\": \"b\"}] | from_entries)"
+   ],
+   "stdin": "{\"a\": 1, \"b\": 2}",
+   "files": {},
+   "stdout": "[{\"key\":\"a\",\"value\":1},{\"key\":\"b\",\"value\":2}]\n{\"a\":1,\"b\":2}\n{\"a\":2,\"b\":3}\n{\"a\":1,\"b\":null}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "tostream_fromstream",
+   "argv": [
+    "-c",
+    "[tostream], fromstream(tostream), [1 | truncate_stream([[0], 1], [[1, 0], 2], [[1, 0]], [[1]])]"
+   ],
+   "stdin": "{\"a\": [1, {\"b\": 2}]}",
+   "files": {},
+   "stdout": "[[[\"a\",0],1],[[\"a\",1,\"b\"],2],[[\"a\",1,\"b\"]],[[\"a\",1]],[[\"a\"]]]\n{\"a\":[1,{\"b\":2}]}\n[[[0],2],[[0]]]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "pick_and_walk",
+   "argv": [
+    "-c",
+    "pick(.a.b, .c[1]), walk(if type == \"number\" then . * 2 else . end)"
+   ],
+   "stdin": "{\"a\": {\"b\": 1, \"x\": 2}, \"c\": [3, 4]}",
+   "files": {},
+   "stdout": "{\"a\":{\"b\":1},\"c\":[null,4]}\n{\"a\":{\"b\":2,\"x\":4},\"c\":[6,8]}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "length_variants",
+   "argv": [
+    "-c",
+    "[.[] | length], [.[] | utf8bytelength?]"
+   ],
+   "stdin": "[[1, 2], \"h\u00e9llo\", {\"a\": 1}, null, -5.5]",
+   "files": {},
+   "stdout": "[2,5,1,0,5.5]\n[6]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "keys_values_has_in",
+   "argv": [
+    "-c",
+    "keys, keys_unsorted, [.[]], has(\"b\"), (\"a\" | in({\"a\": 1})), ([1, 2] | has(1, 5))"
+   ],
+   "stdin": "{\"b\": 2, \"a\": 1}",
+   "files": {},
+   "stdout": "[\"a\",\"b\"]\n[\"b\",\"a\"]\n[2,1]\ntrue\ntrue\ntrue\nfalse\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "map_select_add_any_all",
+   "argv": [
+    "-c",
+    "map(. * 2), map(select(. > 1)), add, any, all, (map(. > 2) | any, all), ([] | add), any(.[]; . == 2), all(.[]; . > 0)"
+   ],
+   "stdin": "[1, 2, 3]",
+   "files": {},
+   "stdout": "[2,4,6]\n[2,3]\n6\ntrue\ntrue\ntrue\nfalse\nnull\ntrue\ntrue\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "add_strings_arrays_objects",
+   "argv": [
+    "-c",
+    "add, ([[1], [2, 3]] | add), ([{\"a\": 1}, {\"b\": 2}] | add)"
+   ],
+   "stdin": "[\"a\", \"b\", \"c\"]",
+   "files": {},
+   "stdout": "\"abc\"\n[1,2,3]\n{\"a\":1,\"b\":2}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "sort_group_unique",
+   "argv": [
+    "-c",
+    "sort, sort_by(.a), group_by(.a), unique, unique_by(.a), (map(.a) | unique)"
+   ],
+   "stdin": "[{\"a\": 2, \"b\": 1}, {\"a\": 1}, {\"a\": 2, \"b\": 0}, {\"a\": null}]",
+   "files": {},
+   "stdout": "[{\"a\":null},{\"a\":1},{\"a\":2,\"b\":0},{\"a\":2,\"b\":1}]\n[{\"a\":null},{\"a\":1},{\"a\":2,\"b\":1},{\"a\":2,\"b\":0}]\n[[{\"a\":null}],[{\"a\":1}],[{\"a\":2,\"b\":1},{\"a\":2,\"b\":0}]]\n[{\"a\":null},{\"a\":1},{\"a\":2,\"b\":0},{\"a\":2,\"b\":1}]\n[{\"a\":null},{\"a\":1},{\"a\":2,\"b\":1}]\n[null,1,2]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "sort_mixed_types",
+   "argv": [
+    "-c",
+    "sort"
+   ],
+   "stdin": "[3, \"b\", null, [1], {\"a\": 1}, true, false, \"a\", 1.5, [], {}]",
+   "files": {},
+   "stdout": "[null,false,true,1.5,3,\"a\",\"b\",[],[1],{},{\"a\":1}]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "min_max",
+   "argv": [
+    "-c",
+    "min, max, min_by(.x), max_by(.x), ([] | min)"
+   ],
+   "stdin": "[{\"x\": 3}, {\"x\": 1}, {\"x\": 2}]",
+   "files": {},
+   "stdout": "{\"x\":1}\n{\"x\":3}\n{\"x\":1}\n{\"x\":3}\nnull\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "reverse_contains_inside",
+   "argv": [
+    "-c",
+    "reverse, ([\"foobar\", \"baz\"] | contains([\"bar\"])), ({\"a\": [1, 2, 3], \"b\": \"x\"} | contains({\"a\": [1]})), (\"bar\" | inside(\"foobar\")), ([] | reverse)"
+   ],
+   "stdin": "[1, 2, 3]",
+   "files": {},
+   "stdout": "[3,2,1]\ntrue\ntrue\ntrue\n[]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "indices_index_rindex",
+   "argv": [
+    "-c",
+    "\"a,b, cd, efg\" | index(\", \"), rindex(\", \"), indices(\", \"), ([1, 2, 1, 2, 1] | indices([1, 2]), indices(1))"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "3\n7\n[3,7]\n[0,2]\n[0,2,4]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "transpose_combinations_flatten",
+   "argv": [
+    "-c",
+    "transpose, ([[1, 2], [3, 4]] | [combinations]), ([0, 1] | [combinations(2)]), ([1, [2, [3, [4]]]] | flatten, flatten(1))"
+   ],
+   "stdin": "[[1, 2], [3]]",
+   "files": {},
+   "stdout": "[[1,3],[2,null]]\n[[1,3],[1,4],[2,3],[2,4]]\n[[0,0],[0,1],[1,0],[1,1]]\n[1,2,3,4]\n[1,2,[3,[4]]]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "tojson_fromjson_tostring_tonumber",
+   "argv": [
+    "-c",
+    "[.[] | tojson], [.[] | tostring], (\"[1,{\\\"a\\\":2}]\" | fromjson), ([\"1\", \"1.5\", \" 2\", \"1e3\"] | map(tonumber? // \"bad\"))"
+   ],
+   "stdin": "[1, \"s\", [1, \"x\"], {\"a\": null}, 1.50]",
+   "files": {},
+   "stdout": "[\"1\",\"\\\"s\\\"\",\"[1,\\\"x\\\"]\",\"{\\\"a\\\":null}\",\"1.50\"]\n[\"1\",\"s\",\"[1,\\\"x\\\"]\",\"{\\\"a\\\":null}\",\"1.50\"]\n[1,{\"a\":2}]\n[1,1.5,2,1E+3]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "type_and_filters",
+   "argv": [
+    "-c",
+    "map(type), [.[] | numbers], [.[] | strings], [.[] | arrays], [.[] | objects], [.[] | booleans], [.[] | nulls], [.[] | iterables], [.[] | scalars], [.[] | values]"
+   ],
+   "stdin": "[1, \"a\", [1], {\"a\": 1}, true, null]",
+   "files": {},
+   "stdout": "[\"number\",\"string\",\"array\",\"object\",\"boolean\",\"null\"]\n[1]\n[\"a\"]\n[[1]]\n[{\"a\":1}]\n[true]\n[null]\n[[1],{\"a\":1}]\n[1,\"a\",true,null]\n[1,\"a\",[1],{\"a\":1},true]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "math_functions",
+   "argv": [
+    "-n",
+    "-c",
+    "[4 | sqrt], [2.5 | floor, ceil, round, fabs], [-2.5 | round, abs, fabs], (8 | log2), (100 | log10), (2 | pow(.; 10)), (1 | exp | . * 1000 | floor), ([1, 2, 3] | map(. * 1.5 | floor)), (0 | significand), (10 | exp10)"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[2]\n[2,3,3,2.5]\n[-3,2.5,2.5]\n3\n2\n1024\n2718\n[1,3,4]\n0\n10000000000\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "special_numbers",
+   "argv": [
+    "-n",
+    "-c",
+    "[nan | isnan], [infinite | isinfinite], [1 | isnormal], [nan < 1, nan > 1], ([nan, 1] | sort | .[0] | isnan)"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "[true]\n[true]\n[true]\n[true,false]\ntrue\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "string_functions",
+   "argv": [
+    "-c",
+    "[startswith(\"he\"), endswith(\"lo\"), ltrimstr(\"he\"), rtrimstr(\"lo\"), ascii_downcase, ascii_upcase, explode, (explode | implode), split(\"l\"), (split(\"l\") | join(\"L\")), (. / \"l\")]"
+   ],
+   "stdin": "\"heLlo\"",
+   "files": {},
+   "stdout": "[true,true,\"Llo\",\"heL\",\"hello\",\"HELLO\",[104,101,76,108,111],\"heLlo\",[\"heL\",\"o\"],\"heLLo\",[\"heL\",\"o\"]]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "join_mixed",
+   "argv": [
+    "-c",
+    "join(\", \"), join(\"\")"
+   ],
+   "stdin": "[\"a\", 1, null, true, \"b\"]",
+   "files": {},
+   "stdout": "\"a, 1, , true, b\"\n\"a1trueb\"\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "regex_test_match",
+   "argv": [
+    "-c",
+    "[.[] | test(\"^[a-z]+\\\\d\")], (.[0] | match(\"([a-z]+)(\\\\d+)\")), [.[] | test(\"ABC\"; \"i\")]"
+   ],
+   "stdin": "[\"abc123\", \"xyz\", \"ABC9\"]",
+   "files": {},
+   "stdout": "[true,false,false]\n{\"offset\":0,\"length\":6,\"string\":\"abc123\",\"captures\":[{\"offset\":0,\"length\":3,\"string\":\"abc\",\"name\":null},{\"offset\":3,\"length\":3,\"string\":\"123\",\"name\":null}]}\n[true,false,true]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "regex_capture_scan_splits",
+   "argv": [
+    "-c",
+    "(.s | capture(\"(?<word>[a-z]+)-(?<num>\\\\d+)\")), [.s | scan(\"\\\\d+\")], [.s | scan(\"([a-z])(\\\\d)\")], [.t | splits(\", *\")], (.t | split(\", *\"; null))"
+   ],
+   "stdin": "{\"s\": \"ab-12 cd-34\", \"t\": \"a, b,c,  d\"}",
+   "files": {},
+   "stdout": "{\"word\":\"ab\",\"num\":\"12\"}\n[\"12\",\"34\"]\n[]\n[\"a\",\"b\",\"c\",\"d\"]\n[\"a\",\"b\",\"c\",\"d\"]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "regex_sub_gsub",
+   "argv": [
+    "-c",
+    "[sub(\"o\"; \"0\"), gsub(\"o\"; \"0\"), gsub(\"(?<v>[aeiou])\"; \"<\\(.v)>\"), gsub(\"^\"; \">\"), gsub(\"\"; \"-\"), sub(\"(?<x>l+)\"; \"\\(.x | length)\"; \"g\")]"
+   ],
+   "stdin": "\"foo bool\"",
+   "files": {},
+   "stdout": "[\"f0o bool\",\"f00 b00l\",\"f<o><o> b<o><o>l\",\">foo bool\",\"-f-o-o- -b-o-o-l-\",\"foo boo1\"]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "regex_match_global_and_offsets",
+   "argv": [
+    "-c",
+    "[match(\"a(b)?\"; \"g\") | {offset, length, string, captures: [.captures[] | .string]}]"
+   ],
+   "stdin": "\"ab a xab\"",
+   "files": {},
+   "stdout": "[{\"offset\":0,\"length\":2,\"string\":\"ab\",\"captures\":[\"b\"]},{\"offset\":3,\"length\":1,\"string\":\"a\",\"captures\":[null]},{\"offset\":6,\"length\":2,\"string\":\"ab\",\"captures\":[\"b\"]}]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "formats",
+   "argv": [
+    "-r",
+    "@text, @json, @html, @uri, @csv, @tsv, @sh, @base64, (@base64 | @base64d)"
+   ],
+   "stdin": "[\"a b\", \"<&>'\\\"\", \"\u00fc/?\", 1, null]",
+   "files": {},
+   "stdout": "[\"a b\",\"<&>'\\\"\",\"\u00c3\u00bc/?\",1,null]\n[\"a b\",\"<&>'\\\"\",\"\u00c3\u00bc/?\",1,null]\n[&quot;a b&quot;,&quot;&lt;&amp;&gt;&apos;\\&quot;&quot;,&quot;\u00c3\u00bc/?&quot;,1,null]\n%5B%22a%20b%22%2C%22%3C%26%3E%27%5C%22%22%2C%22%C3%BC%2F%3F%22%2C1%2Cnull%5D\n\"a b\",\"<&>'\"\"\",\"\u00c3\u00bc/?\",1,\na b\t<&>'\"\t\u00c3\u00bc/?\t1\t\n'a b' '<&>'\\''\"' '\u00c3\u00bc/?' 1 null\nWyJhIGIiLCI8Jj4nXCIiLCLDvC8/IiwxLG51bGxd\n[\"a b\",\"<&>'\\\"\",\"\u00c3\u00bc/?\",1,null]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "format_interpolation",
+   "argv": [
+    "-r",
+    "@csv \"row: \\(.)\", @sh \"echo \\(.[0])\", @uri \"https://x/?q=\\(.[0])\""
+   ],
+   "stdin": "[\"a b\", \"c\\\"d\"]",
+   "files": {},
+   "stdout": "row: \"a b\",\"c\"\"d\"\necho 'a b'\nhttps://x/?q=a%20b\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "format_errors",
+   "argv": [
+    "-c",
+    "try @csv catch \"csv-error\""
+   ],
+   "stdin": "[{\"a\": 1}]",
+   "files": {},
+   "stdout": "\"csv-error\"\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "dates",
+   "argv": [
+    "-n",
+    "-c",
+    "\"2015-03-05T23:51:47Z\" | fromdate, (fromdate | todate), strptime(\"%Y-%m-%dT%H:%M:%SZ\"), (strptime(\"%Y-%m-%dT%H:%M:%SZ\") | mktime), (1425599621 | gmtime), (1425599621 | strftime(\"%A %d %B %Y %H:%M %j\")), (1425599621 | todate), (1425599621.5 | todate)"
+   ],
+   "stdin": "null",
+   "files": {},
+   "stdout": "1425599507\n\"2015-03-05T23:51:47Z\"\n[2015,2,5,23,51,47,4,63]\n1425599507\n[2015,2,5,23,53,41,4,63]\n\"Thursday 05 March 2015 23:53 064\"\n\"2015-03-05T23:53:41Z\"\n\"2015-03-05T23:53:41Z\"\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "report_by_dept",
+   "argv": [
+    "-c",
+    "group_by(.dept) | map({dept: .[0].dept, n: length, avg: (map(.salary) | add / length), names: map(.name) | join(\"/\")})"
+   ],
+   "stdin": "[{\"name\": \"ann\", \"age\": 31, \"dept\": \"eng\", \"tags\": [\"a\", \"b\"], \"salary\": 120000.5}, {\"name\": \"bob\", \"age\": 25, \"dept\": \"ops\", \"tags\": [], \"salary\": 95000}, {\"name\": \"cid\", \"age\": null, \"dept\": \"eng\", \"tags\": [\"c\"], \"salary\": 70000}, {\"name\": \"dee\", \"age\": 40, \"dept\": \"hr\", \"tags\": [\"a\"], \"salary\": 82000.25}]",
+   "files": {},
+   "stdout": "[{\"dept\":\"eng\",\"n\":2,\"avg\":95000.25,\"names\":\"ann/cid\"},{\"dept\":\"hr\",\"n\":1,\"avg\":82000.25,\"names\":\"dee\"},{\"dept\":\"ops\",\"n\":1,\"avg\":95000,\"names\":\"bob\"}]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "filter_and_project",
+   "argv": [
+    "-r",
+    ".[] | select(.age != null and .age > 26) | \"\\(.name)\\t\\(.age)\\t\\(.tags | length)\""
+   ],
+   "stdin": "[{\"name\": \"ann\", \"age\": 31, \"dept\": \"eng\", \"tags\": [\"a\", \"b\"], \"salary\": 120000.5}, {\"name\": \"bob\", \"age\": 25, \"dept\": \"ops\", \"tags\": [], \"salary\": 95000}, {\"name\": \"cid\", \"age\": null, \"dept\": \"eng\", \"tags\": [\"c\"], \"salary\": 70000}, {\"name\": \"dee\", \"age\": 40, \"dept\": \"hr\", \"tags\": [\"a\"], \"salary\": 82000.25}]",
+   "files": {},
+   "stdout": "ann\t31\t2\ndee\t40\t1\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "index_by_and_lookup",
+   "argv": [
+    "-c",
+    "INDEX(.name) | .bob.dept, (map_values(.age) | to_entries | map(select(.value)) | from_entries)"
+   ],
+   "stdin": "[{\"name\": \"ann\", \"age\": 31, \"dept\": \"eng\", \"tags\": [\"a\", \"b\"], \"salary\": 120000.5}, {\"name\": \"bob\", \"age\": 25, \"dept\": \"ops\", \"tags\": [], \"salary\": 95000}, {\"name\": \"cid\", \"age\": null, \"dept\": \"eng\", \"tags\": [\"c\"], \"salary\": 70000}, {\"name\": \"dee\", \"age\": 40, \"dept\": \"hr\", \"tags\": [\"a\"], \"salary\": 82000.25}]",
+   "files": {},
+   "stdout": "\"ops\"\n{\"ann\":31,\"bob\":25,\"dee\":40}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "sql_style_builtins",
+   "argv": [
+    "-c",
+    "[.[] | {name, dept}] as $p | [limit(2; $p[])], (IN($p[].dept; \"hr\", \"x\")), ([$p[] | .dept] | unique | map(. as $d | {($d): [$p[] | select(.dept == $d) | .name]}) | add)"
+   ],
+   "stdin": "[{\"name\": \"ann\", \"age\": 31, \"dept\": \"eng\", \"tags\": [\"a\", \"b\"], \"salary\": 120000.5}, {\"name\": \"bob\", \"age\": 25, \"dept\": \"ops\", \"tags\": [], \"salary\": 95000}, {\"name\": \"cid\", \"age\": null, \"dept\": \"eng\", \"tags\": [\"c\"], \"salary\": 70000}, {\"name\": \"dee\", \"age\": 40, \"dept\": \"hr\", \"tags\": [\"a\"], \"salary\": 82000.25}]",
+   "files": {},
+   "stdout": "[{\"name\":\"ann\",\"dept\":\"eng\"},{\"name\":\"bob\",\"dept\":\"ops\"}]\ntrue\n{\"eng\":[\"ann\",\"cid\"],\"hr\":[\"dee\"],\"ops\":[\"bob\"]}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "tsv_csv_export",
+   "argv": [
+    "-r",
+    "(.[0] | keys_unsorted | @csv), (.[] | [.name, .age, (.tags | join(\";\"))] | @tsv)"
+   ],
+   "stdin": "[{\"name\": \"ann\", \"age\": 31, \"dept\": \"eng\", \"tags\": [\"a\", \"b\"], \"salary\": 120000.5}, {\"name\": \"bob\", \"age\": 25, \"dept\": \"ops\", \"tags\": [], \"salary\": 95000}, {\"name\": \"cid\", \"age\": null, \"dept\": \"eng\", \"tags\": [\"c\"], \"salary\": 70000}, {\"name\": \"dee\", \"age\": 40, \"dept\": \"hr\", \"tags\": [\"a\"], \"salary\": 82000.25}]",
+   "files": {},
+   "stdout": "\"name\",\"age\",\"dept\",\"tags\",\"salary\"\nann\t31\ta;b\nbob\t25\t\ncid\t\tc\ndee\t40\ta\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "deep_merge_and_paths",
+   "argv": [
+    "-c",
+    "reduce .[] as $o ({}; . * $o) | [paths(scalars) | join(\".\")]"
+   ],
+   "stdin": "[{\"a\": {\"x\": 1, \"y\": {\"z\": 2}}}, {\"a\": {\"y\": {\"w\": 3}}, \"b\": 4}]",
+   "files": {},
+   "stdout": "[\"a.x\",\"a.y.z\",\"a.y.w\",\"b\"]\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "histogram",
+   "argv": [
+    "-c",
+    "map(.tags[]) | group_by(.) | map({(.[0]): length}) | add"
+   ],
+   "stdin": "[{\"name\": \"ann\", \"age\": 31, \"dept\": \"eng\", \"tags\": [\"a\", \"b\"], \"salary\": 120000.5}, {\"name\": \"bob\", \"age\": 25, \"dept\": \"ops\", \"tags\": [], \"salary\": 95000}, {\"name\": \"cid\", \"age\": null, \"dept\": \"eng\", \"tags\": [\"c\"], \"salary\": 70000}, {\"name\": \"dee\", \"age\": 40, \"dept\": \"hr\", \"tags\": [\"a\"], \"salary\": 82000.25}]",
+   "files": {},
+   "stdout": "{\"a\":2,\"b\":1,\"c\":1}\n",
+   "exit": 0,
+   "stderr": ""
+  },
+  {
+   "name": "getpath_from_strings",
+   "argv": [
+    "-c",
+    "[paths(..) as $p | {path: ($p | map(tostring) | join(\"/\")), v: getpath($p)} | select(.v | scalars)]"
+   ],
+   "stdin": "{\"a\": [1, {\"b\": \"c\"}]}",
+   "files": {},
+   "stdout": "[{\"path\":\"a/0\",\"v\":1},{\"path\":\"a/1/b\",\"v\":\"c\"}]\n",
+   "exit": 0,
+   "stderr": ""
+  }
+ ]
+}

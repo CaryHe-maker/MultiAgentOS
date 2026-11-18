@@ -10,7 +10,7 @@ import {
 
 /**
  * DeepSeek's search and fetch interface (`POST /v1/tools/search`, `/v1/tools/fetch`, its guide at
- * api-docs.deepseek.com/guides/search; measured in Evaluation/Stage6WebProviders). The key is the
+ * api-docs.deepseek.com/guides/search; measured in History/M2/Evaluation/Stage6WebProviders). The key is the
  * model provider's and goes only into the header of the request.
  */
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');

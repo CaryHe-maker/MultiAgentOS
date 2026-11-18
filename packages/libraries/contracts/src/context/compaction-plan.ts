@@ -8,7 +8,7 @@ import type { ContextHistoryEntry } from './history-entry.js';
  * counted from bytes here; what decides whether to compact at all is the measured figure.
  *
  * What is kept as it is: the newest part of the history, from the start of a whole model turn
- * (`keepTokens`); the PINNED entries; and the newest user messages up to `keepHumanBytes`
+ * (`keepTokens`, which the caller takes as `keepRatio` of the limit); the PINNED entries; and the newest user messages up to `keepHumanBytes`
  * together, none of them longer than half of that. Everything else NORMAL before the newest part
  * is what the summary takes the place of; the big tool results among them are cut first.
  */
@@ -46,7 +46,13 @@ export function entryBytes(entry: ContextHistoryEntry): number {
       );
     case 'TOOL_RESULT':
       return sizeOf(entry.outputRef) + ENTRY_OVERHEAD_BYTES;
-    case 'HANDOFF':
+    case 'MESSAGE':
+      // One the Workflow wrote for its sender carries its own words (D91).
+      return (
+        (entry.text === undefined ? sizeOf(entry.outputRef) : textSize(entry.text)) +
+        ENTRY_OVERHEAD_BYTES
+      );
+    case 'PLAN':
       return sizeOf(entry.outputRef) + ENTRY_OVERHEAD_BYTES;
     case 'PROJECT_INSTRUCTIONS':
       return sizeOf(entry.ref) + ENTRY_OVERHEAD_BYTES;
@@ -54,15 +60,17 @@ export function entryBytes(entry: ContextHistoryEntry): number {
     case 'NOTE':
       return textSize(entry.text) + ENTRY_OVERHEAD_BYTES;
     case 'TASK':
-      return (
-        textSize(entry.goal) +
-        entry.acceptance.reduce((total, line) => total + textSize(line), 0) +
-        ENTRY_OVERHEAD_BYTES
-      );
+      return textSize(entry.goal) + ENTRY_OVERHEAD_BYTES;
+    case 'SWITCH':
+      return textSize(entry.text) + ENTRY_OVERHEAD_BYTES;
     case 'SUBAGENT_RESULT':
       return (
         sizeOf(entry.outputRef) +
         entry.notes.reduce((total, line) => total + textSize(line), 0) +
+        (entry.references ?? []).reduce(
+          (total, each) => total + textSize(each.toolCallId) + textSize(each.tool),
+          0,
+        ) +
         ENTRY_OVERHEAD_BYTES
       );
   }
@@ -92,9 +100,9 @@ export interface CompactionRange {
   readonly toSeq: number;
   /** The entries of the range that stay: PINNED ones, and the user messages chosen to stay. */
   readonly keptSeqs: readonly number[];
-  /** How many entries the summary takes the place of, and in how many Turns. */
+  /** How many entries the summary takes the place of, and the work of how many inputs. */
   readonly replacedEntries: number;
-  readonly replacedTurns: number;
+  readonly replacedInputs: number;
 }
 
 export interface CompactionPlan {
@@ -106,6 +114,31 @@ export interface CompactionPlan {
 }
 
 const NOTHING: CompactionPlan = { keepFrom: 0, prunable: [] };
+
+/** An entry that answers a call of the model turn before it. */
+const isAnswer = (entry: ContextHistoryEntry): boolean =>
+  (entry.kind === 'TOOL_RESULT' || entry.kind === 'FEEDBACK' || entry.kind === 'HUMAN_ANSWER') &&
+  entry.toolCallId !== undefined;
+
+/**
+ * A call and its answer stay together or go together (D101): an answer that stays keeps the
+ * model turn it answers, and with it every other answer of that turn, or the request would hold
+ * an answer without its call, or a call without its answer. Answers follow their turn.
+ */
+function keepTurnsWhole(
+  older: readonly ContextHistoryEntry[],
+  inRange: (entry: ContextHistoryEntry) => boolean,
+  kept: Set<number>,
+): void {
+  const turns: ContextHistoryEntry[][] = [];
+  for (const entry of older) {
+    if (entry.kind === 'MODEL_TURN') turns.push([entry]);
+    else if (isAnswer(entry)) turns.at(-1)?.push(entry);
+  }
+  for (const members of turns)
+    if (members.some((entry) => inRange(entry) && kept.has(entry.seq)))
+      for (const entry of members) if (inRange(entry)) kept.add(entry.seq);
+}
 
 export function planCompaction(
   entries: readonly ContextHistoryEntry[],
@@ -163,6 +196,7 @@ export function planCompaction(
 
   const kept = new Set<number>();
   for (const entry of older) if (inRange(entry) && entry.category === 'PINNED') kept.add(entry.seq);
+  keepTurnsWhole(older, inRange, kept);
   // The newest user messages stay, within the budget, and none that is too long to be worth it.
   let humanBytes = 0;
   for (const entry of [...older].reverse()) {
@@ -177,11 +211,14 @@ export function planCompaction(
     (entry) => inRange(entry) && (entry.kind === 'SUMMARY' || !kept.has(entry.seq)),
   );
   const replacedTokens = replaced.reduce((total, entry) => total + entryTokens(entry), 0);
-  if (replaced.length === 0 || replacedTokens < config.minReplacedTokens)
+  // An earlier summary alone is not a range: a summary of a summary says nothing that is new.
+  if (
+    replaced.every((entry) => entry.kind === 'SUMMARY') ||
+    replacedTokens < config.minReplacedTokens
+  )
     return { keepFrom, prunable };
-  const turns = new Set(
-    replaced.flatMap((entry) => (entry.turnId === undefined ? [] : [entry.turnId])),
-  );
+  // The inputs of the user whose work it replaces, in part or whole: each input's own entry counts.
+  const inputs = replaced.filter((entry) => entry.kind === 'HUMAN').length;
   return {
     keepFrom,
     prunable,
@@ -190,7 +227,7 @@ export function planCompaction(
       toSeq,
       keptSeqs: [...kept].sort((a, b) => a - b),
       replacedEntries: replaced.length,
-      replacedTurns: turns.size,
+      replacedInputs: inputs,
     },
   };
 }

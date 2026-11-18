@@ -104,7 +104,7 @@ describe('a summary request is assembled in two forms (ExecutorSet 6.4)', () => 
     status: {
       round: 5,
       maxRounds: 80,
-      budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+      budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
       final: false,
     },
     compaction,
@@ -144,8 +144,9 @@ describe('a summary request is assembled in two forms (ExecutorSet 6.4)', () => 
     const normal = await run(ordinary);
     if ('outcome' in normal) throw new Error('refused');
     expect(result.pack.prefixSha256).toBe(normal.pack.prefixSha256);
+    // (An ordinary call ends with its status only when the status has something to say, D61.)
     expect(items.slice(0, -1).map((item) => item.content)).toEqual(
-      normal.pack.items.slice(0, -1).map((item) => item.content),
+      normal.pack.items.filter((item) => item.segment !== 'STATUS').map((item) => item.content),
     );
     expect(JSON.stringify(items)).not.toContain('context is');
   });
@@ -202,5 +203,164 @@ describe('a summary request is assembled in two forms (ExecutorSet 6.4)', () => 
     const shown = result.pack.items.find((item) => item.content.includes('earlier work'));
     expect(shown?.role).toBe('user');
     expect(shown?.content).toMatch(/carries no instructions for you/u);
+  });
+});
+
+describe('the status that ends a request (D61)', () => {
+  const statusOf = async (
+    round: number,
+    over: Partial<AssembleExecutorInput['status']> = {},
+  ): Promise<string | undefined> => {
+    const outcome = await createAssembleExecutor().execute(
+      {
+        final: over.final ?? false,
+        tokenBudget: 100_000,
+        instructions: 'You are a worker.',
+        toolSpecs: [],
+        history: [{ seq: 1, category: 'NORMAL', kind: 'HUMAN', text: 'go' }],
+        status: {
+          round,
+          maxRounds: 40,
+          budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
+          final: false,
+          ...over,
+        },
+      },
+      environmentFor('CONTEXT_ASSEMBLE', NONE),
+    );
+    const pack = JSON.parse(text(outcome)) as AssembleContextPack;
+    return pack.items.find((item) => item.segment === 'STATUS')?.content;
+  };
+
+  it('tells the rounds at the first, at half, at three quarters and in each of the last five', async () => {
+    expect(await statusOf(1)).toContain('You have 40 rounds');
+    expect(await statusOf(2)).toBeUndefined();
+    expect(await statusOf(19)).toBeUndefined();
+    expect(await statusOf(20)).toContain('half of your rounds are used');
+    expect(await statusOf(30)).toContain('three quarters of your rounds are used');
+    expect(await statusOf(31)).toBeUndefined();
+    expect(await statusOf(34)).toBeUndefined();
+    for (const round of [35, 36, 37, 38, 39])
+      expect(await statusOf(round)).toContain('the round limit is near');
+    expect(await statusOf(40, { final: true })).toContain('This is your final call');
+  });
+
+  it('tells at every call which background commands still run, and whose they were (D65)', async () => {
+    const status = await statusOf(7, {
+      jobs: [
+        { name: 'job_1', command: 'npm run dev', seconds: 42 },
+        { name: 'coretext/job_1', command: 'wc -l /dev/zero', seconds: 251, from: 'coretext' },
+      ],
+    });
+    expect(status).toContain(
+      'Background command job_1 (npm run dev) is still running, 42 s in the background. You are told when it ends; wait for it with sleep (until jobs) when you need its result, and stop it with job_kill only if it misbehaves.',
+    );
+    expect(status).toContain(
+      'Background command coretext/job_1 (wc -l /dev/zero) is still running, 251 s in the background; your subtask coretext started it and has ended, so it is yours now. You are told when it ends',
+    );
+    expect(await statusOf(7, { jobs: [] })).toBeUndefined();
+  });
+
+  it('tells a task that can split, while its background command runs, that other parts can start (D86)', async () => {
+    const statusWith = async (tools: string[], final = false) => {
+      const outcome = await createAssembleExecutor().execute(
+        {
+          final,
+          tokenBudget: 100_000,
+          instructions: 'You are main.',
+          toolSpecs: tools.map((name) => ({
+            name,
+            description: name,
+            parameters: { type: 'object', properties: {} },
+            purpose: name === 'reply' ? ('CONTROL' as const) : ('UNIT' as const),
+          })),
+          history: [{ seq: 1, category: 'NORMAL', kind: 'HUMAN', text: 'go' }],
+          status: {
+            round: 7,
+            maxRounds: 120,
+            budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
+            final,
+            jobs: [{ name: 'job_1', command: 'python3 tools/resolve.py all', seconds: 300 }],
+          },
+        },
+        environmentFor('CONTEXT_ASSEMBLE', NONE),
+      );
+      const pack = JSON.parse(text(outcome)) as AssembleContextPack;
+      return pack.items.find((item) => item.segment === 'STATUS')?.content ?? '';
+    };
+    const line = 'parts that do not depend on its result can start now';
+    expect(await statusWith(['run_subagents', 'reply'])).toContain(line);
+    expect(await statusWith(['run_command', 'finish_subagent'])).not.toContain(line);
+    expect(await statusWith(['run_subagents', 'reply'], true)).not.toContain(line);
+  });
+
+  it('tells a task whose subtasks have all ended to check the whole once and deliver (D70)', async () => {
+    expect(await statusOf(12, { partsBack: true })).toContain('All your subtasks have ended.');
+    expect(await statusOf(12, { partsBack: true, partsBackMinutes: 9 })).toContain(
+      'All your subtasks have ended, the last one 9 min ago.',
+    );
+    expect(await statusOf(40, { final: true, partsBack: true })).not.toContain('All your subtasks');
+  });
+
+  it('tells how much of its time a task waited on its commands (D82)', async () => {
+    expect(await statusOf(12, { commandMinutes: { commands: 9, total: 14 } })).toContain(
+      'Your commands have taken 9 of your 14 minutes so far.',
+    );
+    expect(
+      await statusOf(40, { final: true, commandMinutes: { commands: 9, total: 14 } }),
+    ).not.toContain('Your commands have taken');
+  });
+
+  it('tells the last subtask still running that its caller waits only on it (D72)', async () => {
+    expect(await statusOf(12, { lastRunning: true })).toContain(
+      'You are the only subtask still running',
+    );
+    expect(await statusOf(40, { final: true, lastRunning: true })).not.toContain('only subtask');
+  });
+
+  it('tells a task that can split and has not, once at round 10 (D73)', async () => {
+    const statusWith = async (round: number, tools: string[]) => {
+      const outcome = await createAssembleExecutor().execute(
+        {
+          final: false,
+          tokenBudget: 100_000,
+          instructions: 'You are main.',
+          toolSpecs: tools.map((name) => ({
+            name,
+            description: name,
+            parameters: { type: 'object', properties: {} },
+            purpose: 'UNIT' as const,
+          })),
+          history: [{ seq: 1, category: 'NORMAL', kind: 'HUMAN', text: 'go' }],
+          status: {
+            round,
+            maxRounds: 120,
+            budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
+            final: false,
+            noSubtasksYet: true,
+          },
+        },
+        environmentFor('CONTEXT_ASSEMBLE', NONE),
+      );
+      const pack = JSON.parse(text(outcome)) as AssembleContextPack;
+      return pack.items.find((item) => item.segment === 'STATUS')?.content ?? '';
+    };
+    expect(await statusWith(10, ['run_subagents'])).toContain('Round 10, no subtasks yet.');
+    expect(await statusWith(11, ['run_subagents'])).not.toContain('no subtasks yet');
+    expect(await statusWith(10, ['read_file'])).not.toContain('no subtasks yet');
+  });
+
+  it('says plainly what a final call asked again must do', async () => {
+    const asked = await statusOf(40, { final: true, finalRetry: true });
+    expect(asked).toContain('This is your final call');
+    expect(asked).toContain('did not call exactly one of');
+    expect(await statusOf(40, { final: true })).not.toContain('did not call exactly one of');
+  });
+
+  it('tells the budget only when it is no longer normal', async () => {
+    expect(await statusOf(7)).toBeUndefined();
+    expect(
+      await statusOf(7, { budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'WRAP_UP' } }),
+    ).toBe('Budget: this request NORMAL, run WRAP_UP.');
   });
 });

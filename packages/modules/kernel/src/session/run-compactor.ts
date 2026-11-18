@@ -28,7 +28,11 @@ import {
 } from '@multiagentos/contracts';
 import type { Settlement, SchedulerDuties } from '../interfaces/index.js';
 import type { RunLedgers } from '../monitor/index.js';
-import type { AttemptRequestBuilder, ExecutionConfig } from './attempt-request.js';
+import {
+  capTokensOf,
+  type AttemptRequestBuilder,
+  type ExecutionConfig,
+} from './attempt-request.js';
 import {
   CompactionProcess,
   type Change,
@@ -44,7 +48,7 @@ import type { PinnedAgent } from './run-attempts.js';
 import type { SessionArtifacts } from './session-artifacts.js';
 
 /**
- * The summary instruction and what it must produce (Prompt `compaction-system`, AgentToolPool 8):
+ * The summary instruction and what it must produce (Prompt `compaction-system`, AgentToolPool 3):
  * the sections the model-call checks for, and the line added to the instruction of a second try.
  */
 export interface CompactionPrompt {
@@ -90,11 +94,14 @@ export interface RunCompactorDeps {
   readonly audit: (entry: object) => void;
   readonly now: () => Date;
   readonly schedule: (delayMs: number, due: () => void) => () => void;
-  /** The AgentRun a target is, and whether a Turn pays for it; undefined when it is gone. */
+  /**
+   * The Agent a target is compacted as (one lookup for every target), and the AgentRun that pays
+   * for it from a ledger of its own, if any; undefined when the Agent is not known.
+   */
   readonly agentOf: (target: CompactionTarget) =>
     | {
         readonly agent: PinnedAgent;
-        /** The Turn ledger is open and main (or this AgentRun) pays from it. */
+        /** Set when this AgentRun pays from its own ledger (a SubAgent); otherwise the run or the input's work pays. */
         readonly agentRunId?: string;
       }
     | undefined;
@@ -119,6 +126,10 @@ const usageOf = (usage: TokenUsage | undefined): CompactionUsage => ({
   outputTokens: usage?.outputTokens ?? 0,
   cachedInputTokens: usage?.inputCacheHitTokens ?? 0,
 });
+
+/** What a summary of a task that started with its caller's context is told besides (D100). */
+const INHERITED_SUFFIX =
+  '\n\nSummarise only what comes after the note that says you are a different task from here on: everything before it stays in your context as it is, so leave it out of the summary.';
 
 /**
  * Everything the compaction process needs of the rest of Kernel (Kernel/Core 6a, Execution 6a):
@@ -228,6 +239,10 @@ export class RunCompactor implements Compacting {
       sizeOf: (target, entries) => this.#sizeOf(target, entries),
       perCallInputLimit: (target) =>
         deps.agentOf(target)?.agent.budget.perCallInputLimit ?? Number.MAX_SAFE_INTEGER,
+      capTokens: (target) => {
+        const found = deps.agentOf(target);
+        return found === undefined ? Number.MAX_SAFE_INTEGER : capTokensOf(found.agent, false);
+      },
       prune: (compactionId, target, candidates) => this.#prune(candidates),
       summarize: (compactionId, target, request) => this.#summarize(target, request),
       record: (compactionId, target, change) => this.#record(compactionId, target, change),
@@ -243,7 +258,7 @@ export class RunCompactor implements Compacting {
   }
 
   #head(agent: PinnedAgent): { digest: string; tokens: number } {
-    const toolSpecs = agent.toolSpecs(false);
+    const toolSpecs = agent.toolSpecs;
     return {
       digest: sha256Hex(canonicalJson({ instructions: agent.instructions, toolSpecs })),
       tokens:
@@ -422,9 +437,9 @@ export class RunCompactor implements Compacting {
       scheduler.release(grantId);
       this.#grants.delete(grantId);
     };
-    // The target's own ledger pays: an AgentRun's, the open Turn's for main, else a ledger of its
+    // The target's own ledger pays: an AgentRun's, the open input's for main, else a ledger of its
     // own taken from the run (Kernel/Monitor 3.4).
-    if (agentRunId !== undefined || ledgers.hasOpenTurn()) {
+    if (agentRunId !== undefined || ledgers.hasOpenInput()) {
       const reserved = ledgers.reserve(
         { estimatedTokens, final: false, cacheHitWeight },
         agentRunId,
@@ -484,9 +499,22 @@ export class RunCompactor implements Compacting {
     if (found === undefined) return { kind: 'INTERRUPTED' };
     const { agent } = found;
     const { compaction, prompt } = deps;
-    const instruction = request.strict
-      ? `${prompt.instruction}${prompt.strictSuffix}`
-      : prompt.instruction;
+    // What a task inherited stays in its context as it is (D100): a summary of the history as it
+    // is takes in only what came after the entry that says who it is now.
+    const inherited = request.entries.some((entry) => entry.category === 'INHERITED');
+    const instruction = `${request.strict ? `${prompt.instruction}${prompt.strictSuffix}` : prompt.instruction}${
+      inherited && request.mode === 'PREFIX' ? INHERITED_SUFFIX : ''
+    }`;
+    // What a summary that did not come about ran into, for whoever looks at the audit afterwards:
+    // the outcome and its code, never any content.
+    const problem = (stage: string, detail: Readonly<Record<string, unknown>>): void =>
+      deps.audit({
+        type: 'COMPACTION_SUMMARY_PROBLEM',
+        stage,
+        mode: request.mode,
+        strict: request.strict,
+        ...detail,
+      });
 
     // What it will cost, before anything is sent: the input of this form plus the summary.
     const inputTokens =
@@ -499,7 +527,7 @@ export class RunCompactor implements Compacting {
               estimateItemTokens({ role: 'system', content: instruction }),
           );
     const estimatedTokens =
-      Math.min(Math.ceil(inputTokens * RESERVE_MARGIN), agent.budget.perCallInputLimit) +
+      Math.min(Math.ceil(inputTokens * RESERVE_MARGIN), capTokensOf(agent, false)) +
       compaction.summaryMaxTokens;
     const reservation = await this.#reserve(
       estimatedTokens,
@@ -514,14 +542,15 @@ export class RunCompactor implements Compacting {
     const assemble: AssembleExecutorInput = {
       final: false,
       tokenBudget: agent.budget.perCallInputLimit,
+      capTokens: capTokensOf(agent, false),
       instructions: agent.instructions,
-      toolSpecs: agent.toolSpecs(false),
+      toolSpecs: [...agent.toolSpecs],
       history,
       status: {
         round: 1,
         maxRounds: 1,
         final: false,
-        budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+        budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
       },
       compaction: {
         mode: request.mode,
@@ -540,15 +569,21 @@ export class RunCompactor implements Compacting {
       return { kind: 'INTERRUPTED' };
     }
     if (assembled.outcome === 'REJECTED' && assembled.reasonCode === 'LIMIT_EXCEEDED') {
+      problem('ASSEMBLE', { outcome: assembled.outcome, reasonCode: assembled.reasonCode });
       reservation.settle({ type: 'NOT_SENT' });
       return { kind: 'OVERFLOW', usage: usageOf(undefined) };
     }
     if (assembled.outcome !== 'COMPLETED' || assembled.executionKind !== 'CONTEXT_ASSEMBLE') {
+      problem('ASSEMBLE', {
+        outcome: assembled.outcome,
+        ...('reasonCode' in assembled ? { reasonCode: assembled.reasonCode } : {}),
+      });
       reservation.settle({ type: 'NOT_SENT' });
       return { kind: 'FAILED', usage: usageOf(undefined) };
     }
     const pack = JSON.parse(assembled.result.artifact.text) as AssembleContextPack;
     if (!validate<AssembleContextPack>(AssembleContextPackSchema, pack).ok) {
+      problem('ASSEMBLE', { outcome: 'INVALID_PACK' });
       reservation.settle({ type: 'NOT_SENT' });
       return { kind: 'FAILED', usage: usageOf(undefined) };
     }
@@ -575,6 +610,7 @@ export class RunCompactor implements Compacting {
         return { kind: 'INTERRUPTED' };
       }
       if (fact.executionKind !== 'MODEL') {
+        problem('MODEL', { outcome: 'WRONG_EXECUTION_KIND' });
         reservation.settle({ type: 'UNKNOWN' });
         return { kind: 'FAILED', usage: usageOf(undefined) };
       }
@@ -599,6 +635,13 @@ export class RunCompactor implements Compacting {
               fact.requestState === 'SENT'
             ? { type: 'ACTUAL', usage: fact.usage }
             : { type: 'UNKNOWN' };
+      problem('MODEL', {
+        attempt,
+        outcome: fact.outcome,
+        ...('reasonCode' in fact ? { reasonCode: fact.reasonCode } : {}),
+        ...('retryable' in fact ? { retryable: fact.retryable } : {}),
+        ...('requestState' in fact ? { requestState: fact.requestState } : {}),
+      });
       if (fact.outcome === 'FAILED' && fact.reasonCode === 'COMPACTION_SUMMARY_INVALID') {
         reservation.settle(settlement);
         return { kind: 'INVALID', usage: usageOf('usage' in fact ? fact.usage : undefined) };

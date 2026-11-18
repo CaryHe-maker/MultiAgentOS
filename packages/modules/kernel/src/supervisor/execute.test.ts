@@ -18,21 +18,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_KERNEL_CONFIG } from '../interfaces/index.js';
 import { createSupervisor, type ModuleHostControl, type SupervisorModule } from './index.js';
 
-type OrientRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_ORIENT' }>;
+type ListRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_LIST' }>;
 
-const SHA = 'a'.repeat(64);
 const completed: ExecutorOutcome = {
   outcome: 'COMPLETED',
   result: {
-    output: {
-      snapshotId: `snp_${SHA}`,
-      fileCount: 0,
-      totalBytes: 0,
-      summary: 'empty',
-      tokenCount: 0,
-      truncated: false,
-    },
-    artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
+    output: { path: '.', directoryCount: 0, fileCount: 0, omittedEntries: 0 },
+    artifact: { mediaType: MEDIA_TYPES.fileText, text: '' },
   },
 };
 
@@ -45,22 +37,21 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
-function request(executionId = 'exe_123456'): OrientRequest {
+function request(executionId = 'exe_123456'): ListRequest {
   return {
     sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId,
     runEpoch: 1,
-    executionKind: 'REPOSITORY_ORIENT',
-    input: { objective: 'analyze', tokenBudget: 4000 },
+    executionKind: 'REPOSITORY_LIST',
+    input: {},
     scope: { kind: 'REPOSITORY', repositoryRoot: '/repo', exclusions: [] },
     limits: {
       deadline: '2026-10-19T01:00:00.000Z',
       maxOutputBytes: 1024,
       preview: { maxBytes: 1024, maxLines: 100 },
       maxFullOutputBytes: 4096,
-      maxFiles: 10,
     },
   };
 }
@@ -73,9 +64,8 @@ function registry(): ExecutorRegistry {
   const unused = <K extends ExecutorKind>(kind: K): Executor<K> =>
     executor(kind, () => Promise.resolve({ outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' }));
   return {
-    REPOSITORY_ORIENT: executor('REPOSITORY_ORIENT', () => Promise.resolve(completed)),
+    REPOSITORY_LIST: executor('REPOSITORY_LIST', () => Promise.resolve(completed)),
     REPOSITORY_SEARCH: unused('REPOSITORY_SEARCH'),
-    REPOSITORY_LIST: unused('REPOSITORY_LIST'),
     FILE_READ: unused('FILE_READ'),
     FILE_WRITE: unused('FILE_WRITE'),
     FILE_EDIT: unused('FILE_EDIT'),
@@ -94,7 +84,7 @@ function abortingRegistry(): ExecutorRegistry {
   const base = registry();
   return {
     ...base,
-    REPOSITORY_ORIENT: executor('REPOSITORY_ORIENT', (_input, environment) => {
+    REPOSITORY_LIST: executor('REPOSITORY_LIST', (_input, environment) => {
       if (environment.signal.aborted) return Promise.resolve(completed);
       return new Promise((resolve) => {
         environment.signal.addEventListener('abort', () => resolve(completed), { once: true });
@@ -167,7 +157,7 @@ describe('Supervisor execute over Fabric', () => {
     expect(envelope.correlationId).toBe('cor_123456');
     expect(envelope.payload).toMatchObject({
       outcome: 'COMPLETED',
-      executionKind: 'REPOSITORY_ORIENT',
+      executionKind: 'REPOSITORY_LIST',
       workflowRunId: 'wfr_123456',
       unitAttemptId: 'una_123456',
       executionId: 'exe_123456',

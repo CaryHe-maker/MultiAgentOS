@@ -1,0 +1,1854 @@
+{
+ "oracle": "GNU Awk 5.2.1, API 3.2, PMA Avon 8-g1, (GNU MPFR 4.2.2, GNU MP 6.3.0)",
+ "cases": [
+  {
+   "name": "print_all",
+   "args": [
+    "{ print }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "print_field",
+   "args": [
+    "{ print $2 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "30\n25\n35\n40\n28\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "print_fields_comma",
+   "args": [
+    "{ print $1, $3 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice NY\nbob LA\ncarol NY\ndave SF\neve LA\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "print_concat",
+   "args": [
+    "{ print $1 $3 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "aliceNY\nbobLA\ncarolNY\ndaveSF\neveLA\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "begin_only",
+   "args": [
+    "BEGIN { print \"hello\" }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "hello\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "begin_end_count",
+   "args": [
+    "BEGIN { n = 0 } { n++ } END { print n, NR }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "5 5\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "end_last_record",
+   "args": [
+    "END { print $0; print NF }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "eve 28 LA\n3\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "pattern_expr",
+   "args": [
+    "$2 > 29"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice 30 NY\ncarol 35 NY\ndave 40 SF\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "pattern_regex",
+   "args": [
+    "/^[cd]/"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "carol 35 NY\ndave 40 SF\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "pattern_regex_field",
+   "args": [
+    "$3 ~ /^(NY|SF)$/ { print $1 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice\ncarol\ndave\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "pattern_not_match",
+   "args": [
+    "$3 !~ \"Y\" { print $1 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "bob\ndave\neve\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "pattern_and_or",
+   "args": [
+    "$2 > 26 && $3 == \"LA\" || $1 == \"dave\""
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "dave 40 SF\neve 28 LA\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "range_pattern",
+   "args": [
+    "/bob/, /dave/ { print NR, $1 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "2 bob\n3 carol\n4 dave\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "range_same_line",
+   "args": [
+    "/carol/, /carol/ { print }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "carol 35 NY\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "range_open_end",
+   "args": [
+    "/dave/, /nomatch/ { print $1 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "dave\neve\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "multiple_rules",
+   "args": [
+    "{ print \"a:\" $1 } $2 > 30 { print \"b:\" $1 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "a:alice\na:bob\na:carol\nb:carol\na:dave\nb:dave\na:eve\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "semicolons_newlines",
+   "args": [
+    "BEGIN { x = 1; y = 2\n z = 3 } ; END { print x + y + z }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "6\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "comments_and_continuation",
+   "args": [
+    "# comment\n{ s += \\\n $2 } # trailing\nEND { print s }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "158\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "empty_pattern_action",
+   "args": [
+    "NR == 2"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "bob 25 LA\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "uninitialized",
+   "args": [
+    "BEGIN { print x + 0, \"[\" x \"]\", length(x) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "0 [] 0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "nf_and_last_field",
+   "args": [
+    "{ print NF, $NF, $(NF-1) }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "3 NY 30\n3 LA 25\n3 NY 35\n3 SF 40\n3 LA 28\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "assign_field_rebuilds",
+   "args": [
+    "{ $2 = \"*\"; print; print NF }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice * NY\n3\nbob * LA\n3\ncarol * NY\n3\ndave * SF\n3\neve * LA\n3\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "assign_beyond_nf",
+   "args": [
+    "{ $6 = \"x\"; print; print NF }"
+   ],
+   "stdin": "a b c\n",
+   "files": {},
+   "out": [],
+   "stdout": "a b c   x\n6\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "assign_nf_truncates",
+   "args": [
+    "{ NF = 2; print }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice 30\nbob 25\ncarol 35\ndave 40\neve 28\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "assign_nf_grows",
+   "args": [
+    "{ NF = 5; print; print NF }"
+   ],
+   "stdin": "a b\n",
+   "files": {},
+   "out": [],
+   "stdout": "a b   \n5\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "assign_dollar0_resplits",
+   "args": [
+    "{ $0 = \"p q r s\"; print NF, $3 }"
+   ],
+   "stdin": "a\n",
+   "files": {},
+   "out": [],
+   "stdout": "4 r\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "ofs_rebuild",
+   "args": [
+    "BEGIN { OFS = \"-\" } { $1 = $1; print } { print $1, $2 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice-30-NY\nalice-30\nbob-25-LA\nbob-25\ncarol-35-NY\ncarol-35\ndave-40-SF\ndave-40\neve-28-LA\neve-28\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "default_fs_whitespace",
+   "args": [
+    "{ print NF; print $2 }"
+   ],
+   "stdin": "  lead\tand   trail  \n",
+   "files": {},
+   "out": [],
+   "stdout": "3\nand\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "fs_single_char",
+   "args": [
+    "BEGIN { FS = \",\" } { print $2 \"|\" $3 \"|\" NF }"
+   ],
+   "stdin": "id,name,score\n1,ann,90\n2,ben,75.5\n3,cid,\n4,dee,82\n",
+   "files": {},
+   "out": [],
+   "stdout": "name|score|3\nann|90|3\nben|75.5|3\ncid||3\ndee|82|3\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "fs_option",
+   "args": [
+    "-F",
+    ",",
+    "{ print $2 }"
+   ],
+   "stdin": "id,name,score\n1,ann,90\n2,ben,75.5\n3,cid,\n4,dee,82\n",
+   "files": {},
+   "out": [],
+   "stdout": "name\nann\nben\ncid\ndee\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "fs_tab_option",
+   "args": [
+    "-F",
+    "\\t",
+    "{ print $2 }"
+   ],
+   "stdin": "a\tb c\td\n",
+   "files": {},
+   "out": [],
+   "stdout": "b c\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "fs_regex",
+   "args": [
+    "BEGIN { FS = \"[,;]+ *\" } { print $3; print NF }"
+   ],
+   "stdin": "a,b;; c,,d\n",
+   "files": {},
+   "out": [],
+   "stdout": "c\n4\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "fs_space_char_literal",
+   "args": [
+    "BEGIN { FS = \"[ ]\" } { print NF; print $3 }"
+   ],
+   "stdin": "a  b\n",
+   "files": {},
+   "out": [],
+   "stdout": "3\nb\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "fs_change_takes_effect_next_record",
+   "args": [
+    "{ FS = \",\"; print $1 }"
+   ],
+   "stdin": "a,b c\nd,e f\n",
+   "files": {},
+   "out": [],
+   "stdout": "a,b\nd\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "field_string_number_compare",
+   "args": [
+    "{ print ($1 < $2), ($1 == 10) }"
+   ],
+   "stdin": "10 9\n10.0 9\nabc 9\n",
+   "files": {},
+   "out": [],
+   "stdout": "0 1\n0 1\n0 0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "strnum_fields",
+   "args": [
+    "$1 == 1"
+   ],
+   "stdin": "1\n1.0\n01\n+1\n 1 \n1e0\nx\n",
+   "files": {},
+   "out": [],
+   "stdout": "1\n1.0\n01\n+1\n 1 \n1e0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "negative_field_index_error",
+   "args": [
+    "{ print $(-1) }"
+   ],
+   "stdin": "a\n",
+   "files": {},
+   "out": [],
+   "stdout": "",
+   "stderr": "gawk: cmd. line:1: (FILENAME=- FNR=1) fatal: attempt to access field -1\n",
+   "code": 2,
+   "outfiles": {}
+  },
+  {
+   "name": "rs_char",
+   "args": [
+    "BEGIN { RS = \";\" } { print NR \": \" $0 }"
+   ],
+   "stdin": "a;b;c\n",
+   "files": {},
+   "out": [],
+   "stdout": "1: a\n2: b\n3: c\n\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "rs_paragraph",
+   "args": [
+    "BEGIN { RS = \"\" } { print NR \": \" $1 \" / \" $NF \" / \" NF }"
+   ],
+   "stdin": "name: a\nage: 1\n\nname: b\nage: 2\n\n\n\nname: c\nage: 3\n",
+   "files": {},
+   "out": [],
+   "stdout": "1: name: / 1 / 4\n2: name: / 2 / 4\n3: name: / 3 / 4\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "rs_paragraph_fs",
+   "args": [
+    "BEGIN { RS = \"\"; FS = \":\" } { for (i = 1; i <= NF; i++) printf \"[%s]\", $i; print \"\" }"
+   ],
+   "stdin": "name: a\nage: 1\n\nname: b\nage: 2\n\n\n\nname: c\nage: 3\n",
+   "files": {},
+   "out": [],
+   "stdout": "[name][ a][age][ 1]\n[name][ b][age][ 2]\n[name][ c][age][ 3]\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "ors",
+   "args": [
+    "BEGIN { ORS = \"|\" } { print $1 } END { printf \"\\n\" }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice|bob|carol|dave|eve|\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "nr_fnr_filename",
+   "args": [
+    "{ print FILENAME, NR, FNR }",
+    "f1",
+    "f2"
+   ],
+   "stdin": "",
+   "files": {
+    "f1": "a\nb\n",
+    "f2": "c\n"
+   },
+   "out": [],
+   "stdout": "f1 1 1\nf1 2 2\nf2 3 1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "stdin_dash",
+   "args": [
+    "{ print FILENAME \":\" $0 }",
+    "f1",
+    "-"
+   ],
+   "stdin": "from stdin\n",
+   "files": {
+    "f1": "file\n"
+   },
+   "out": [],
+   "stdout": "f1:file\n-:from stdin\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "cmdline_assignment_between_files",
+   "args": [
+    "{ print v, $0 }",
+    "v=1",
+    "f1",
+    "v=2",
+    "f1"
+   ],
+   "stdin": "",
+   "files": {
+    "f1": "x\n"
+   },
+   "out": [],
+   "stdout": "1 x\n2 x\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "no_trailing_newline",
+   "args": [
+    "{ print NR, $0 }"
+   ],
+   "stdin": "a\nb",
+   "files": {},
+   "out": [],
+   "stdout": "1 a\n2 b\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "arith_ops",
+   "args": [
+    "BEGIN { print 7 + 2, 7 - 2, 7 * 2, 7 / 2, 7 % 3, -7 % 3, 2 ^ 10, 2 ^ 3 ^ 2 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "9 5 14 3.5 1 -1 1024 512\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "arith_float_output",
+   "args": [
+    "BEGIN { print 1/3, 100000 * 100000, 1e6, 1e-5, 0.1 + 0.2, 123456789012 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "0.333333 10000000000 1000000 1e-05 0.3 123456789012\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "ofmt_convfmt",
+   "args": [
+    "BEGIN { OFMT = \"%.2f\"; CONVFMT = \"%.3f\"; x = 3.14159; print x; y = x \"\"; print y; print 17 \"\" }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "3.14\n3.142\n17\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "integer_values_print_plain",
+   "args": [
+    "BEGIN { x = 2.0; print x; print x \"\"; print 1e15, 1e16 + 0 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "2\n2\n1000000000000000 10000000000000000\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "string_to_number",
+   "args": [
+    "{ print $1 + 0 }"
+   ],
+   "stdin": "10\n2\n3.5\n-4\n1e3\n0x10\n abc \n007\n+5\n.5\n",
+   "files": {},
+   "out": [],
+   "stdout": "10\n2\n3.5\n-4\n1000\n16\n0\n7\n5\n0.5\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "increment_decrement",
+   "args": [
+    "BEGIN { x = 5; print x++, x, ++x, x--, --x, x }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "5 6 7 7 5 5\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "compound_assign",
+   "args": [
+    "BEGIN { x = 10; x += 5; x -= 3; x *= 2; x /= 4; x %= 4; x ^= 3; print x }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "8\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "unary_minus_concat",
+   "args": [
+    "BEGIN { x = 3; print 1 - x, 1 \" \" -x, -x \" \" x }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "-2 1-3 -3 3\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "comparison_rules",
+   "args": [
+    "BEGIN { print (\"10\" < \"9\"), (10 < 9), (\"a\" < \"b\"), (2 < \"10\"), (\"abc\" == \"abc\") }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "1 0 1 0 1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "int_and_math",
+   "args": [
+    "BEGIN { print int(3.9), int(-3.9), int(\"4.5x\"), sqrt(16), exp(0), log(1), sin(0), cos(0), atan2(0, -1) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "3 -3 4 4 1 0 0 1 3.14159\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "modulo_float",
+   "args": [
+    "BEGIN { print 7.5 % 2, -7.5 % 2 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "1.5 -1.5\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "division_by_zero_error",
+   "args": [
+    "BEGIN { x = 0; print 1 / x }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "",
+   "stderr": "gawk: cmd. line:1: fatal: division by zero attempted\n",
+   "code": 2,
+   "outfiles": {}
+  },
+  {
+   "name": "conditional_expr",
+   "args": [
+    "{ print ($2 >= 30 ? \"old\" : \"young\"), ($3 == \"NY\" ? 1 : 0) }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "old 1\nyoung 0\nold 1\nold 0\nyoung 0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "logical_short_circuit",
+   "args": [
+    "BEGIN { x = 0; if (0 && (x = 1)) ; if (1 || (x = 2)) ; print x; print !0, !1, !\"\", !\"a\" }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "0\n1 0 1 0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "in_operator",
+   "args": [
+    "BEGIN { a[\"x\"]; print (\"x\" in a), (\"y\" in a); if (!(\"z\" in a)) print \"no z\"; n = 0; for (k in a) n++; print n }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "1 0\nno z\n1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "concat_precedence",
+   "args": [
+    "BEGIN { print 1 \" \" 2 + 3 \" \" 4 * 5; x = \"a\" \"b\" == \"ab\"; print x }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "1 5 20\n1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "exponent_assoc",
+   "args": [
+    "BEGIN { print 2^3^2, -2^2, (-2)^2 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "512 -4 4\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "number_string_edge",
+   "args": [
+    "BEGIN { print length(12345), length(0.5), substr(123456, 2, 3), index(3.25, \".\") }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "5 3 234 2\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "length_forms",
+   "args": [
+    "{ print length, length($1), length() }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "11 5 11\n9 3 9\n11 5 11\n10 4 10\n9 3 9\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "substr_cases",
+   "args": [
+    "BEGIN { s = \"hello\"; print substr(s, 2), substr(s, 2, 3), substr(s, 0, 2), substr(s, -1, 3), substr(s, 4, 100), \"[\" substr(s, 9) \"]\", substr(s, 1.5, 2.3) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "ello ell he hel lo [] he\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "index_and_case",
+   "args": [
+    "BEGIN { print index(\"banana\", \"an\"), index(\"banana\", \"x\"), toupper(\"abC1\"), tolower(\"XyZ\") }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "2 0 ABC1 xyz\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "split_default_and_sep",
+   "args": [
+    "BEGIN { n = split(\"a b  c\", arr); print n, arr[1], arr[3]; n = split(\"a:b::c\", arr, \":\"); print n, arr[3] \"|\" arr[4]; n = split(\"a1b22c\", arr, /[0-9]+/); print n, arr[2], arr[3] }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "3 a c\n4 |c\n3 b c\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "split_clears_array",
+   "args": [
+    "BEGIN { a[9] = 1; n = split(\"x y\", a); print n, (9 in a) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "2 0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "split_strnum",
+   "args": [
+    "BEGIN { split(\"10 9\", a); print (a[1] > a[2]) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "sub_gsub",
+   "args": [
+    "{ n = gsub(/o/, \"0\"); sub(/^./, \"[&]\"); print n, $0 }"
+   ],
+   "stdin": "The quick brown fox\njumps over the lazy dog.\nThe end; or is it?\n\nTabs\there\tand  spaces\n",
+   "files": {},
+   "out": [],
+   "stdout": "2 [T]he quick br0wn f0x\n2 [j]umps 0ver the lazy d0g.\n1 [T]he end; 0r is it?\n0 \n0 [T]abs\there\tand  spaces\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "gsub_ampersand_escape",
+   "args": [
+    "BEGIN { s = \"a.b.c\"; gsub(/\\./, \"\\\\&\", s); print s; t = \"xyz\"; gsub(/y/, \"<&&>\", t); print t }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "a&b&c\nx<yy>z\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "gsub_on_field",
+   "args": [
+    "{ gsub(/a/, \"A\", $1); print; print NF }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "Alice 30 NY\n3\nbob 25 LA\n3\ncArol 35 NY\n3\ndAve 40 SF\n3\neve 28 LA\n3\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "gsub_empty_match",
+   "args": [
+    "BEGIN { s = \"abc\"; gsub(/x*/, \"-\", s); print s }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "-a-b-c-\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "match_rstart_rlength",
+   "args": [
+    "{ if (match($0, /[a-z]+[0-9]+/)) print RSTART, RLENGTH, substr($0, RSTART, RLENGTH); else print RSTART, RLENGTH }"
+   ],
+   "stdin": "abc def12 x\nnone here\n9z9\n",
+   "files": {},
+   "out": [],
+   "stdout": "5 5 def12\n0 -1\n2 2 z9\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "dynamic_regex",
+   "args": [
+    "BEGIN { re = \"^[0-9]+$\" } $0 ~ re { print \"num:\" $0 } $0 ~ \"a\" \"b\" { print \"ab:\" $0 }"
+   ],
+   "stdin": "123\nabc\nx12\n",
+   "files": {},
+   "out": [],
+   "stdout": "num:123\nab:abc\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "regex_classes_and_intervals",
+   "args": [
+    "/^[[:alpha:]]{3}[[:digit:]]{2,3}$/ { print \"yes \" $0 } /[[:space:]]/ { print \"sp\" }"
+   ],
+   "stdin": "abc12\nabcd123\nab12\nxyz999\na b\n",
+   "files": {},
+   "out": [],
+   "stdout": "yes abc12\nyes xyz999\nsp\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "regex_special_chars",
+   "args": [
+    "/\\./ { print \"dot \" $0 } /a\\/b/ { print \"slash\" } /\\$$/ { print \"dollar\" }"
+   ],
+   "stdin": "a.b\na/b\ncost$\nplain\n",
+   "files": {},
+   "out": [],
+   "stdout": "dot a.b\nslash\ndollar\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "regex_alternation_grouping",
+   "args": [
+    "/^(ab|cd)+e?$/"
+   ],
+   "stdin": "abab\ncdabe\nabc\ne\nab\n",
+   "files": {},
+   "out": [],
+   "stdout": "abab\ncdabe\nab\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "regex_bracket_edge",
+   "args": [
+    "/[]a]/ { print \"1:\" $0 } /[^-a-c]/ { print \"2:\" $0 }"
+   ],
+   "stdin": "]\na\n-\nd\n",
+   "files": {},
+   "out": [],
+   "stdout": "1:]\n2:]\n1:a\n2:d\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "escape_sequences",
+   "args": [
+    "BEGIN { print \"a\\tb\\nc\\\\d\\\"e\\/f\"; printf \"%s|\", \"\\101\\102\"; print \"\" }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "a\tb\nc\\d\"e/f\nAB|\n",
+   "stderr": "gawk: cmd. line:1: warning: escape sequence `\\/' treated as plain `/'\n",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "string_comparison_fields",
+   "args": [
+    "$1 > \"c\""
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "carol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "tolower_numbers",
+   "args": [
+    "BEGIN { print toupper(12.5) \"\", tolower(\"\u00c0B\") }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "12.5 \u00c0b\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "printf_basic",
+   "args": [
+    "{ printf \"%-6s|%4d|%s\\n\", $1, $2, $3 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice |  30|NY\nbob   |  25|LA\ncarol |  35|NY\ndave  |  40|SF\neve   |  28|LA\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "printf_numbers",
+   "args": [
+    "BEGIN { printf \"%d %i %o %x %X %u %c %c\\n\", 255.9, -3.7, 8, 255, 255, 42, 65, \"hello\" }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "255 -3 10 ff FF 42 A h\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "printf_floats",
+   "args": [
+    "BEGIN { printf \"%f %.2f %e %.3E %g %G %10.4f|%-10.1f|\\n\", 3.14159, 2.675, 12345.678, 0.000123, 0.0001234, 1e20, 3.14159, 2.5 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "3.141590 2.67 1.234568e+04 1.230E-04 0.0001234 1E+20     3.1416|2.5       |\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "printf_flags",
+   "args": [
+    "BEGIN { printf \"%05d|%+d|% d|%-5d|%#o|%#x|%.3d|%5.1s|\\n\", 42, 42, 42, 42, 8, 255, 7, \"abc\" }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "00042|+42| 42|42   |010|0xff|007|    a|\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "printf_star",
+   "args": [
+    "BEGIN { printf \"%*d|%-*s|%.*f\\n\", 6, 42, 4, \"ab\", 2, 3.14159 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "    42|ab  |3.14\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "printf_percent",
+   "args": [
+    "BEGIN { printf \"100%% %s|\\n\", \"x\" }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "100% x|\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "printf_g_large_small",
+   "args": [
+    "BEGIN { printf \"%g %g %g %g %g\\n\", 100000, 1000000, 1e-4, 1e-5, 123456789 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "100000 1e+06 0.0001 1e-05 1.23457e+08\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "sprintf_and_print_parens",
+   "args": [
+    "BEGIN { s = sprintf(\"%3s/%-3s/\", \"a\", \"b\"); print(s); print(\"x\", \"y\") }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "  a/b  /\nx y\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "printf_c_number_string",
+   "args": [
+    "BEGIN { printf \"%c%c%c\\n\", 72, \"i!\", 33 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "Hi!\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "array_count_sorted",
+   "args": [
+    "function isort(a, n,   i, j, t) { for (i = 2; i <= n; i++) { t = a[i]; for (j = i - 1; j >= 1 && a[j] > t; j--) a[j+1] = a[j]; a[j+1] = t } }\n{ c[$3]++ } END { n = 0; for (k in c) keys[++n] = k; isort(keys, n); for (i = 1; i <= n; i++) print keys[i], c[keys[i]] }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "LA 2\nNY 2\nSF 1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "array_sum_by_key",
+   "args": [
+    "function isort(a, n,   i, j, t) { for (i = 2; i <= n; i++) { t = a[i]; for (j = i - 1; j >= 1 && a[j] > t; j--) a[j+1] = a[j]; a[j+1] = t } }\n{ s[$3] += $2 } END { n = 0; for (k in s) ks[++n] = k; isort(ks, n); for (i = 1; i <= n; i++) print ks[i], s[ks[i]] }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "LA 53\nNY 65\nSF 40\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "array_delete_element_and_all",
+   "args": [
+    "BEGIN { a[1]; a[2]; a[3]; delete a[2]; n = 0; for (k in a) n++; print n, (2 in a); delete a; n = 0; for (k in a) n++; print n }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "2 0\n0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "multi_dim",
+   "args": [
+    "BEGIN { a[1, 2] = \"x\"; for (k in a) { split(k, p, SUBSEP); print p[1], p[2] } print ((1, 2) in a), ((2, 1) in a) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "1 2\n1 0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "subsep_change",
+   "args": [
+    "BEGIN { SUBSEP = \":\"; a[\"x\", \"y\"] = 1; for (k in a) print k }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "x:y\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "array_numeric_string_keys",
+   "args": [
+    "BEGIN { a[1] = \"one\"; print a[\"1\"]; a[01] = \"x\"; print a[1]; b[\"01\"] = 2; print (1 in b); x = 0.1 + 0.2; c[x] = 3; for (k in c) print k }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "one\nx\n0\n0.3\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "array_reference_creates",
+   "args": [
+    "BEGIN { if (a[\"x\"] == \"\") print \"empty\"; print (\"x\" in a) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "empty\n1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "array_param_by_reference",
+   "args": [
+    "function fill(arr, n,   i) { for (i = 1; i <= n; i++) arr[i] = i * i } BEGIN { fill(sq, 4); n = 0; for (k in sq) n++; print sq[3], n }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "9 4\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "if_else_chain",
+   "args": [
+    "{ if ($2 < 28) print \"a\"; else if ($2 < 35) print \"b\"; else print \"c\" }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "b\na\nc\nc\nb\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "while_do_for",
+   "args": [
+    "BEGIN { i = 0; while (i < 3) i++; print i; do { i-- } while (i > 10); print i; for (j = 0; j < 5; j++) { if (j == 1) continue; if (j == 4) break; printf \"%d \", j } print \"\" }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "3\n2\n0 2 3 \n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "next_statement",
+   "args": [
+    "NR == 2 { next } { print $1 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice\ncarol\ndave\neve\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "exit_in_main_runs_end",
+   "args": [
+    "NR == 3 { exit 4 } { print } END { print \"end\", NR }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice 30 NY\nbob 25 LA\nend 3\n",
+   "stderr": "",
+   "code": 4,
+   "outfiles": {}
+  },
+  {
+   "name": "exit_in_end",
+   "args": [
+    "END { print \"a\"; exit 2; print \"b\" }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "a\n",
+   "stderr": "",
+   "code": 2,
+   "outfiles": {}
+  },
+  {
+   "name": "exit_code_expression",
+   "args": [
+    "BEGIN { exit 1 + 2 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "",
+   "stderr": "",
+   "code": 3,
+   "outfiles": {}
+  },
+  {
+   "name": "recursive_function",
+   "args": [
+    "function fact(n) { return n <= 1 ? 1 : n * fact(n - 1) } BEGIN { print fact(10), fact(20) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "3628800 2432902008176640000\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "function_locals",
+   "args": [
+    "function f(a,   t) { t = a * 2; g = t; return t } BEGIN { t = \"outer\"; print f(3), t, g }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "6 outer 6\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "function_no_return_value",
+   "args": [
+    "function f() { x = 1 } BEGIN { v = f(); print \"[\" v \"]\", x }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "[] 1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "function_fewer_args",
+   "args": [
+    "function f(a, b) { return a \"-\" b \"-\" length(b) } BEGIN { print f(1) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "1--0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "fib_memo",
+   "args": [
+    "function fib(n) { if (n in m) return m[n]; return m[n] = n < 2 ? n : fib(n-1) + fib(n-2) } BEGIN { print fib(80) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "23416728348467684\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "getline_plain",
+   "args": [
+    "NR == 1 { getline; print \"now\", $0, NR } { print \"rec\", $1 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "now bob 25 LA 2\nrec bob\nrec carol\nrec dave\nrec eve\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "getline_var",
+   "args": [
+    "NR == 1 { getline line; print \"line=\" line, \"$0=\" $0, NR }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "line=bob 25 LA $0=alice 30 NY 2\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "getline_from_file",
+   "args": [
+    "BEGIN { while ((getline l < \"f1\") > 0) n++; print n, l; close(\"f1\"); getline first < \"f1\"; print first }"
+   ],
+   "stdin": "",
+   "files": {
+    "f1": "one\ntwo\nthree\n"
+   },
+   "out": [],
+   "stdout": "3 three\none\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "getline_file_sets_dollar0",
+   "args": [
+    "BEGIN { getline < \"f1\"; print $2, NF, NR }"
+   ],
+   "stdin": "",
+   "files": {
+    "f1": "a b c\n"
+   },
+   "out": [],
+   "stdout": "b 3 0\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "getline_missing_file",
+   "args": [
+    "BEGIN { r = (getline x < \"nofile\"); print r }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "-1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "getline_at_eof",
+   "args": [
+    "END { r = getline; print r, $0 }"
+   ],
+   "stdin": "last\n",
+   "files": {},
+   "out": [],
+   "stdout": "0 last\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "redirect_write_and_append",
+   "args": [
+    "{ print $1 > \"out.txt\" } END { close(\"out.txt\"); print \"more\" >> \"out.txt\" }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [
+    "out.txt"
+   ],
+   "stdout": "",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {
+    "out.txt": "alice\nbob\ncarol\ndave\neve\nmore\n"
+   }
+  },
+  {
+   "name": "redirect_per_key",
+   "args": [
+    "{ print $1 > ($3 \".txt\") }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [
+    "NY.txt",
+    "LA.txt",
+    "SF.txt"
+   ],
+   "stdout": "",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {
+    "NY.txt": "alice\ncarol\n",
+    "LA.txt": "bob\neve\n",
+    "SF.txt": "dave\n"
+   }
+  },
+  {
+   "name": "stderr_output",
+   "args": [
+    "{ print \"err:\" $1 > \"/dev/stderr\"; print \"out:\" $1 }"
+   ],
+   "stdin": "a\n",
+   "files": {},
+   "out": [],
+   "stdout": "out:a\n",
+   "stderr": "err:a\n",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "printf_redirect",
+   "args": [
+    "BEGIN { printf \"%s-%d\\n\", \"x\", 5 > \"p.txt\" }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [
+    "p.txt"
+   ],
+   "stdout": "",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {
+    "p.txt": "x-5\n"
+   }
+  },
+  {
+   "name": "v_assignment",
+   "args": [
+    "-v",
+    "x=hello",
+    "-v",
+    "y=41",
+    "BEGIN { print x, y + 1 }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "hello 42\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "v_assignment_escapes_and_strnum",
+   "args": [
+    "-v",
+    "x=a\\tb",
+    "-v",
+    "n=10.0",
+    "BEGIN { print x; print (n == 10) }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "a\tb\n1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "argv_argc",
+   "args": [
+    "BEGIN { for (i = 0; i < ARGC; i++) if (i > 0) print i, ARGV[i]; print ARGC }",
+    "a",
+    "b c"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "1 a\n2 b c\n3\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "argv_modify_skips_file",
+   "args": [
+    "BEGIN { ARGV[1] = \"\" } { print FILENAME, $0 }",
+    "f1",
+    "f2"
+   ],
+   "stdin": "",
+   "files": {
+    "f1": "one\n",
+    "f2": "two\n"
+   },
+   "out": [],
+   "stdout": "f2 two\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "program_file",
+   "args": [
+    "-f",
+    "prog.awk"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {
+    "prog.awk": "{ s += $2 }\nEND { print s / NR }\n"
+   },
+   "out": [],
+   "stdout": "31.6\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "two_program_files",
+   "args": [
+    "-f",
+    "a.awk",
+    "-f",
+    "b.awk"
+   ],
+   "stdin": "x\n",
+   "files": {
+    "a.awk": "function g() { return 7 }\n",
+    "b.awk": "{ print g(), $0 }\n"
+   },
+   "out": [],
+   "stdout": "7 x\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "environ",
+   "args": [
+    "BEGIN { print ENVIRON[\"PYAWK_TEST_VAR\"] }"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "env value\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "syntax_error",
+   "args": [
+    "{ print $1 "
+   ],
+   "stdin": "a\n",
+   "files": {},
+   "out": [],
+   "stdout": "",
+   "stderr": "gawk: cmd. line:1: { print $1 \ngawk: cmd. line:1:            ^ unexpected newline or end of string\n",
+   "code": 1,
+   "outfiles": {}
+  },
+  {
+   "name": "syntax_error_no_actions_run",
+   "args": [
+    "BEGIN { print \"started\" } { print ( }"
+   ],
+   "stdin": "a\n",
+   "files": {},
+   "out": [],
+   "stdout": "",
+   "stderr": "gawk: cmd. line:1: BEGIN { print \"started\" } { print ( }\ngawk: cmd. line:1:                                     ^ syntax error\n",
+   "code": 1,
+   "outfiles": {}
+  },
+  {
+   "name": "word_frequency",
+   "args": [
+    "function isort(a, n,   i, j, t) { for (i = 2; i <= n; i++) { t = a[i]; for (j = i - 1; j >= 1 && a[j] > t; j--) a[j+1] = a[j]; a[j+1] = t } }\n{ for (i = 1; i <= NF; i++) { w = tolower($i); gsub(/[^a-z]/, \"\", w); if (w != \"\") f[w]++ } } END { n = 0; for (w in f) ws[++n] = sprintf(\"%03d %s\", 100 - f[w], w); isort(ws, n); for (i = 1; i <= 5; i++) print ws[i] }"
+   ],
+   "stdin": "The quick brown fox\njumps over the lazy dog.\nThe end; or is it?\n\nTabs\there\tand  spaces\nThe quick brown fox\njumps over the lazy dog.\nThe end; or is it?\n\nTabs\there\tand  spaces\nThe quick brown fox\njumps over the lazy dog.\nThe end; or is it?\n\nTabs\there\tand  spaces\n",
+   "files": {},
+   "out": [],
+   "stdout": "091 the\n097 and\n097 brown\n097 dog\n097 end\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "csv_report",
+   "args": [
+    "BEGIN { FS = \",\" } NR > 1 { if ($3 == \"\") { missing++; next } total += $3; n++ ; if ($3 > max) { max = $3; who = $2 } } END { printf \"n=%d avg=%.2f max=%s(%s) missing=%d\\n\", n, total / n, max, who, missing }"
+   ],
+   "stdin": "id,name,score\n1,ann,90\n2,ben,75.5\n3,cid,\n4,dee,82\n",
+   "files": {},
+   "out": [],
+   "stdout": "n=3 avg=82.50 max=90(ann) missing=1\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "transpose",
+   "args": [
+    "{ for (i = 1; i <= NF; i++) m[NR, i] = $i; if (NF > w) w = NF } END { for (i = 1; i <= w; i++) { row = \"\"; for (j = 1; j <= NR; j++) row = row (j > 1 ? \" \" : \"\") m[j, i]; print row } }"
+   ],
+   "stdin": "1 2 3\n4 5 6\n",
+   "files": {},
+   "out": [],
+   "stdout": "1 4\n2 5\n3 6\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "reverse_lines",
+   "args": [
+    "{ l[NR] = $0 } END { for (i = NR; i > 0; i--) print l[i] }"
+   ],
+   "stdin": "The quick brown fox\njumps over the lazy dog.\nThe end; or is it?\n\nTabs\there\tand  spaces\n",
+   "files": {},
+   "out": [],
+   "stdout": "Tabs\there\tand  spaces\n\nThe end; or is it?\njumps over the lazy dog.\nThe quick brown fox\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "dedupe_keep_order",
+   "args": [
+    "!seen[$0]++"
+   ],
+   "stdin": "a\nb\na\nc\nb\n",
+   "files": {},
+   "out": [],
+   "stdout": "a\nb\nc\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "join_files",
+   "args": [
+    "NR == FNR { ages[$1] = $2; next } $1 in ages { print $1, ages[$1], $2 }",
+    "f1",
+    "f2"
+   ],
+   "stdin": "",
+   "files": {
+    "f1": "alice 30\nbob 25\n",
+    "f2": "bob LA\nzed XX\nalice NY\n"
+   },
+   "out": [],
+   "stdout": "bob 25 LA\nalice 30 NY\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "caesar_cipher",
+   "args": [
+    "function rot(s, k,   out, i, c, p) { for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); p = index(alpha, tolower(c)); out = out (p ? substr(alpha, (p - 1 + k) % 26 + 1, 1) : c) } return out } BEGIN { alpha = \"abcdefghijklmnopqrstuvwxyz\" } { print rot($0, 13) }"
+   ],
+   "stdin": "The quick brown fox\njumps over the lazy dog.\nThe end; or is it?\n\nTabs\there\tand  spaces\n",
+   "files": {},
+   "out": [],
+   "stdout": "gur dhvpx oebja sbk\nwhzcf bire gur ynml qbt.\ngur raq; be vf vg?\n\ngnof\turer\tnaq  fcnprf\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  },
+  {
+   "name": "number_formats_table",
+   "args": [
+    "{ printf \"%-8s %8.3f %8.2e %5d%%\\n\", $1, $2 / 7, $2 * 1000, $2 }"
+   ],
+   "stdin": "alice 30 NY\nbob 25 LA\ncarol 35 NY\ndave 40 SF\neve 28 LA\n",
+   "files": {},
+   "out": [],
+   "stdout": "alice       4.286 3.00e+04    30%\nbob         3.571 2.50e+04    25%\ncarol       5.000 3.50e+04    35%\ndave        5.714 4.00e+04    40%\neve         4.000 2.80e+04    28%\n",
+   "stderr": "",
+   "code": 0,
+   "outfiles": {}
+  }
+ ]
+}

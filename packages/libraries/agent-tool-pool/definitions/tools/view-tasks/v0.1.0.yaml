@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: view-tasks
+version: v0.1.0
+description: Control tool that shows the task tree as it is now.
+purpose: CONTROL
+modelName: view_tasks
+modelDescription: >-
+  Show the tasks of this work now: the tasks above you, your siblings and everything below you, each
+  with its role and state. Call it alone.
+parametersContract:
+  kind: contract
+  id: workflow.ViewTasksArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

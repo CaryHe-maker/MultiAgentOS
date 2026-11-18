@@ -2,7 +2,7 @@ import {
   normalizeRequestPath,
   writeRootCovers,
   writeRootsOverlap,
-  type RunSubagentsArgs,
+  type SpawnRequest,
   type ThinkingEffort,
 } from '@multiagentos/contracts';
 
@@ -22,9 +22,8 @@ export type SpawnErrorCode =
   | 'WRITE_SCOPE_FORBIDDEN'
   | 'WRITE_SCOPE_OUTSIDE'
   | 'WRITE_SCOPE_OVERLAP'
-  | 'EFFORT_NOT_ALLOWED'
-  | 'INPUT_NOT_READABLE'
-  | 'SPAWN_LIMIT';
+  | 'WRITE_SCOPE_CHAIN'
+  | 'INPUT_NOT_READABLE';
 
 export interface SpawnError {
   readonly code: SpawnErrorCode;
@@ -41,8 +40,6 @@ export interface SpawnAgentFacts {
 export interface SpawnRules {
   readonly maxSubagentsPerCall: number;
   readonly maxDependencyDepth: number;
-  readonly maxTasks: number;
-  readonly maxSpawnCalls: number;
 }
 
 export interface SpawnContext {
@@ -51,13 +48,11 @@ export interface SpawnContext {
   readonly agents: ReadonlyMap<string, SpawnAgentFacts>;
   /** What the caller may write, normalized. */
   readonly callerRoots: readonly string[];
-  /** What this Turn spawned before this call. */
-  readonly spawned: { readonly tasks: number; readonly calls: number };
   /** An artifact the caller can read itself, so it may hand it over. */
   readonly readable: (artifactId: string) => boolean;
 }
 
-export type SpawnTask = RunSubagentsArgs['tasks'][number];
+export type SpawnTask = SpawnRequest['tasks'][number];
 
 export interface SpawnPlan {
   /** In the order the caller wrote them: results are joined in this order. */
@@ -108,7 +103,28 @@ function depthOf(tasks: ReadonlyMap<string, readonly string[]>): number | undefi
   return longest;
 }
 
-export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): SpawnValidation {
+const EFFORT_RANK: readonly ThinkingEffort[] = ['none', 'low', 'high', 'max'];
+
+/**
+ * The effort asked for, or the nearest the Agent allows (the lower one when two are as near): an
+ * explorer asked for `high` thinks at `low`. The effort is a way of working, not a permission, so
+ * it is no reason to refuse the tasks that are right.
+ */
+export function nearestEffort(
+  asked: ThinkingEffort,
+  allowed: readonly ThinkingEffort[],
+): ThinkingEffort | undefined {
+  if (allowed.length === 0 || allowed.includes(asked))
+    return allowed.length === 0 ? undefined : asked;
+  const rank = (effort: ThinkingEffort): number => EFFORT_RANK.indexOf(effort);
+  return [...allowed].sort(
+    (left, right) =>
+      Math.abs(rank(left) - rank(asked)) - Math.abs(rank(right) - rank(asked)) ||
+      rank(left) - rank(right),
+  )[0];
+}
+
+export function validateSpawn(args: SpawnRequest, context: SpawnContext): SpawnValidation {
   const { rules } = context;
   const errors: SpawnError[] = [];
   const add = (code: SpawnErrorCode, message: string, task?: string) =>
@@ -119,13 +135,6 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
     add(
       'TOO_MANY_TASKS',
       `this call has ${String(tasks.length)} tasks, at most ${String(rules.maxSubagentsPerCall)} are allowed in one call; start the rest in a later call, which cannot depend on the tasks of this one, so put what they need in their goals`,
-    );
-  if (context.spawned.calls >= rules.maxSpawnCalls)
-    add('SPAWN_LIMIT', `${String(rules.maxSpawnCalls)} calls of run_subagents were already made`);
-  else if (context.spawned.tasks + tasks.length > rules.maxTasks)
-    add(
-      'SPAWN_LIMIT',
-      `${String(context.spawned.tasks)} tasks were already started, at most ${String(rules.maxTasks)} are allowed`,
     );
 
   const names = new Set<string>();
@@ -164,12 +173,6 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
       add('UNKNOWN_AGENT', `${task.agent} cannot be started`, task.name);
       continue;
     }
-    if (task.effort !== undefined && !facts.allowedEfforts.includes(task.effort))
-      add(
-        'EFFORT_NOT_ALLOWED',
-        `${task.agent} allows the efforts ${facts.allowedEfforts.join(', ')}, not ${task.effort}`,
-        task.name,
-      );
     const scope = task.writeScope ?? [];
     if (facts.writes && scope.length === 0)
       add('WRITE_SCOPE_REQUIRED', `${task.name} needs a writeScope`, task.name);
@@ -202,14 +205,25 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
       const left = tasks[i];
       const right = tasks[j];
       if (left === undefined || right === undefined) continue;
-      if (ancestorsOf(waits, left.name).has(right.name)) continue;
-      if (ancestorsOf(waits, right.name).has(left.name)) continue;
       const a = roots.get(left.name) ?? [];
       const b = roots.get(right.name) ?? [];
-      if (a.length > 0 && b.length > 0 && writeRootsOverlap(a, b))
+      const overlap = a.length > 0 && b.length > 0 && writeRootsOverlap(a, b);
+      const chained =
+        ancestorsOf(waits, left.name).has(right.name) ||
+        ancestorsOf(waits, right.name).has(left.name);
+      // Two workers that write the same files one after the other are one piece of work split
+      // into waits (D55): the second only starts when the first has ended.
+      if (chained && overlap && left.agent === 'worker' && right.agent === 'worker')
+        add(
+          'WRITE_SCOPE_CHAIN',
+          `${left.name} and ${right.name} write the same files one after the other; that is one task's work done in two waits. Give each its own files (one test file each) so they run side by side, or make them one task`,
+          left.name,
+        );
+      if (chained) continue;
+      if (overlap)
         add(
           'WRITE_SCOPE_OVERLAP',
-          `${left.name} and ${right.name} can run at the same time and write the same files; make one depend on the other or split the scopes`,
+          `${left.name} and ${right.name} can run at the same time and write the same files; give each its own files (one test file each, not one file they all append to) so they run side by side, and make one depend on the other only when it needs what the other writes, since it then waits`,
           left.name,
         );
     }
@@ -218,7 +232,16 @@ export function validateSpawn(args: RunSubagentsArgs, context: SpawnContext): Sp
   return {
     ok: true,
     plan: {
-      tasks: tasks.map((task) => ({ ...task, writeRoots: roots.get(task.name) ?? [] })),
+      tasks: tasks.map((task) => {
+        const allowed = context.agents.get(task.agent)?.allowedEfforts ?? [];
+        const effort = task.effort === undefined ? undefined : nearestEffort(task.effort, allowed);
+        // What the caller asked for is replaced by what the Agent allows.
+        const kept = { ...task, writeRoots: roots.get(task.name) ?? [] };
+        if (effort === undefined) delete kept.effort;
+        else kept.effort = effort;
+
+        return kept;
+      }),
     },
   };
 }

@@ -6,14 +6,18 @@ export const BudgetStateSchema = Type.Enum(['NORMAL', 'WRAP_UP', 'EXHAUSTED'], {
 });
 export type BudgetState = Static<typeof BudgetStateSchema>;
 
-/** The three ledgers of a report, each with its own state (M2Design 7.3). */
+/**
+ * The three ledgers of a report, each with its own state (M2Design 7.3): the AgentRun's, the one of
+ * the work since the user's latest input, and the run's.
+ */
 export const BudgetViewSchema = Type.Object(
-  { agentRun: BudgetStateSchema, turn: BudgetStateSchema, run: BudgetStateSchema },
+  { agentRun: BudgetStateSchema, input: BudgetStateSchema, run: BudgetStateSchema },
   { additionalProperties: false, $id: 'kernel.unit.BudgetView.v1' },
 );
 export type BudgetView = Static<typeof BudgetViewSchema>;
 
-export const TurnUsageSchema = Type.Object(
+/** What the work since one input of the user used. */
+export const InputUsageSchema = Type.Object(
   {
     inputTokens: Type.Integer({ minimum: 0 }),
     outputTokens: Type.Integer({ minimum: 0 }),
@@ -22,6 +26,6 @@ export const TurnUsageSchema = Type.Object(
     modelRequests: Type.Integer({ minimum: 0 }),
     toolUnits: Type.Integer({ minimum: 0 }),
   },
-  { additionalProperties: false, $id: 'kernel.unit.TurnUsage.v1' },
+  { additionalProperties: false, $id: 'kernel.unit.InputUsage.v1' },
 );
-export type TurnUsage = Static<typeof TurnUsageSchema>;
+export type InputUsage = Static<typeof InputUsageSchema>;

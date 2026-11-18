@@ -8,7 +8,7 @@ import { closed, count } from '../platform-common/schema-helpers.js';
 export const INTERRUPT_REASONS = [
   'MEMORY_PRESSURE',
   'USER_ABORT',
-  'TURN_TIMEOUT',
+  'INPUT_TIMEOUT',
   'PAUSE_TIMEOUT',
 ] as const;
 export type InterruptReason = (typeof INTERRUPT_REASONS)[number];

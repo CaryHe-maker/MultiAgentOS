@@ -43,6 +43,8 @@ export interface CommandDemand {
   readonly unavailablePolicy: 'deny' | 'ask-unisolated';
   /** The user has allowed `repo.read` in this run: a Lease is held. */
   readonly repoReadGranted?: boolean;
+  /** `kernel.command.approval`; absent is `ask`. */
+  readonly approval?: 'ask' | 'auto';
 }
 
 export type Capability = ProtectedCapability;
@@ -140,6 +142,11 @@ export interface UnitDemand {
   readonly command?: CommandDemand;
   /** What a `web.fetch` asks for, and the sites the user has forbidden beforehand. */
   readonly web?: { readonly url: string; readonly deniedDomains: readonly string[] };
+  /**
+   * What the system made of the absolute path of an external read: the folder an answer allows, or
+   * none when the path cannot be read (Core 5h). Core decides on that alone.
+   */
+  readonly external?: { readonly root: string | undefined };
 }
 
 export type UnitDecision =
@@ -149,6 +156,8 @@ export type UnitDecision =
       readonly resourceKey: string;
       /** A command of the read-only list: it runs in a sandbox that cannot write (Core 5b). */
       readonly readOnly?: true;
+      /** A command let through by `kernel.command.approval: auto`, without a question (5.2). */
+      readonly auto?: true;
     }
   | {
       readonly kind: 'REFUSE';
@@ -160,6 +169,7 @@ export type UnitDecision =
         | 'COMMAND_DENIED'
         | 'ADDRESS_FORBIDDEN'
         | 'DOMAIN_DENIED'
+        | 'EXTERNAL_PATH_UNAVAILABLE'
         | 'SANDBOX_UNAVAILABLE'
         | 'ADMISSION_CHECK_FAILED';
     }
@@ -196,6 +206,12 @@ const answered = (
   return undefined;
 };
 
+/**
+ * The resource key of an entry that covers every public host (`web.fetch` only): the answer "all
+ * public websites for this run". A name that is not an address is no host, so it cannot clash.
+ */
+export const ANY_HOST = '*';
+
 const granted = (
   entries: readonly AuthorizationEntry[],
   capability: Capability,
@@ -209,9 +225,34 @@ const granted = (
       'resourceKey' in entry &&
       // A host is one host; "a.example" says nothing of "b.a.example".
       (capability === 'web.fetch'
-        ? entry.resourceKey === resourceKey
+        ? entry.resourceKey === resourceKey || entry.resourceKey === ANY_HOST
         : writeRootCovers(entry.resourceKey, resourceKey)),
   );
+
+/** An entry for a folder covers it and everything below, as a path of the file system does. */
+const externalCovers = (entryRoot: string, root: string): boolean =>
+  root === entryRoot || root.startsWith(entryRoot.endsWith('/') ? entryRoot : `${entryRoot}/`);
+
+/** Kernel/Core 5h: one question for each external folder; nothing is asked for what cannot be read. */
+function decideExternal(demand: UnitDemand, entries: readonly AuthorizationEntry[]): UnitDecision {
+  const { external } = demand;
+  if (external === undefined) return { kind: 'REFUSE', reasonCode: 'ADMISSION_CHECK_FAILED' };
+  const { root } = external;
+  if (root === undefined) return { kind: 'REFUSE', reasonCode: 'EXTERNAL_PATH_UNAVAILABLE' };
+  const decided = answered(entries, demand, 'external.read');
+  if (decided === 'DENY') return { kind: 'REFUSE', reasonCode: 'USER_DECLINED' };
+  const covered = entries.some(
+    (entry) =>
+      entry.capability === 'external.read' &&
+      entry.scope === 'RUN' &&
+      entry.effect === 'ALLOW' &&
+      'resourceKey' in entry &&
+      externalCovers(entry.resourceKey, root),
+  );
+  if (decided === 'ALLOW' || covered)
+    return { kind: 'ALLOW', capability: 'external.read', resourceKey: root };
+  return { kind: 'ASK', capability: 'external.read', resourceKey: root, critical: false };
+}
 
 /** The user refused this very host in this AgentRun: other hosts are not affected. */
 const hostRefused = (
@@ -335,6 +376,30 @@ function decideCommand(
   }
   if (decided === 'ALLOW' || (!perAttempt && commandsCovered(entries, command, workdir)))
     return { kind: 'ALLOW', capability: 'command.exec', resourceKey: workdir };
+  // ④c automatic approval (M2Design 5.2, 2026-11-14): the boundary is the sandbox without the
+  // network, not the name of a command. Such a command reaches only the repository, where it reads
+  // what read_file reads and writes inside the writable roots of its AgentRun, as write_file does;
+  // so it needs the same two answers, repo.read and workspace.write, once a run, and no question
+  // of its own. What the boundary does not hold is asked for each time: the network, a critical
+  // command, an unisolated run, a line that cannot be parsed reliably.
+  if (command.approval === 'auto' && !perAttempt && command.sandbox === 'AVAILABLE') {
+    if (command.repoReadGranted !== true && command.analysis.readsRepository !== false)
+      return {
+        kind: 'ASK',
+        capability: 'repo.read',
+        resourceKey: REPOSITORY_ROOT_PATH,
+        critical: false,
+      };
+    const unwritten = ceiling.writeRoots.find((root) => !granted(entries, 'workspace.write', root));
+    if (unwritten !== undefined)
+      return {
+        kind: 'ASK',
+        capability: 'workspace.write',
+        resourceKey: unwritten,
+        critical: false,
+      };
+    return { kind: 'ALLOW', capability: 'command.exec', resourceKey: workdir, auto: true };
+  }
   // ⑤
   return {
     kind: 'ASK',
@@ -355,6 +420,8 @@ function decide(
   // ②
   if (!ceiling.capabilities.has(capability))
     return { kind: 'REFUSE', reasonCode: 'CAPABILITY_NOT_GRANTED' };
+
+  if (capability === 'external.read') return decideExternal(demand, entries);
 
   // ③ The resource key of a write is the write root it falls under.
   let resourceKey: string = REPOSITORY_ROOT_PATH;

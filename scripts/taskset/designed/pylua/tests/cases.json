@@ -1,0 +1,656 @@
+{
+ "oracle": "Lua 5.4.7  Copyright (C) 1994-2024 Lua.org, PUC-Rio",
+ "cases": [
+  {
+   "name": "hello",
+   "code": "print(\"hello, world\")\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "hello, world\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "print_multiple",
+   "code": "print(1, \"a\", nil, true, false, 2.5)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1\ta\tnil\ttrue\tfalse\t2.5\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "long_strings",
+   "code": "local a = [[line1\nline2]]\nlocal b = [==[with ]] inside]==]\nprint(a); print(b)\n--[[ long\ncomment ]] print(\"after comment\")\n--[==[ another ]==] print(\"x\")\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "line1\nline2\nwith ]] inside\nafter comment\nx\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "escapes",
+   "code": "print(\"tab\\tnew\\\\nline\", \"q\\\"q\", 'single\\'s')\nprint(\"\\65\\066\\x43\\u{48}\\u{4E2D}\", #\"\\u{4E2D}\")\nprint(\"a\\z\n      b\")\nprint(\"\\0x\" == \"\\0\" .. \"x\", #\"\\0abc\")\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "tab\tnew\\nline\tq\"q\tsingle's\nABCH\u00e4\u00b8\u00ad\t3\nab\ntrue\t4\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "numerals",
+   "code": "print(0xff, 0XA, 1e2, .5, 3., 0x.8p1, 0x1p4, 1E-2, 0xA.8p0)\nprint(math.type(1), math.type(1.0), math.type(0x10), math.type(1e2))\nprint(9007199254740993, 0x7fffffffffffffff, 0xffffffffffffffff)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "255\t10\t100.0\t0.5\t3.0\t1.0\t16.0\t0.01\t10.5\ninteger\tfloat\tinteger\tfloat\n9007199254740993\t9223372036854775807\t-1\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "comments_and_semicolons",
+   "code": "local x = 1; local y = 2;;; -- comment\nprint(x + y) ;\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "3\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "int_float_arith",
+   "code": "print(7 // 2, -7 // 2, 7 % 3, -7 % 3, 7 % -3, 7.0 // 2, -7.5 % 2, 7 / 2, 4 / 2)\nprint(3 + 0.0, 2^10, 2^0.5, 10 // 0.0, -10 % math.huge)\nprint(1 == 1.0, math.type(3 // 1), math.type(3 / 1))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "3\t-4\t1\t2\t-2\t3.0\t0.5\t3.5\t2.0\n3.0\t1024.0\t1.4142135623731\tinf\tinf\ntrue\tinteger\tfloat\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "integer_overflow_wraps",
+   "code": "print(math.maxinteger + 1 == math.mininteger, math.mininteger - 1 == math.maxinteger)\nprint(math.maxinteger * 2, -math.mininteger, math.mininteger // -1)\nprint(math.maxinteger + 1.0, 2^63, math.tointeger(2^53), math.tointeger(3.5))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "true\ttrue\n-2\t-9223372036854775808\t-9223372036854775808\n9.2233720368548e+18\t9.2233720368548e+18\t9007199254740992\tnil\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "division_by_zero",
+   "code": "print(pcall(function() return 1 // 0 end))\nprint(pcall(function() return 1 % 0 end))\nprint(1 / 0, -1 / 0, 0/0 ~= 0/0, 1.0 // 0, 1 % 0.0 ~= 1 % 0.0)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "false\tprog.lua:1: attempt to divide by zero\nfalse\tprog.lua:2: attempt to perform 'n%0'\ninf\t-inf\ttrue\tinf\ttrue\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "float_formatting",
+   "code": "print(0.1, 1/3, 100.0, 1e15, 1e16, 2^53, -0.0, 1e100, 123456789012.5, 3.14159265358979)\nprint(tostring(1e300 * 1e10), tostring(-1e300 * 1e10), 2^63 == math.maxinteger + 1.0)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "0.1\t0.33333333333333\t100.0\t1e+15\t1e+16\t9.007199254741e+15\t-0.0\t1e+100\t123456789012.5\t3.1415926535898\ninf\t-inf\ttrue\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "string_coercion",
+   "code": "print(\"10\" + 5, \"3.5\" * 2, \"0x10\" + 0, 10 .. 20, 1.5 .. \"\", \"  7  \" * 1)\nprint(pcall(function() return \"abc\" + 1 end))\nprint(\"10\" == 10, tonumber(\"  0x1p4  \"), tonumber(\"1e1\"), tonumber(\"z\", 36), tonumber(\"ff\", 16), tonumber(\"8\", 8))\nprint(tonumber(\"12a\"), tonumber(\"\"), tonumber(\"1 2\"), tonumber(\"0x\"), tonumber(nil))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "15\t7.0\t16\t1020\t1.5\t7\nfalse\tprog.lua:2: attempt to add a 'string' with a 'number'\nfalse\t16.0\t10.0\t35\t255\tnil\nnil\tnil\tnil\tnil\tnil\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "comparisons",
+   "code": "print(1 < 2, 1 < 1.5, \"a\" < \"b\", \"Z\" < \"a\", \"abc\" < \"abd\", \"\" < \"a\", 2 <= 2.0, math.mininteger < -2^63 + 1)\nprint(pcall(function() return 1 < \"2\" end))\nprint(pcall(function() return {} < {} end))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "true\ttrue\ttrue\ttrue\ttrue\ttrue\ttrue\tfalse\nfalse\tprog.lua:2: attempt to compare number with string\nfalse\tprog.lua:3: attempt to compare two table values\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "bitwise",
+   "code": "print(5 & 3, 5 | 3, 5 ~ 3, ~0, 1 << 4, 256 >> 4, -1 >> 60, 1 << 64, 1 << 63)\nprint(3.0 & 1, \"3\" | 0)\nprint(pcall(function() return 1.5 & 1 end))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1\t7\t6\t-1\t16\t16\t15\t0\t-9223372036854775808\n",
+   "stderr": "lua5.4: prog.lua:2: attempt to perform bitwise operation on a string value (constant '3')\nstack traceback:\n\tprog.lua:2: in main chunk\n\t[C]: in ?\n",
+   "exit": 1
+  },
+  {
+   "name": "math_lib",
+   "code": "print(math.abs(-3), math.abs(-3.5), math.ceil(3.2), math.floor(-3.2), math.fmod(7, 3), math.fmod(-7, 3), math.fmod(-7.5, 2))\nprint(math.max(3, 9, 2), math.min(3.5, 1, 2), math.huge, -math.huge, math.pi)\nprint(math.modf(3.7), math.modf(-3.7), math.sqrt(16), math.exp(0), math.log(8, 2), math.log(100, 10), math.log(1))\nprint(math.tointeger(\"8\"), math.ult(1, -1), math.type(\"1\"), math.floor(2^31 + 0.5), math.ceil(-0.5))\nprint(string.format(\"%.4f %.4f %.4f %.4f\", math.sin(1), math.cos(1), math.tan(1), math.atan(1, 2)))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "3\t3.5\t4\t-4\t1\t-1\t-1.5\n9\t1\tinf\t-inf\t3.1415926535898\n3\t-3\t4.0\t1.0\t3.0\t2.0\t0.0\n8\ttrue\tnil\t2147483648\t0\n0.8415 0.5403 1.5574 0.4636\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "string_basic",
+   "code": "local s = \"Hello World\"\nprint(#s, s:upper(), s:lower(), s:len(), s:rep(2, \"-\"), s:reverse(), (\"x\"):rep(0), (\"ab\"):rep(3))\nprint(s:sub(1, 5), s:sub(-5), s:sub(3, -3), s:sub(0), s:sub(20), s:sub(-100, 2), s:sub(5, 4))\nprint(s:byte(1), s:byte(-1), s:byte(1, 3), string.char(72, 105), s:byte(100))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "11\tHELLO WORLD\thello world\t11\tHello World-Hello World\tdlroW olleH\t\tababab\nHello\tWorld\tllo Wor\tHello World\t\tHe\t\n72\t100\t72\tHi\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "string_find",
+   "code": "local s = \"hello world from lua\"\nprint(s:find(\"world\"), s:find(\"o\", 6), s:find(\"xyz\"), s:find(\"l+\"), s:find(\".\", 1, true), s:find(\"\", 3))\nprint(s:find(\"(o)(r)\"), s:find(\"%s\"), s:find(\"o\", -3), (\"a.b\"):find(\".\", 1, true), (\"a+b\"):find(\"+\", 1, true))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "7\t8\tnil\t3\tnil\t3\t2\n8\t6\tnil\t2\t2\t2\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "string_match",
+   "code": "print((\"key = value\"):match(\"(%w+)%s*=%s*(%w+)\"))\nprint((\"2024-01-15\"):match(\"(%d+)-(%d+)-(%d+)\"))\nprint((\"  trim me  \"):match(\"^%s*(.-)%s*$\") .. \"|\")\nprint((\"abc\"):match(\"()b()\"), (\"hello\"):match(\".-l\"), (\"hello\"):match(\".*l\"), (\"x\"):match(\"y\"))\nprint((\"[test]\"):match(\"%[(.*)%]\"), (\"f(a(b)c)d\"):match(\"%b()\"), (\"THE (quick) fox\"):match(\"%f[%a]%a+\", 5))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "key\tvalue\n2024\t01\t15\ntrim me|\n2\thel\thell\tnil\ntest\t(a(b)c)\tquick\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "string_gmatch",
+   "code": "for w in (\"one two  three\"):gmatch(\"%a+\") do io.write(w, \";\") end print()\nfor k, v in (\"a=1, b=2, c=3\"):gmatch(\"(%w+)=(%w+)\") do io.write(k, \"->\", v, \" \") end print()\nfor pos in (\"abcabc\"):gmatch(\"()b\") do io.write(pos, \" \") end print()\nlocal n = 0 for _ in (\"aaa\"):gmatch(\"\") do n = n + 1 end print(n)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "one;two;three;\na->1 b->2 c->3 \n2 5 \n4\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "string_gsub",
+   "code": "print((\"hello world\"):gsub(\"o\", \"0\"))\nprint((\"hello world\"):gsub(\"o\", \"0\", 1))\nprint((\"hello\"):gsub(\"\", \"-\"))\nprint((\"abc\"):gsub(\"%w\", \"%0%0\"), (\"abc\"):gsub(\"(a)(b)\", \"%2%1\"))\nprint((\"$name is $age\"):gsub(\"%$(%w+)\", {name = \"Ann\", age = 30}))\nprint((\"1 2 3\"):gsub(\"%d\", function(d) return d * 2 end))\nprint((\"x y\"):gsub(\"%w\", function(c) if c == \"x\" then return nil end return false end))\nprint(pcall(string.gsub, \"abc\", \"(\", \"x\"))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "hell0 w0rld\t2\nhell0 world\t1\n-h-e-l-l-o-\t6\naabbcc\tbac\t1\nAnn is 30\t2\n2 4 6\t3\nx y\t2\ntrue\txaxbxcx\t4\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "pattern_classes",
+   "code": "local s = \"Ab1 _-.\\t\\n#\"\nfor _, cls in ipairs({\"%a\", \"%d\", \"%l\", \"%u\", \"%s\", \"%w\", \"%x\", \"%p\", \"%c\", \"%A\", \"[%a_]\", \"[^%w]\", \"[a-c]\", \"[%-]\"}) do\n  local out = {}\n  for ch in s:gmatch(cls) do out[#out + 1] = string.byte(ch) end\n  print(cls, table.concat(out, \",\"))\nend\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "%a\t65,98\n%d\t49\n%l\t98\n%u\t65\n%s\t32,9,10\n%w\t65,98,49\n%x\t65,98,49\n%p\t95,45,46,35\n%c\t9,10\n%A\t49,32,95,45,46,9,10,35\n[%a_]\t65,98,95\n[^%w]\t32,95,45,46,9,10,35\n[a-c]\t98\n[%-]\t45\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "string_format",
+   "code": "print(string.format(\"%d|%5d|%-5d|%05d|%+d|%x|%X|%o|%c\", 42, 42, 42, 42, 42, 255, 255, 8, 65))\nprint(string.format(\"%s|%10s|%-10s|%.2s|%5.1f|%e|%g|%g|%g\", \"hi\", \"right\", \"left\", \"abc\", 3.14159, 1234.5, 0.0001, 1e20, 100))\nprint(string.format(\"%q\", 'a \"quoted\"\\n\\0 string'))\nprint(string.format(\"%q|%q|%q\", 10, 2.5, math.mininteger))\nprint(string.format(\"%5.2s|%.3d|%i|%%|%s|%s\", \"xyz\", 5, 7, nil, true))\nprint(string.format(\"%.14g|%.3f|%10.4f\", 2^0.5, 2/3, -1.5))\nprint(pcall(string.format, \"%d\", 1.5))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "42|   42|42   |00042|+42|ff|FF|10|A\nhi|     right|left      |ab|  3.1|1.234500e+03|0.0001|1e+20|100\n\"a \\\"quoted\\\"\\\n\\0 string\"\n10|0x1.4p+1|0x8000000000000000\n   xy|005|7|%|nil|true\n1.4142135623731|0.667|   -1.5000\nfalse\tbad argument #2 to 'string.format' (number has no integer representation)\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "tostring_tonumber",
+   "code": "print(tostring(10), tostring(10.0), tostring(-0.0), tostring(nil), tostring(true), tostring(\"s\"))\nprint(tonumber(\"10\"), tonumber(\"10.0\"), tonumber(\" 10 \"), tonumber(\"1e2\"), tonumber(\"0x1F\"), tonumber(\"-0x10\"))\nprint(tonumber(\"10\", 2), tonumber(\"777\", 8), tonumber(\"zz\", 36), tonumber(\"12\", 2), math.type(tonumber(\"3\")))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "10\t10.0\t-0.0\tnil\ttrue\ts\n10\t10.0\t10\t100.0\t31\t-16\n2\t511\t1295\tnil\tinteger\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "string_concat_and_len",
+   "code": "local t = {}\nfor i = 1, 5 do t[#t + 1] = i end\nprint(table.concat(t, \", \"), #t, #\"abc\" + #\"\", \"a\" .. \"b\" .. \"c\" .. 1 .. 2.0)\nprint(pcall(function() return \"a\" .. nil end))\nprint(pcall(function() return \"a\" .. {} end))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1, 2, 3, 4, 5\t5\t3\tabc12.0\nfalse\tprog.lua:4: attempt to concatenate a nil value\nfalse\tprog.lua:5: attempt to concatenate a table value\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "utf8_lib",
+   "code": "print(utf8.char(72, 228, 8364, 128512), utf8.len(\"h\u00e4ll\u20ac\"), #\"h\u00e4ll\u20ac\")\nfor p, c in utf8.codes(\"a\u00e9\u20ac\") do io.write(p, \":\", c, \" \") end print()\nprint(utf8.codepoint(\"h\u00e9llo\", 1, -1))\nprint(utf8.offset(\"a\u00e9\u20acb\", 3), utf8.offset(\"a\u00e9\u20acb\", -1), utf8.len(\"\\xff\"), utf8.charpattern)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "H\u00c3\u00a4\u00e2\u0082\u00ac\u00f0\u009f\u0098\u0080\t5\t8\n1:97 2:233 4:8364 \n104\t233\t108\t108\t111\n4\t7\tnil\t[\u0000-\u007f\u00c2-\u00fd][\u0080-\u00bf]*\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "table_constructors",
+   "code": "local t = {1, 2, 3, x = \"a\", [\"y z\"] = \"b\", [10] = \"ten\", 4; 5}\nprint(#t, t[4], t[5], t.x, t[\"y z\"], t[10], t[11])\nlocal u = {[1] = \"a\", \"b\"}\nprint(u[1])\nlocal function three() return 1, 2, 3 end\nlocal v = {three(), three()}\nprint(#v, v[1], v[2], v[4])\nlocal w = {three(), (three())}\nprint(#w)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "5\t4\t5\ta\tb\tten\tnil\nb\n4\t1\t1\t3\n2\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "table_insert_remove",
+   "code": "local t = {}\ntable.insert(t, \"a\"); table.insert(t, \"c\"); table.insert(t, 2, \"b\"); table.insert(t, 1, \"z\")\nprint(table.concat(t, \",\"), #t)\nprint(table.remove(t), table.remove(t, 1), table.concat(t, \",\"), table.remove({}), #t)\nprint(pcall(table.insert, t, 5, \"x\"))\nprint(pcall(table.insert, nil, 1))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "z,a,b,c\t4\nc\tz\ta,b\tnil\t2\nfalse\tbad argument #2 to 'table.insert' (position out of bounds)\nfalse\tbad argument #1 to 'table.insert' (table expected, got nil)\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "table_sort",
+   "code": "local t = {5, 2, 8, 1, 9, 3}\ntable.sort(t) print(table.concat(t, \" \"))\ntable.sort(t, function(a, b) return a > b end) print(table.concat(t, \" \"))\nlocal words = {\"banana\", \"Apple\", \"cherry\", \"apple\"}\ntable.sort(words) print(table.concat(words, \" \"))\nlocal people = {{n = \"a\", age = 30}, {n = \"b\", age = 20}, {n = \"c\", age = 25}}\ntable.sort(people, function(x, y) return x.age < y.age end)\nfor _, p in ipairs(people) do io.write(p.n) end print()\nprint(pcall(table.sort, {3, \"a\", 1}))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1 2 3 5 8 9\n9 8 5 3 2 1\nApple apple banana cherry\nbca\nfalse\tattempt to compare string with number\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "table_concat_unpack_pack_move",
+   "code": "print(table.concat({1, 2, 3}), table.concat({\"a\", \"b\"}, \"-\", 2), table.concat({}, \"x\"), table.concat({1, 2, 3}, \"\", 2, 3))\nprint(table.unpack({1, 2, 3})); print(table.unpack({1, 2, 3}, 2)); print(table.unpack({1, nil, 3}, 1, 3))\nlocal p = table.pack(1, nil, 3) print(p.n, p[1], p[2], p[3])\nlocal a = table.move({1, 2, 3}, 1, 3, 2) print(table.concat(a, \",\"))\nlocal b = table.move({1, 2, 3}, 1, 3, 1, {}) print(#b)\nprint(pcall(table.concat, {1, {}, 3}))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "123\tb\t\t23\n1\t2\t3\n2\t3\n1\tnil\t3\n3\t1\tnil\t3\n1,1,2,3\n3\nfalse\tinvalid value (table) at index 2 in table for 'concat'\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "length_with_border",
+   "code": "local t = {1, 2, 3}\nt[#t + 1] = 4\nprint(#t)\nt[#t] = nil\nprint(#t)\nlocal s = setmetatable({}, {__len = function() return 42 end})\nprint(#s, rawlen({1, 2}), rawlen(\"abc\"))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "4\n3\n42\t2\t3\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "ipairs_pairs_next",
+   "code": "local t = {10, 20, nil, 40}\nfor i, v in ipairs(t) do io.write(i, \"=\", v, \" \") end print()\nlocal keys = {}\nfor k in pairs({a = 1, b = 2, c = 3}) do keys[#keys + 1] = k end\ntable.sort(keys) print(table.concat(keys))\nprint(next({}), next({5}))\nlocal m = setmetatable({}, {__pairs = function(t) return function(_, k) if not k then return 1, \"one\" end end, t, nil end})\nfor k, v in pairs(m) do print(k, v) end\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1=10 2=20 \nabc\nnil\t1\t5\n1\tone\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "varargs",
+   "code": "local function f(...)\n  local a, b = ...\n  print(select(\"#\", ...), a, b, select(2, ...))\n  local t = {...}\n  return #t, ...\nend\nprint(f(1, nil, 3))\nprint(f())\nprint(select(-1, \"a\", \"b\", \"c\"), select(\"#\"), pcall(select, 0, 1))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "3\t1\tnil\tnil\t3\n3\t1\tnil\t3\n0\tnil\tnil\n0\nc\t0\tfalse\tbad argument #1 to 'select' (index out of range)\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "multiple_returns_adjust",
+   "code": "local function mr() return 1, 2, 3 end\nlocal a, b, c, d = mr()\nprint(a, b, c, d)\nlocal x, y = mr(), 10\nprint(x, y)\nprint(mr(), mr())\nprint((mr()))\nlocal t = {mr(), mr()}\nprint(#t)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1\t2\t3\tnil\n1\t10\n1\t1\t2\t3\n1\n4\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "closures_counter",
+   "code": "local function counter()\n  local n = 0\n  return function() n = n + 1 return n end, function() return n end\nend\nlocal inc, get = counter()\ninc() inc()\nlocal inc2 = counter()\ninc2()\nprint(get(), inc(), inc2())\nlocal fs = {}\nfor i = 1, 3 do fs[i] = function() return i end end\nprint(fs[1](), fs[2](), fs[3]())\nlocal j = 0\nlocal gs = {}\nwhile j < 3 do j = j + 1; local k = j; gs[j] = function() return k end end\nprint(gs[1](), gs[3]())\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "2\t3\t2\n1\t2\t3\n1\t3\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "recursion_and_tailcalls",
+   "code": "local function fact(n) if n <= 1 then return 1 end return n * fact(n - 1) end\nprint(fact(20), fact(21))\nlocal function loop(n, acc) if n == 0 then return acc end return loop(n - 1, acc + 1) end\nprint(loop(100000, 0))\nlocal function ack(m, n) if m == 0 then return n + 1 elseif n == 0 then return ack(m - 1, 1) else return ack(m - 1, ack(m, n - 1)) end end\nprint(ack(2, 3))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "2432902008176640000\t-4249290049419214848\n100000\n9\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "methods_and_self",
+   "code": "local Account = {}\nAccount.__index = Account\nfunction Account.new(b) return setmetatable({balance = b}, Account) end\nfunction Account:deposit(v) self.balance = self.balance + v return self end\nfunction Account:get() return self.balance end\nlocal a = Account.new(100)\nprint(a:deposit(50):deposit(25):get(), Account.get(a), a.balance)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "175\t175\t175\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "upvalues_shared",
+   "code": "local function make()\n  local x = 0\n  local function add(n) x = x + n end\n  local function get() return x end\n  return add, get\nend\nlocal add, get = make()\nadd(5) add(7)\nprint(get())\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "12\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "if_elseif",
+   "code": "for _, v in ipairs({-1, 0, 1, 10}) do\n  if v < 0 then print(\"neg\") elseif v == 0 then print(\"zero\") elseif v < 5 then print(\"small\") else print(\"big\") end\nend\nprint(nil and 1, false or \"d\", 1 and 2, nil or false, 0 and \"zero is true\", \"\" and \"empty is true\")\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "neg\nzero\nsmall\nbig\nnil\td\t2\tfalse\tzero is true\tempty is true\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "numeric_for",
+   "code": "for i = 1, 3 do io.write(i, \" \") end print()\nfor i = 10, 1, -3 do io.write(i, \" \") end print()\nfor i = 1, 0 do io.write(\"never\") end\nfor i = 1.0, 2.0, 0.5 do io.write(i, \" \") end print()\nfor i = math.maxinteger - 2, math.maxinteger do io.write(i, \" \") end print()\nprint(pcall(function() for i = 1, 10, 0 do end end))\nlocal n = 0 for i = 1, 3 do local i = i * 2 n = n + i end print(n)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1 2 3 \n10 7 4 1 \n1 1.5 2 \n9223372036854775805 9223372036854775806 9223372036854775807 \nfalse\tprog.lua:6: 'for' step is zero\n12\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "while_repeat_break",
+   "code": "local i = 0\nwhile true do i = i + 1 if i > 5 then break end end\nprint(i)\nlocal j = 0\nrepeat local k = j j = j + 1 until k >= 3\nprint(j)\nfor x = 1, 3 do for y = 1, 3 do if y == 2 then break end io.write(x, y, \" \") end end print()\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "6\n4\n11 21 31 \n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "goto_continue",
+   "code": "for i = 1, 5 do\n  if i % 2 == 0 then goto continue end\n  io.write(i, \" \")\n  ::continue::\nend\nprint()\ndo\n  local k = 1\n  ::top::\n  k = k + 1\n  if k < 4 then goto top end\n  print(k)\nend\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1 3 5 \n4\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "do_blocks_scope",
+   "code": "local x = 1\ndo local x = 2 print(x) end\nprint(x)\nlocal y <const> = 5\nprint(y)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "2\n1\n5\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "metatable_arith",
+   "code": "local V = {}\nV.__index = V\nlocal function vec(x, y) return setmetatable({x = x, y = y}, V) end\nV.__add = function(a, b) return vec(a.x + b.x, a.y + b.y) end\nV.__sub = function(a, b) return vec(a.x - b.x, a.y - b.y) end\nV.__mul = function(a, b) if type(a) == \"number\" then return vec(a * b.x, a * b.y) end return vec(a.x * b, a.y * b) end\nV.__unm = function(a) return vec(-a.x, -a.y) end\nV.__eq = function(a, b) return a.x == b.x and a.y == b.y end\nV.__lt = function(a, b) return a.x < b.x end\nV.__le = function(a, b) return a.x <= b.x end\nV.__tostring = function(a) return \"(\" .. a.x .. \",\" .. a.y .. \")\" end\nV.__concat = function(a, b) return tostring(a) .. \"&\" .. tostring(b) end\nV.__len = function(a) return 2 end\nV.__call = function(self, k) return self[k] end\nV.__idiv = function(a, b) return \"idiv\" end\nV.__mod = function(a, b) return \"mod\" end\nV.__pow = function(a, b) return \"pow\" end\nV.__div = function(a, b) return \"div\" end\nV.__band = function(a, b) return \"band\" end\nV.__shl = function(a, b) return \"shl\" end\nV.__bnot = function(a) return \"bnot\" end\nlocal a, b = vec(1, 2), vec(3, 4)\nprint(tostring(a + b), tostring(a - b), tostring(2 * a), tostring(a * 3), tostring(-a))\nprint(a == vec(1, 2), a ~= b, a < b, a <= b, a > b, #a, a(\"x\"), a .. b, a .. \"s\")\nprint(a // b, a % 1, 2 ^ a, a / a, a & 1, 1 << a, ~a)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "(4,6)\t(-2,-2)\t(2,4)\t(3,6)\t(-1,-2)\ntrue\ttrue\ttrue\ttrue\tfalse\t2\t1\t(1,2)&(3,4)\t(1,2)&s\nidiv\tmod\tpow\tdiv\tband\tshl\tbnot\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "index_newindex",
+   "code": "local defaults = {color = \"red\", size = 1}\nlocal t = setmetatable({}, {__index = defaults})\nprint(t.color, t.size, t.other, rawget(t, \"color\"))\nlocal log = {}\nlocal proxy = setmetatable({}, {__index = function(_, k) return k .. \"!\" end, __newindex = function(t, k, v) rawset(t, k, v * 2); log[#log + 1] = k end})\nproxy.a = 5\nprint(proxy.a, proxy.b, table.concat(log, \",\"))\nlocal chain = setmetatable({}, {__index = setmetatable({}, {__index = {deep = \"found\"}})})\nprint(chain.deep)\nlocal ro = setmetatable({}, {__newindex = function() error(\"read-only table\", 2) end})\nprint(pcall(function() ro.x = 1 end))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "red\t1\tnil\tnil\n10\tb!\ta\nfound\nfalse\tprog.lua:11: read-only table\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "metatable_protection",
+   "code": "local t = setmetatable({}, {__metatable = \"locked\"})\nprint(getmetatable(t), pcall(setmetatable, t, {}))\nprint(getmetatable(\"abc\").__index == string, (\"x\"):upper())\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "locked\tfalse\tcannot change a protected metatable\ntrue\tX\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "inheritance",
+   "code": "local Animal = {} Animal.__index = Animal\nfunction Animal.new(name, sound) local self = setmetatable({}, Animal) self.name = name self.sound = sound return self end\nfunction Animal:speak() return self.name .. \" says \" .. self.sound end\nlocal Dog = setmetatable({}, {__index = Animal}) Dog.__index = Dog\nfunction Dog.new(name) local self = Animal.new(name, \"woof\") return setmetatable(self, Dog) end\nfunction Dog:fetch() return self.name .. \" fetches\" end\nlocal d = Dog.new(\"Rex\")\nprint(d:speak(), d:fetch(), getmetatable(d) == Dog)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "Rex says woof\tRex fetches\ttrue\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "eq_only_same_types",
+   "code": "local mt = {__eq = function() return true end}\nlocal a, b = setmetatable({}, mt), setmetatable({}, mt)\nprint(a == b, a == 1, rawequal(a, b), a ~= b)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "true\tfalse\tfalse\tfalse\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "close_variables",
+   "code": "do\n  local x <close> = setmetatable({}, {__close = function(o, e) print(\"closing x\", e) end})\n  local y <close> = setmetatable({}, {__close = function(o, e) print(\"closing y\", e) end})\n  print(\"in block\")\nend\nprint(pcall(function()\n  local z <close> = setmetatable({}, {__close = function(o, e) print(\"closing z with\", e) end})\n  error(\"boom\")\nend))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "in block\nclosing y\tnil\nclosing x\tnil\nclosing z with\tprog.lua:8: boom\nfalse\tprog.lua:8: boom\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "error_values_and_levels",
+   "code": "print(pcall(error, \"msg\"))\nprint(pcall(error, \"msg\", 0))\nlocal ok, e = pcall(error, {code = 42}) print(ok, type(e), e.code)\nprint(select(2, pcall(error)))\nlocal function f() error(\"deep\", 2) end\nlocal function g() f() end\nprint(pcall(g))\nprint(pcall(function() error(\"lvl1\") end))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "false\tmsg\nfalse\tmsg\nfalse\ttable\t42\nnil\nfalse\tprog.lua:6: deep\nfalse\tprog.lua:8: lvl1\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "runtime_error_messages",
+   "code": "local t = nil\nprint(pcall(function() return t.x end))\nprint(pcall(function() local a = {} return a.b.c end))\nprint(pcall(function() undefinedfn() end))\nprint(pcall(function() local s = \"x\" return s + 1 end))\nprint(pcall(function() return #nil end))\nprint(pcall(function() return {} .. \"x\" end))\nprint(pcall(function() local q = {} q.f() end))\nprint(pcall(string.rep))\nprint(pcall(string.sub))\nprint(pcall(setmetatable, 1, {}))\nprint(pcall(ipairs))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "false\tprog.lua:2: attempt to index a nil value (upvalue 't')\nfalse\tprog.lua:3: attempt to index a nil value (field 'b')\nfalse\tprog.lua:4: attempt to call a nil value (global 'undefinedfn')\nfalse\tprog.lua:5: attempt to add a 'string' with a 'number'\nfalse\tprog.lua:6: attempt to get length of a nil value\nfalse\tprog.lua:7: attempt to concatenate a table value\nfalse\tprog.lua:8: attempt to call a nil value (field 'f')\nfalse\tbad argument #1 to 'string.rep' (string expected, got no value)\nfalse\tbad argument #1 to 'string.sub' (string expected, got no value)\nfalse\tbad argument #1 to 'setmetatable' (table expected, got number)\nfalse\tbad argument #1 to 'ipairs' (value expected)\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "xpcall_handler",
+   "code": "print(xpcall(function() error(\"oops\") end, function(m) return \"handled: \" .. m end))\nprint(xpcall(function(a, b) return a + b end, print, 3, 4))\nprint(xpcall(function() local x = nil; return x.y end, function(m) return (m:gsub(\"^.-:%d+: \", \"\")) end))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "false\thandled: prog.lua:1: oops\ntrue\t7\nfalse\tattempt to index a nil value (local 'x')\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "assert_forms",
+   "code": "print(pcall(assert, false))\nprint(pcall(assert, nil, \"custom\"))\nprint(pcall(assert, 1 == 1, \"unused\"))\nprint(select(\"#\", assert(1, 2, 3)))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "false\tassertion failed!\nfalse\tcustom\ntrue\ttrue\tunused\n3\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "uncaught_error_exit",
+   "code": "print(\"before\")\nlocal t = {}\nt.x.y = 1\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "before\n",
+   "stderr": "lua5.4: prog.lua:3: attempt to index a nil value (field 'x')\nstack traceback:\n\tprog.lua:3: in main chunk\n\t[C]: in ?\n",
+   "exit": 1
+  },
+  {
+   "name": "uncaught_error_object",
+   "code": "error(setmetatable({}, {__tostring = function() return \"custom error object\" end}))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "",
+   "stderr": "lua5.4: custom error object\n",
+   "exit": 1
+  },
+  {
+   "name": "syntax_error",
+   "code": "print(\"not reached\")\nlocal x = = 1\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "",
+   "stderr": "lua5.4: prog.lua:2: unexpected symbol near '='\n",
+   "exit": 1
+  },
+  {
+   "name": "os_exit_code",
+   "code": "print(\"bye\")\nos.exit(3)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "bye\n",
+   "stderr": "",
+   "exit": 3
+  },
+  {
+   "name": "coroutine_basic",
+   "code": "local co = coroutine.create(function(a, b)\n  print(\"start\", a, b)\n  local c = coroutine.yield(a + b)\n  print(\"got\", c)\n  local d, e = coroutine.yield(c * 2)\n  return d + e\nend)\nprint(coroutine.resume(co, 1, 2))\nprint(coroutine.status(co))\nprint(coroutine.resume(co, 10))\nprint(coroutine.resume(co, 3, 4))\nprint(coroutine.status(co), coroutine.resume(co))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "start\t1\t2\ntrue\t3\nsuspended\ngot\t10\ntrue\t20\ntrue\t7\ndead\tfalse\tcannot resume dead coroutine\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "coroutine_wrap_generator",
+   "code": "local function range(n) return coroutine.wrap(function() for i = 1, n do coroutine.yield(i) end end) end\nlocal s = 0 for i in range(10) do s = s + i end print(s)\nlocal function perm(a, n, out)\n  n = n or #a\n  if n <= 1 then coroutine.yield(table.concat(a)) else\n    for i = 1, n do a[n], a[i] = a[i], a[n]; perm(a, n - 1); a[n], a[i] = a[i], a[n] end\n  end\nend\nlocal all = {}\nfor p in coroutine.wrap(function() perm({\"a\", \"b\", \"c\"}) end) do all[#all + 1] = p end\ntable.sort(all) print(table.concat(all, \" \"))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "55\nabc acb bac bca cab cba\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "coroutine_errors_and_status",
+   "code": "local co = coroutine.create(function() error(\"inside\") end)\nprint(coroutine.resume(co))\nprint(coroutine.status(co), coroutine.resume(co))\nlocal th, main = coroutine.running() print(coroutine.isyieldable(), type(th), main)\nlocal w = coroutine.wrap(function() error({1}) end)\nlocal ok2, e2 = pcall(w) print(ok2, type(e2), e2[1])\nlocal co2 = coroutine.create(function() print(coroutine.isyieldable(), coroutine.status(coroutine.running())) end)\ncoroutine.resume(co2)\nlocal co3 = coroutine.create(function() coroutine.yield() end)\ncoroutine.resume(co3)\nprint(coroutine.close(co3), coroutine.status(co3))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "false\tprog.lua:1: inside\ndead\tfalse\tcannot resume dead coroutine\nfalse\tthread\ttrue\nfalse\ttable\t1\ntrue\trunning\ntrue\tdead\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "producer_consumer",
+   "code": "local producer = coroutine.create(function()\n  for _, item in ipairs({\"a\", \"b\", \"c\"}) do coroutine.yield(item) end\n  return \"done\"\nend)\nwhile true do\n  local ok, v = coroutine.resume(producer)\n  if coroutine.status(producer) == \"dead\" then print(\"final\", v) break end\n  print(\"consumed\", v)\nend\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "consumed\ta\nconsumed\tb\nconsumed\tc\nfinal\tdone\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "load_chunks",
+   "code": "local f = load(\"return 1 + 2\") print(f())\nlocal g = load(\"local a, b = ... return a * b\") print(g(6, 7))\nprint(load(\"syntax error here\"))\nlocal env = {print = print, x = 99}\nlocal h = load(\"x = x + 1 return x\", \"chunk\", \"t\", env) print(h(), env.x, x)\nlocal parts = {\"return \", \"4\", \"2\"}\nlocal i = 0\nprint(load(function() i = i + 1 return parts[i] end)())\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "3\n42\nnil\t[string \"syntax error here\"]:1: syntax error near 'error'\n100\t100\tnil\n42\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "global_env",
+   "code": "x = 10\nprint(_G.x, _G._G == _G)\n_G.y = 20\nprint(y)\nlocal _ENV = {print = print}\nz = 5\nprint(z)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "10\ttrue\n20\n5\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "io_read_formats",
+   "code": "local n = io.read(\"n\")\nlocal rest = io.read(\"l\")\nlocal line = io.read(\"L\")\nlocal num2 = io.read(\"n\")\nlocal all = io.read(\"a\")\nprint(n, math.type(n), \"[\" .. rest .. \"]\", line, num2, #all)\nprint(io.read(\"l\"), io.read(\"a\"))\n",
+   "stdin": "42 tail\nsecond line\n3.5\nremaining\ntext\n",
+   "args": [],
+   "stdout": "42\tinteger\t[ tail]\tsecond line\n\t3.5\t16\nnil\t\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "io_lines_and_write",
+   "code": "local total, count = 0, 0\nfor line in io.lines() do count = count + 1 total = total + tonumber(line:match(\"%d+\")) end\nio.write(\"lines: \", count, \", sum: \", total, \"\\n\")\nio.write(1, \" \", 2.5, \"\\n\")\n",
+   "stdin": "a 10\nb 20\nc 30\n",
+   "args": [],
+   "stdout": "lines: 3, sum: 60\n1 2.5\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "args_table",
+   "code": "print(#arg, arg[1], arg[2], arg[0])\nprint(...)\n",
+   "stdin": "",
+   "args": [
+    "first",
+    "second arg"
+   ],
+   "stdout": "2\tfirst\tsecond arg\tprog.lua\nfirst\tsecond arg\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "json_like_serializer",
+   "code": "local function ser(v, ind)\n  ind = ind or \"\"\n  local t = type(v)\n  if t == \"table\" then\n    local keys = {}\n    for k in pairs(v) do keys[#keys + 1] = k end\n    table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)\n    local out = {}\n    for _, k in ipairs(keys) do out[#out + 1] = ind .. \"  \" .. tostring(k) .. \": \" .. ser(v[k], ind .. \"  \") end\n    return \"{\\n\" .. table.concat(out, \",\\n\") .. \"\\n\" .. ind .. \"}\"\n  elseif t == \"string\" then return string.format(\"%q\", v)\n  else return tostring(v) end\nend\nprint(ser({name = \"x\", list = {1, 2, {a = true}}, n = 1.5, z = false}))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "{\n  list: {\n    1: 1,\n    2: 2,\n    3: {\n      a: true\n    }\n  },\n  n: 1.5,\n  name: \"x\",\n  z: false\n}\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "sieve_primes",
+   "code": "local N = 200\nlocal is = {}\nfor i = 2, N do is[i] = true end\nfor i = 2, math.floor(math.sqrt(N)) do if is[i] then for j = i * i, N, i do is[j] = false end end end\nlocal out = {}\nfor i = 2, N do if is[i] then out[#out + 1] = i end end\nprint(#out, table.concat(out, \" \", 1, 15), out[#out])\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "46\t2 3 5 7 11 13 17 19 23 29 31 37 41 43 47\t199\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "string_builder_wordcount",
+   "code": "local text = [[the quick brown fox jumps over the lazy dog the fox]]\nlocal counts = {}\nfor w in text:gmatch(\"%a+\") do counts[w] = (counts[w] or 0) + 1 end\nlocal words = {}\nfor w, n in pairs(counts) do words[#words + 1] = {w = w, n = n} end\ntable.sort(words, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.w < b.w end)\nfor i = 1, 4 do io.write(words[i].w, \"=\", words[i].n, \" \") end print()\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "the=3 fox=2 brown=1 dog=1 \n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "queue_class_and_errors",
+   "code": "local Queue = {}\nQueue.__index = Queue\nfunction Queue.new() return setmetatable({first = 1, last = 0, items = {}}, Queue) end\nfunction Queue:push(v) self.last = self.last + 1 self.items[self.last] = v end\nfunction Queue:pop()\n  if self.first > self.last then error(\"queue is empty\", 2) end\n  local v = self.items[self.first]; self.items[self.first] = nil; self.first = self.first + 1; return v\nend\nlocal q = Queue.new()\nfor i = 1, 3 do q:push(i * i) end\nprint(q:pop(), q:pop(), q:pop())\nprint(pcall(q.pop, q))\nprint(pcall(function() return q:pop() end))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1\t4\t9\nfalse\tqueue is empty\nfalse\tqueue is empty\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "memoize_and_varargs_key",
+   "code": "local function memoize(f)\n  local cache = {}\n  return function(...)\n    local key = table.concat({...}, \",\")\n    if cache[key] == nil then cache[key] = f(...) end\n    return cache[key]\n  end\nend\nlocal calls = 0\nlocal slow = memoize(function(a, b) calls = calls + 1 return a ^ b end)\nprint(slow(2, 10), slow(2, 10), slow(3, 2), calls)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "1024.0\t1024.0\t9.0\t2\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "matrix_multiply",
+   "code": "local function mat(n) local m = {} for i = 1, n do m[i] = {} for j = 1, n do m[i][j] = i + j end end return m end\nlocal function mul(a, b)\n  local n, c = #a, {}\n  for i = 1, n do c[i] = {} for j = 1, n do local s = 0 for k = 1, n do s = s + a[i][k] * b[k][j] end c[i][j] = s end end\n  return c\nend\nlocal c = mul(mat(4), mat(4))\nfor i = 1, 4 do print(table.concat(c[i], \" \")) end\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "54 68 82 96\n68 86 104 122\n82 104 126 148\n96 122 148 174\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "gsub_template_engine",
+   "code": "local tpl = \"Dear ${name}, you owe ${amount} (${missing}).\"\nlocal vars = {name = \"Bob\", amount = string.format(\"%.2f\", 12.5)}\nprint((tpl:gsub(\"%${(%w+)}\", function(k) return vars[k] end)))\nlocal csv = \"a,b,,d\"\nlocal fields = {}\nfor f in (csv .. \",\"):gmatch(\"([^,]*),\") do fields[#fields + 1] = \"<\" .. f .. \">\" end\nprint(table.concat(fields), #fields)\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "Dear Bob, you owe 12.50 (${missing}).\n<a><b><><d>\t4\n",
+   "stderr": "",
+   "exit": 0
+  },
+  {
+   "name": "integer_float_keys",
+   "code": "local t = {}\nt[1] = \"int\"; t[1.0] = \"float overwrites\"; t[2.5] = \"real\"\nprint(t[1], #t, t[2.5])\nt[\"1\"] = \"string key\"\nprint(t[1], t[\"1\"])\nprint(pcall(function() t[0/0] = 1 end))\nprint(pcall(function() t[nil] = 1 end))\n",
+   "stdin": "",
+   "args": [],
+   "stdout": "float overwrites\t1\treal\nfloat overwrites\tstring key\nfalse\tprog.lua:6: table index is NaN\nfalse\tprog.lua:7: table index is nil\n",
+   "stderr": "",
+   "exit": 0
+  }
+ ]
+}

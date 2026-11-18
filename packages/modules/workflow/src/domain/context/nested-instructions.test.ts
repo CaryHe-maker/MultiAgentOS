@@ -137,4 +137,23 @@ describe('instructionsToLoad', () => {
     ];
     expect(toLoad(records)).toEqual(['a/AGENTS.md']);
   });
+
+  it('does not count a load that a rollback took back (Orchestration 7.5)', () => {
+    const first = loaded('a/AGENTS.md');
+    const records = [
+      first,
+      line({
+        type: 'ROLLED_BACK',
+        checkpointId: 'ckp_01ABCDEFGHJKMNPQRSTVWXYZ00',
+        label: 'user input',
+        cutSeq: first.seq,
+        fromSeq: first.seq,
+        cancelledMissionIds: [],
+        files: 1,
+        undo: true,
+      }),
+      ...read(['a/AGENTS.md']),
+    ];
+    expect(toLoad(records)).toEqual(['a/AGENTS.md']);
+  });
 });

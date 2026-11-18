@@ -8,7 +8,7 @@ import type {
 } from '@multiagentos/contracts';
 
 /**
- * A Supervisor that does nothing by itself (M2Plan S3-CT-1): it keeps what it was asked and lets
+ * A Supervisor that does nothing by itself (Interface/KernelSupervisor): it keeps what it was asked and lets
  * a test decide how each execution ends. Like the real one it reports exactly one fact per
  * execution, answers a cancellation with TERMINATED and the reason, and ignores a cancellation of
  * an unknown, finished or other-epoch execution. It follows Interface/KernelSupervisor and does
@@ -124,6 +124,7 @@ export function createFakeSupervisor(
       if (pending === undefined || pending.runEpoch !== request.runEpoch) return;
       await end(request.executionId, { outcome: 'TERMINATED' }, request.reason);
     },
+    controlJob: () => Promise.resolve({ found: false as const }),
     shutdown: (request) => {
       shutdowns.push(request);
       return Promise.resolve();

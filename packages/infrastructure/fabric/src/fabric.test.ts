@@ -20,7 +20,7 @@ const context: BoundaryContext = {
   tenantId: 'local',
   projectId: 'local',
 };
-const request: ShutdownRequest = { requestId: 'req_123456' };
+const request: ShutdownRequest = { requestId: 'req_123456', source: 'EXIT_COMMAND' };
 
 async function started(): Promise<InProcessFabric> {
   const fabric = new InProcessFabric(createProtocolRegistry());
@@ -134,7 +134,7 @@ describe('InProcessFabric', () => {
         eventId: 'evt_123456',
         seq: 1,
         occurredAt: '2026-10-21T00:00:00.000Z',
-        event: { type: 'SessionListQuery', queryId: 'slq_123456', repositoryRoot: '/repo' },
+        event: { type: 'SessionListQuery', queryId: 'slq_123456' },
       },
       context,
     );

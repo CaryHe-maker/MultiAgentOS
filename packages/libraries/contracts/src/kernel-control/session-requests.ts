@@ -20,7 +20,12 @@ export const StartSessionRequestSchema = Type.Union(
 export type StartSessionRequest = Static<typeof StartSessionRequestSchema>;
 
 export const OpenSessionRequestSchema = closed(
-  { requestId: IdSchemas.requestId, sessionId: IdSchemas.sessionId },
+  {
+    requestId: IdSchemas.requestId,
+    sessionId: IdSchemas.sessionId,
+    /** The user agreed to work on a Session of another folder in this one (M2Design 2.3). */
+    confirmWorkspaceChange: Type.Optional(Type.Boolean()),
+  },
   'kernel.control.OpenSessionRequest.v1',
 );
 export type OpenSessionRequest = Static<typeof OpenSessionRequestSchema>;

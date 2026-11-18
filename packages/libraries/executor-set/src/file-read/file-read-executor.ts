@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   MEDIA_TYPES,
   isExcluded,
+  normalizeRequestPath,
   sha256Hex,
   type Executor,
   type ExecutorEnvironment,
@@ -11,7 +12,9 @@ import {
 import { completed, guarded, rejected, throwIfAborted, violation } from '../outcome/outcomes.js';
 import { readGuardedFile, type GuardHooks } from '../repository-access/guarded-file.js';
 import {
+  isWithinScope,
   resolveRepositoryScope,
+  shownPath,
   type RepositoryScope,
 } from '../repository-access/repository-scope.js';
 import { previewLimitsOf } from '../retention/retention.js';
@@ -63,21 +66,28 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
   throwIfAborted(environment.signal);
   const scope = await resolveRepositoryScope(environment.scope);
   if (scope === undefined) return violation('SCOPE_MISSING');
+  // An external call stays below the path it was allowed for, and shows full paths.
+  const asked = normalizeRequestPath(input.path);
+  if (scope.external !== undefined && (asked === undefined || !isWithinScope(scope, asked)))
+    return rejected('OUT_OF_SCOPE');
   const read = await readGuardedFile(scope, input.path, hooks);
   if (!read.ok) return read.outcome;
   throwIfAborted(environment.signal);
-  const nested = await nestedInstructionsOf(scope, read.file.path);
+  const shown = shownPath(scope, read.file.path);
+  // Another folder's `AGENTS.md` is not this project's instructions: none are looked for there.
+  const nested =
+    scope.external === undefined ? await nestedInstructionsOf(scope, read.file.path) : [];
   const found = nested.length === 0 ? {} : { nestedInstructions: [...nested] };
   const document = parseText(read.file.content);
   const totalLines = document.lines.length;
   const fileSha256 = sha256Hex(read.file.content);
-  const asked = input.startLine !== undefined || input.endLine !== undefined;
+  const ranged = input.startLine !== undefined || input.endLine !== undefined;
 
   if (totalLines === 0) {
-    if (asked) return rejected('INVALID_RANGE');
+    if (ranged) return rejected('INVALID_RANGE');
     return completed({
       output: {
-        path: read.file.path,
+        path: shown,
         startLine: 1,
         endLine: 0,
         totalLines: 0,
@@ -85,7 +95,7 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
         fileSha256,
         ...found,
       },
-      artifact: { mediaType: MEDIA_TYPES.fileText, text: `${read.file.path} (empty file)` },
+      artifact: { mediaType: MEDIA_TYPES.fileText, text: `${shown} (empty file)` },
     });
   }
 
@@ -112,7 +122,7 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
       : '';
   return completed({
     output: {
-      path: read.file.path,
+      path: shown,
       startLine,
       endLine,
       totalLines,
@@ -122,7 +132,7 @@ async function readFile(input: FileReadInput, environment: ExecutorEnvironment, 
     },
     artifact: {
       mediaType: MEDIA_TYPES.fileText,
-      text: `${read.file.path} (lines ${String(startLine)}-${String(endLine)} of ${String(totalLines)})\n${numberLines(document.lines.slice(startLine - 1, endLine), startLine)}${rest}`,
+      text: `${shown} (lines ${String(startLine)}-${String(endLine)} of ${String(totalLines)})\n${numberLines(document.lines.slice(startLine - 1, endLine), startLine)}${rest}`,
     },
   });
 }

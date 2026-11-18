@@ -32,7 +32,7 @@ export const DefinitionKindSchema = Type.Enum(DEFINITION_KINDS, {
   $id: 'catalog.DefinitionKind.v1',
 });
 
-/** Stable logical identity, lower kebab-case, e.g. `code-viewer`. */
+/** Stable logical identity, lower kebab-case, e.g. `fix-verify`. */
 export const DefinitionIdSchema = Type.String({
   pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$',
   maxLength: 64,
@@ -130,6 +130,11 @@ export const PROTECTED_CAPABILITIES = [
   /** The two web tools (M2Design 5.2, 8.1); asked per WorkflowRun and per host. */
   'web.search',
   'web.fetch',
+  /**
+   * Reading outside the workspace, by absolute path (M2Design 5.2): dangerous, asked once for each
+   * external repository and per WorkflowRun, and only the main Agent has it.
+   */
+  'external.read',
   /** Only a top-level AgentRun has it: a SubAgent cannot spawn (M2Design 5.2, 5.4). */
   'agent.spawn',
 ] as const;
@@ -146,6 +151,33 @@ export function capabilitiesUnderPreset(
   return capabilities.filter((c) => preset === 'standard' || SAFE_CAPABILITIES.has(c));
 }
 
+/**
+ * Commands are offered when they can run isolated, or when the user chose to be asked about
+ * running them without isolation (M2Design 6.2).
+ */
+export function commandsOffered(
+  sandboxAvailable: boolean,
+  unavailablePolicy: 'deny' | 'ask-unisolated',
+): boolean {
+  return sandboxAvailable || unavailablePolicy === 'ask-unisolated';
+}
+
+/**
+ * What an Agent asks for when it is started, whoever starts it: its capabilities under the start
+ * preset, without the command ones where commands cannot run here. The tools the model is offered
+ * come from this and from nothing else, so the one function serves the registration of an AgentRun
+ * and every request that must begin as that AgentRun's requests do (the compaction of its context).
+ */
+export function requestedCapabilitiesOf(
+  capabilities: readonly ProtectedCapability[],
+  preset: 'standard' | 'readonly',
+  commands: boolean,
+): readonly ProtectedCapability[] {
+  return capabilitiesUnderPreset(capabilities, preset).filter(
+    (capability) => commands || (capability !== 'command.exec' && capability !== 'command.network'),
+  );
+}
+
 export const AgentDefinitionSchema = Type.Object(
   {
     ...header('AGENT'),
@@ -160,7 +192,6 @@ export const AgentDefinitionSchema = Type.Object(
     ),
     promptRef: DefinitionRefSchema,
     unitRefs: UniqueRefs({ minItems: 1 }),
-    startUnitRefs: UniqueRefs({ minItems: 0 }),
     /** How this Agent may end; a tool that is not declared here cannot end it. */
     actions: Type.Object(
       {
@@ -168,14 +199,14 @@ export const AgentDefinitionSchema = Type.Object(
           Type.Object(
             {
               toolRef: DefinitionRefSchema,
-              then: Type.Enum(['PUBLISH_REPLY', 'PUBLISH_REPORT', 'HANDOFF', 'FINISH_SUBAGENT']),
+              then: Type.Enum(['PUBLISH_REPLY', 'FINISH_SUBAGENT']),
               allowedInFinal: Type.Boolean(),
             },
             { additionalProperties: false },
           ),
           { minItems: 1 },
         ),
-        onDegraded: Type.Enum(['PUBLISH_NOTICE', 'PUBLISH_REPORT', 'RETURN_PARTIAL']),
+        onDegraded: Type.Enum(['PUBLISH_NOTICE', 'RETURN_PARTIAL']),
         /** The `update_todos` tool, which ends nothing (M2Design 3.5). */
         todos: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
@@ -186,6 +217,32 @@ export const AgentDefinitionSchema = Type.Object(
         ),
         /** The `run_subagents` tool of an Agent whose ceiling has `agent.spawn` (M2Design 3.6). */
         spawn: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        /** The `sleep` tool: the segment ends and the task waits to be woken (Orchestration 4.1). */
+        sleep: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        /** The `send_message` tool: a message to tasks along the tree (Orchestration 5). */
+        message: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        /** The `view_tasks` tool: the task tree as it is now (Orchestration 3.7). */
+        viewTasks: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        /** The `stop_subagents` tool of an Agent that spawns (Orchestration 5.1). */
+        stop: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        /** The job tools of an Agent that runs commands (Orchestration 6.2). */
+        jobOutput: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        jobList: Type.Optional(
+          Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        jobKill: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
         ),
       },
@@ -283,6 +340,8 @@ export const ToolDefinitionSchema = Type.Object(
     modelDescription: TextSchema(4_000),
     /** For a UNIT tool, the inputContract of its Unit, or the part of it the model writes. */
     parametersContract: ContractRefSchema,
+    /** The tool is the answer to the user, such as the reply: the console says so while the model writes it. */
+    answer: Type.Optional(Type.Boolean()),
     riskClass: Type.Union([
       Type.Literal('READ_ONLY'),
       Type.Literal('LOW'),
@@ -429,27 +488,69 @@ export const ModelDefinitionSchema = Type.Object(
 export type ModelDefinition = DeepReadonly<Static<typeof ModelDefinitionSchema>>;
 
 const NodeNameSchema = Type.String({ pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$', maxLength: 64 });
-const ScalarSchema = Type.Union([Type.String(), Type.Boolean()]);
 
-/** Exactly one of `equals` and `in`; the field is a path into the predecessor's result. */
-export const EdgeConditionSchema = Type.Refine(
-  Type.Object(
-    {
-      field: TextSchema(128),
-      equals: Type.Optional(ScalarSchema),
-      in: Type.Optional(Type.Array(ScalarSchema, { minItems: 1 })),
-    },
-    { additionalProperties: false },
-  ),
-  (condition) => (condition.equals === undefined) !== (condition.in === undefined),
-  () => 'exactly one of equals and in must be present',
+/**
+ * The playbook of a pre-orchestrated template (Orchestration 3.9, D39): what its specialist
+ * follows. Phases come in order; a phase with `tasks` is one `run_subagents` call of the
+ * specialist, of tasks of that Agent and in that number, which the system checks; `repeat` lets it come
+ * again (a bounded loop); `optional` lets it be passed over. `example` is a worked plan the root
+ * reads first (D32).
+ */
+export const PlaybookPhaseSchema = Type.Object(
+  {
+    name: NodeNameSchema,
+    /** What the root does at this phase: how it writes the goals, what it decides. */
+    instructions: TextSchema(2_000),
+    tasks: Type.Optional(
+      Type.Object(
+        {
+          agent: Type.Enum(['explorer', 'worker']),
+          min: Type.Integer({ minimum: 1, maximum: 8 }),
+          max: Type.Integer({ minimum: 1, maximum: 8 }),
+          /**
+           * `inherit`: the tasks of this phase start with the whole context of the specialist as
+           * it stood at the call, so they read nothing again (Orchestration 3.9, D35). Set by the template, never chosen by the model.
+           */
+          context: Type.Optional(Type.Literal('inherit')),
+        },
+        { additionalProperties: false },
+      ),
+    ),
+    /** How many times in all the phase may run (a bounded loop); 1 when absent. */
+    repeat: Type.Optional(Type.Integer({ minimum: 1, maximum: 10 })),
+    optional: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
 );
-export type EdgeCondition = Static<typeof EdgeConditionSchema>;
+export type PlaybookPhase = Static<typeof PlaybookPhaseSchema>;
 
-const TemplateDependencySchema = Type.Union([
-  NodeNameSchema,
-  Type.Object({ node: NodeNameSchema, when: EdgeConditionSchema }, { additionalProperties: false }),
-]);
+export const PlaybookSchema = Type.Object(
+  {
+    /** One line for the caller: what the template is for and when to use it. */
+    summary: TextSchema(400),
+    /**
+     * What the root needs to find in the goal its caller wrote (D39), such as the
+     * command that shows a failure. The caller passes no fields of its own; the root reads these
+     * with its task and works out the rest.
+     */
+    params: Type.Array(
+      Type.Object(
+        {
+          name: Type.String({ pattern: '^[a-z][a-zA-Z0-9]{0,39}$' }),
+          description: TextSchema(400),
+          required: Type.Boolean(),
+        },
+        { additionalProperties: false },
+      ),
+      { maxItems: 8 },
+    ),
+    phases: Type.Array(PlaybookPhaseSchema, { minItems: 1, maxItems: 8 }),
+    /** A worked plan: a brief, what the root writes at each phase, and the report (D32). */
+    example: TextSchema(6_000),
+  },
+  { additionalProperties: false },
+);
+export type Playbook = Static<typeof PlaybookSchema>;
 
 export const TemplateNodeSchema = Type.Union([
   Type.Object(
@@ -458,9 +559,17 @@ export const TemplateNodeSchema = Type.Union([
       kind: Type.Literal('AGENT'),
       agent: DefinitionRefSchema,
       goal: Type.Optional(TextSchema(4_000)),
-      dependsOn: Type.Optional(Type.Array(TemplateDependencySchema)),
-      inputFrom: Type.Optional(Type.Literal('HANDOFF')),
+      dependsOn: Type.Optional(Type.Array(NodeNameSchema)),
       output: Type.Optional(Type.Boolean()),
+      /** A step of the template's root task, its one responsible owner (Orchestration 3.5). */
+      role: Type.Optional(Type.Literal('owner')),
+      /**
+       * What the Agent of this step reads with its goal (D32): worked examples of how to use the
+       * system well, written as the behaviour wanted.
+       */
+      guide: Type.Optional(TextSchema(60_000)),
+      /** A per-call input limit below the Agent's own, for this template only (D100). */
+      inputLimit: Type.Optional(Type.Integer({ minimum: 1 })),
     },
     { additionalProperties: false },
   ),
@@ -474,8 +583,26 @@ export type TemplateNode = Static<typeof TemplateNodeSchema>;
 export const TemplateDefinitionSchema = Type.Object(
   {
     ...header('TEMPLATE'),
-    origin: Type.Enum(['BUILTIN', 'REPOSITORY']),
+    /**
+     * The one responsible owner of the graph (Orchestration 3.5): the Agent of every node marked
+     * `role: owner`, which are the steps of the root task; every other AGENT node is a task below
+     * it. A template without one has its first AGENT node as the root.
+     */
+    owner: Type.Optional(
+      Type.Object({ agent: DefinitionRefSchema }, { additionalProperties: false }),
+    ),
     nodes: Type.Array(TemplateNodeSchema, { minItems: 1 }),
+    /**
+     * A pre-orchestrated template (Orchestration 3.9): what the specialist started with it
+     * follows. Its one node is that specialist.
+     */
+    playbook: Type.Optional(PlaybookSchema),
+    /**
+     * The specialist Agent a caller names in `run_subagents` to hand a part of the work to this
+     * template (Orchestration D39), for example `fixer`; one of the workflow's specialist Agents.
+     * A template has one exactly when it has a playbook.
+     */
+    agent: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$' })),
   },
   { additionalProperties: false, $id: 'catalog.TemplateDefinition.v1' },
 );

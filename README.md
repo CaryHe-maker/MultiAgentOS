@@ -5,7 +5,11 @@ MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执
 
 ## 快速开始
 
-M2 在开发中。当前可用的是阶段 1：在一个本地仓库上持续对话，Session 可以保存、切换和继续；系统只读，不修改仓库、不执行命令。
+当前版本 **M2 V1.0**，有两种模式：
+
+- **Turn-chat**（`mas`）：在一个本地仓库上持续对话，Agent 可以读、写、运行命令（在沙盒中）、联网、派生子任务；Session 可以保存、切换、回退、Fork 和继续，长对话自动压缩；写入、命令与联网都先询问。
+- **Mission**（`mas run "<目标>"`）：把一个目标作为长任务做到交付。根任务规划、把可以并行的部分派给子任务（worker、lead、explorer 与专家），子任务之间可以发消息、等待彼此，检查结果后交付；中途不等用户。
+
 以下在 Ubuntu 24.04 上执行，需要 Node.js 24（`>=24.19.0 <25`）、pnpm 11.25.0 与 DeepSeek 的 API key。
 
 ```bash
@@ -20,11 +24,25 @@ export DEEPSEEK_API_KEY=<你的 key>
 # 3. 进入对话；--repo 是要处理的仓库，缺省为当前目录
 node apps/control-plane/dist/bin.js --repo /home/me/projects/my-app
 
-# 或者运行内置模板 analyze，问题放在最后
-node apps/control-plane/dist/bin.js run --repo /home/me/projects/my-app analyze "登录失败时错误信息是在哪里生成的？"
+# 或者把一个目标作为长任务一直做到完成，结束后退出
+node apps/control-plane/dist/bin.js run --repo /home/me/projects/my-app "给登录失败加上清楚的错误信息，并补上测试"
+
+# 查看一个对话的时间线
+node apps/control-plane/dist/bin.js log --repo /home/me/projects/my-app
 ```
 
-第一次需要读仓库时，终端会询问是否允许；`/help` 列出 `/new`、`/resume`、`/sessions`、`/delete` 等指令。
+第一次需要读仓库时，终端会询问是否允许；`/help` 列出 `/new`、`/resume`、`/sessions`、`/undo`、`/compact` 等指令。完整说明见 [M2Usage](docs/M2/M2Usage.md)。
+
+## 实验结果
+
+在本项目设计的 5 道大任务（最终集：Lua 解释器、SQL 引擎、关系数据库、压缩与归档工具、三万字综述）上，Mission 与 DeepSeek Harness（`dsh`，单 Agent，同一模型 `deepseek-flash`、同一镜像、同一判分、同一时间上限）对照，每道各跑一次：
+
+| | 总用时（分钟） | 平均分 | 费用（美元） | 缓存命中率 |
+|---|---|---|---|---|
+| **Mission（M2 V1.0）** | **103.8** | 0.917 | 1.79 | 98.5% |
+| `dsh` | 126.6 | 0.931 | 1.07 | — |
+
+5 道里 4 道比 `dsh` 快（其中 3 道快 7–12 分钟），2 道分数高于 `dsh`、1 道同为满分；费用约为 1.7 倍，主要来自多个 Agent 各自的思考与检查。开发集上的大任务（awk、Python 子集、GNU 文本工具）Mission 都不低于 `dsh` 的分数，用时少 20%–49%。任务集、规则与逐次结果见 [TaskSet](docs/M2/TaskSet.md) 与 [experiments](docs/M2/experiments.md)，已知限制见 [M2Limitations](docs/M2/M2Limitations.md)。
 
 ## 架构
 
@@ -59,8 +77,8 @@ Execution -> Supervisor -> Executor 子进程运行 ExecutorSet 中的 Executor
 
 ## 当前交付范围
 
-M1（只读仓库分析）已发布，文档归档在 [History/M1](docs/History/M1/README.md)。当前开发 M2：范围与设计见 [M2Design](docs/M2/M2Design.md)，
-任务与阶段见 [M2Plan](docs/M2/M2Plan.md)，进度见 [M2OpenDecisions](docs/M2/M2OpenDecisions.md)。不应将架构文档中的长期能力理解为已经交付。
+M1（只读仓库分析）已发布，文档归档在 [History/M1](docs/History/M1/README.md)。当前版本 M2 V1.0：范围与设计见 [M2Design](docs/M2/M2Design.md)，编排见 [Orchestration](docs/M2/Orchestration.md)，
+使用见 [M2Usage](docs/M2/M2Usage.md)，限制见 [M2Limitations](docs/M2/M2Limitations.md)。不应将架构文档中的长期能力理解为已经交付。
 
 ## 仓库结构
 
@@ -85,10 +103,10 @@ packages/
   testing/                Fakes、Contract tests、架构测试和 fixtures
 docs/
   Architecture/         长期概念与架构
-  M2/                   当前交付范围、机制与接口
+  M2/                   M2 V1.0 的设计、使用、限制、评测、机制与接口
   Requirements/         当前依赖
   Meetings/             原始会议记录
-  History/              已归档的阶段工作文档，包括 M1
+  History/              已归档的文档：M1，以及 M2 开发过程中的旧计划与实测
   Style.md              工程协作规范
 ```
 
@@ -106,11 +124,11 @@ pnpm run build
 pnpm run check
 ```
 
-开发平台不限，最终验收在 Ubuntu 24.04 LTS 上执行。
+**支持的平台只有 Linux（规范版本 Ubuntu 24.04 LTS）和 Windows 上的 WSL2（Ubuntu 24.04）。M2 不适配 Windows 原生**：命令的沙盒是 bubblewrap，只有 Linux 有，Windows 原生没有，按设计拒绝运行命令；符号链接、进程、实例锁等也按 Linux 的语义实现。在 Windows 上请进入 WSL2 里运行与开发（`scripts/wsl-gate.sh` 可以在 WSL 里检查某个提交）。最终验收在 Ubuntu 24.04 LTS 上执行。
 检索在系统中有 `rg`（ripgrep）时使用它，否则使用内置扫描；本地运行全部测试需要安装 ripgrep，
 Ubuntu 上为 `sudo apt-get install -y ripgrep`。
 
-`pnpm run acceptance` 用真实模型运行固定任务集（不加 `--yes` 只列出费用上限）。
+`pnpm run gate:phase` 在 Ubuntu 24.04 上运行冻结的系统测试（每次发布前必须通过，任何测试被跳过都算失败）；`pnpm run eval` 是评测体系（[Evaluation](docs/M2/Evaluation.md)），真实模型的评测需要 `--yes` 与请求预算。
 
 精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)。代码、文档、Commit、分支与 Pull Request 规则见 [Style](docs/Style.md)。
 
@@ -123,5 +141,6 @@ Ubuntu 上为 `sudo apt-get install -y ripgrep`。
 - [运行实例](docs/Architecture/Instance.md)
 - [M2 文档](docs/M2/README.md)
 - [M1 归档](docs/History/M1/README.md)
+- [M2 历史（开发过程中的旧计划与实测）](docs/History/M2/README.md)
 
 所有合并到 `feat/M2` 或 `main` 的变更都必须通过 Pull Request。

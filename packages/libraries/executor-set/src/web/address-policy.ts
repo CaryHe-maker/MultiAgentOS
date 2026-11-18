@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
 import { lookup } from 'node:dns/promises';
 import { isForbiddenAddress } from '@multiagentos/contracts';
+import { WebFailure } from './providers.js';
 
 /**
  * The judgement of an address (`isForbiddenAddress`, `checkUrlLiteral`, `hostKeyOf`) is in
@@ -17,8 +18,17 @@ export {
 /** Resolves a host name to every address it has. */
 export type Resolve = (host: string) => Promise<readonly string[]>;
 
-export const systemResolve: Resolve = async (host) =>
-  (await lookup(host, { all: true, verbatim: true })).map((entry) => entry.address);
+export const systemResolve: Resolve = async (host) => {
+  try {
+    return (await lookup(host, { all: true, verbatim: true })).map((entry) => entry.address);
+  } catch (error) {
+    // A name that does not exist has no address (refused like any name without a public one); a
+    // lookup that cannot be made (no network, a resolver that is down) is a page not available now.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOTFOUND' || code === 'ENODATA') return [];
+    throw new WebFailure({ kind: 'FAILED', code: 'PAGE_UNAVAILABLE', retryable: true });
+  }
+};
 
 /** What an address policy is made of; tests may allow an address that production never would. */
 export interface AddressPolicy {

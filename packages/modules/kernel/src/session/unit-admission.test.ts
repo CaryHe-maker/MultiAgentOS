@@ -1,7 +1,7 @@
 import type { ExecutionKind, SubmitUnitRequest } from '@multiagentos/contracts';
 import { testUnitDefinition } from '@multiagentos/contracts/test-support';
 import { describe, expect, it } from 'vitest';
-import { closeRun, initialRunControl, openInitialTurn, type RunControl } from './run-control.js';
+import { closeRun, initialRunControl, openInitialInput, type RunControl } from './run-control.js';
 import { admitUnit, type AdmissionContext } from './unit-admission.js';
 
 const unitOf = (kind: ExecutionKind) => testUnitDefinition(kind);
@@ -17,7 +17,7 @@ const request = requestFor(fileRead);
 const pinned = (unit: Unit) => ({ state: 'ACTIVE', units: [unit], maxToolUnits: 10 }) as const;
 
 function openTurn(): RunControl {
-  const opened = openInitialTurn(initialRunControl(), 'trn_1');
+  const opened = openInitialInput(initialRunControl(), 'trn_1');
   if (!opened.accepted) throw new Error('no Turn');
   return opened.control;
 }
@@ -43,7 +43,7 @@ describe('admitUnit', () => {
   });
 
   it('checks the run before the AgentRun', () => {
-    expect(refusal({ control: initialRunControl(), agentRun: undefined })).toBe('NO_OPEN_TURN');
+    expect(refusal({ control: initialRunControl(), agentRun: undefined })).toBe('NO_OPEN_INPUT');
     expect(refusal({ control: closeRun(openTurn()) })).toBe('RUN_BLOCKED');
   });
 
@@ -60,18 +60,11 @@ describe('admitUnit', () => {
     );
   });
 
-  it('refuses kinds this stage cannot run, before reading the input', () => {
-    const command = unitOf('TEST');
-    expect(refusal({ agentRun: pinned(command), inputIsValid: () => false }, command)).toBe(
-      'UNSUPPORTED_CAPABILITY',
-    );
-  });
-
   it('refuses input outside the contract', () => {
     expect(refusal({ inputIsValid: () => false })).toBe('INVALID_INPUT');
   });
 
-  it.each(['CONTEXT_ASSEMBLE', 'MODEL', 'MESSAGE_PUBLISH', 'REPORT_PUBLISH'] as const)(
+  it.each(['CONTEXT_ASSEMBLE', 'MODEL', 'MESSAGE_PUBLISH'] as const)(
     'leaves %s outside the tool quota',
     (kind) => {
       const unit = unitOf(kind);

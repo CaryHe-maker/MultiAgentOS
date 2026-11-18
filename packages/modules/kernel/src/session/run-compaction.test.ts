@@ -25,23 +25,22 @@ const USAGE = { inputTokens: 100, outputTokens: 20, cachedInputTokens: 80 };
 const MAIN = { kind: 'MAIN' } as const;
 const CONFIG = {
   ...DEFAULT_KERNEL_CONFIG.compaction,
-  keepTokens: 1_000,
+  // Of the limit most of these use (100,000): 1,000 tokens.
+  keepRatio: 0.01,
   keepHumanBytes: 1_000,
   pruneMinBytes: 2_000,
   summaryMaxTokens: 500,
 };
 
 let seq = 0;
-const human = (size = 100, turnId = 'trn_aaaaaaaa'): ContextHistoryEntry => ({
+const human = (size = 100): ContextHistoryEntry => ({
   seq: (seq += 1),
-  turnId,
   category: 'NORMAL',
   kind: 'HUMAN',
   contentRef: ref(size),
 });
 const turn = (size = 200): ContextHistoryEntry => ({
   seq: (seq += 1),
-  turnId: 'trn_aaaaaaaa',
   category: 'NORMAL',
   kind: 'MODEL_TURN',
   modelId: 'm',
@@ -50,7 +49,6 @@ const turn = (size = 200): ContextHistoryEntry => ({
 });
 const result = (id: string, size: number): ContextHistoryEntry => ({
   seq: (seq += 1),
-  turnId: 'trn_aaaaaaaa',
   category: 'NORMAL',
   kind: 'TOOL_RESULT',
   toolCallId: id,
@@ -89,6 +87,7 @@ function ports(script: Script) {
     },
     sizeOf: (_target, list) => list.reduce((total, entry) => total + entryTokens(entry), 0),
     perCallInputLimit: () => script.limit ?? 50_000,
+    capTokens: () => Number.MAX_SAFE_INTEGER,
     prune: (_id, _target, candidates) => {
       log.push(`prune ${String(candidates.length)}`);
       return Promise.resolve(script.prune ?? { kind: 'OK', items: [] });
@@ -143,7 +142,7 @@ describe('the process of a compaction (Kernel/Core 6a)', () => {
     expect(outcome).toEqual({ kind: 'CHANGED', pruned: 1, summarised: false });
     expect(p.log).toEqual(['source', 'prune 1', 'record PRUNE']);
     expect(p.notified).toEqual([
-      { type: 'ContextCompacted', trigger: 'AUTO', compactedTurns: 0, prunedResults: 1 },
+      { type: 'ContextCompacted', trigger: 'AUTO', compactedInputs: 0, prunedResults: 1 },
     ]);
     expect(p.audits.map((entry) => entry.type)).toEqual(['COMPACTION_STARTED', 'COMPACTION_ENDED']);
   });
@@ -353,18 +352,6 @@ describe('the process of a compaction (Kernel/Core 6a)', () => {
       }),
     ).toEqual({ kind: 'CANCELLED' });
     expect(aborted.log).toEqual(['source']);
-  });
-
-  it('does not tell the user that an idle compaction failed', async () => {
-    const entries = big();
-    const p = ports({ entries, summaries: [{ kind: 'FAILED', usage: USAGE }], limit: 100_000 });
-    await new CompactionProcess(p.implementation).run({
-      trigger: 'IDLE',
-      target: MAIN,
-      currentTokens: 99_999,
-    });
-    expect(p.notified).toEqual([]);
-    expect(p.audits.at(-1)?.type).toBe('COMPACTION_FAILED');
   });
 
   it('does nothing when the run no longer asks for the material', async () => {

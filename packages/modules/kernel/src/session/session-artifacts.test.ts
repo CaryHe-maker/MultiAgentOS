@@ -9,7 +9,7 @@ import {
   type ArtifactStorePort,
 } from '@multiagentos/contracts';
 import { describe, expect, it } from 'vitest';
-import { publishMessage, publishReport } from './built-in-units.js';
+import { publishMessage } from './built-in-units.js';
 import { SessionArtifacts } from './session-artifacts.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -100,6 +100,21 @@ describe('ownership', () => {
     expect(await artifacts.read(ref)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
   });
 
+  it('registers an artifact before its body is written, so a sweep in between keeps it', async () => {
+    const { artifacts, lines, bodies } = setup();
+    let linesWhenWritten = -1;
+    // The body lands after the owner line: at that moment the index already names it.
+    const original = bodies.set.bind(bodies);
+    bodies.set = (key, value) => {
+      linesWhenWritten = lines.length;
+      return original(key, value);
+    };
+    const ref = await artifacts.put('a context pack', 'application/json', 'ONCE');
+    expect(linesWhenWritten).toBe(1);
+    expect(lines[0]?.artifactId).toBe(ref.artifactId);
+    expect((await artifacts.read(ref)).ok).toBe(true);
+  });
+
   it('treats a missing body as expired', async () => {
     const { artifacts, bodies } = setup();
     const ref = await artifacts.put('a', 'text/plain', 'SESSION');
@@ -114,6 +129,64 @@ describe('ownership', () => {
     advance(30 * DAY_MS);
     expect(lines).toHaveLength(1);
     expect(artifacts.owns(ref)).toBe(true);
+  });
+
+  it('keeps what a handover carries for the whole Session, as the full output it was', async () => {
+    const { artifacts, lines, advance } = setup();
+    const full = await artifacts.put('full', 'text/plain', 'EXPIRING', { fullOutput: true });
+    expect(await artifacts.retain([full])).toBe(true);
+    advance(30 * DAY_MS);
+    expect(await artifacts.read(full)).toEqual({ ok: true, text: 'full' });
+    expect(artifacts.isFullOutput(full)).toBe(true);
+    // Kept once: asking again changes nothing.
+    const written = lines.length;
+    expect(await artifacts.retain([full])).toBe(true);
+    expect(lines).toHaveLength(written);
+  });
+
+  it('keeps nothing when one of them is not of this Session or has expired', async () => {
+    const mine = setup();
+    const other = setup();
+    const ours = await mine.artifacts.put('a', 'text/plain', 'EXPIRING');
+    const theirs = await other.artifacts.put('b', 'text/plain', 'SESSION');
+    expect(await mine.artifacts.retain([ours, theirs])).toBe(false);
+    mine.advance(8 * DAY_MS);
+    expect(await mine.artifacts.retain([ours])).toBe(false);
+    expect(mine.artifacts.owns(ours)).toBe(false);
+  });
+
+  it('releases what was registered ONCE: it reads as expired at once, and only that', async () => {
+    const { artifacts, lines, open } = setup();
+    const once = await artifacts.put('pack', 'text/plain', 'ONCE');
+    const session = await artifacts.put('keep', 'text/plain', 'SESSION');
+    const expiring = await artifacts.put('full', 'text/plain', 'EXPIRING', { fullOutput: true });
+    expect(await artifacts.release([once, session, expiring])).toBe(once.size);
+    expect(await artifacts.read(once)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
+    expect(await artifacts.read(session)).toEqual({ ok: true, text: 'keep' });
+    expect(await artifacts.read(expiring)).toEqual({ ok: true, text: 'full' });
+    // Once: releasing again writes nothing and counts nothing.
+    const written = lines.length;
+    expect(await artifacts.release([once])).toBe(0);
+    expect(lines).toHaveLength(written);
+    // A Session opened again still finds it released.
+    const reopened = open();
+    await reopened.load();
+    expect(await reopened.read(once)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
+  });
+
+  it('keeps a ONCE artifact for the Session when a handover carries it, and never releases it', async () => {
+    const { artifacts } = setup();
+    const once = await artifacts.put('pack', 'text/plain', 'ONCE');
+    expect(await artifacts.retain([once])).toBe(true);
+    expect(await artifacts.release([once])).toBe(0);
+    expect(await artifacts.read(once)).toEqual({ ok: true, text: 'pack' });
+  });
+
+  it('expires a ONCE artifact that was never released, like an EXPIRING one', async () => {
+    const { artifacts, advance } = setup();
+    const once = await artifacts.put('pack', 'text/plain', 'ONCE');
+    advance(7 * DAY_MS);
+    expect(await artifacts.read(once)).toEqual({ ok: false, reasonCode: 'ARTIFACT_EXPIRED' });
   });
 
   it('stores a user input once per inputId', async () => {
@@ -192,21 +265,6 @@ describe('message-publish', () => {
     expect(await artifacts.read(result.outputRef)).toEqual({
       ok: true,
       text: '{"reason":"BUDGET_EXHAUSTED"}',
-    });
-  });
-});
-
-describe('report-publish', () => {
-  it('refuses a goal it cannot resolve and a report that is not valid', async () => {
-    const { artifacts } = setup();
-    const other = setup();
-    const foreign = await other.artifacts.put('goal', 'text/plain', 'SESSION');
-    expect(await publishReport({ goalRef: foreign, report: {} }, artifacts, 1000)).toMatchObject({
-      reasonCode: 'INVALID_ARTIFACT_REF',
-    });
-    const goalRef = await artifacts.put('goal', 'text/plain', 'SESSION');
-    expect(await publishReport({ goalRef, report: {} }, artifacts, 1000)).toMatchObject({
-      reasonCode: 'INVALID_INPUT',
     });
   });
 });

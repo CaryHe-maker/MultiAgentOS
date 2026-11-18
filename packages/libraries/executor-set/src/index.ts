@@ -17,7 +17,6 @@ import { createModelCallExecutor } from './model-call/model-call-executor.js';
 import { FileDigestCache } from './repository-access/file-set.js';
 import { readGuardedFile } from './repository-access/guarded-file.js';
 import { resolveRepositoryScope } from './repository-access/repository-scope.js';
-import { createOrientExecutor } from './repository-orient/orient-executor.js';
 import { createSearchExecutor } from './repository-search/search-executor.js';
 import { createListExecutor } from './repository-list/list-executor.js';
 import {
@@ -37,7 +36,6 @@ export function createExecutorRegistry(
   const cache = new FileDigestCache();
   const locks = new PathLocks();
   return {
-    REPOSITORY_ORIENT: createOrientExecutor(cache),
     REPOSITORY_SEARCH: createSearchExecutor({ cache }),
     REPOSITORY_LIST: createListExecutor(cache),
     FILE_READ: createFileReadExecutor(),

@@ -1,11 +1,42 @@
-import { describe, expect, it } from 'vitest';
+import { lookup } from 'node:dns/promises';
+import { describe, expect, it, vi } from 'vitest';
 import {
   allowedAddresses,
   checkUrlLiteral,
   hostKeyOf,
   isForbiddenAddress,
   PUBLIC_ONLY,
+  systemResolve,
 } from './address-policy.js';
+import { WebFailure } from './providers.js';
+
+vi.mock('node:dns/promises', () => ({ lookup: vi.fn() }));
+
+describe('systemResolve', () => {
+  const failWith = (code: string) =>
+    vi.mocked(lookup).mockRejectedValueOnce(Object.assign(new Error(code), { code }));
+
+  it('gives the addresses of a name', async () => {
+    vi.mocked(lookup).mockResolvedValueOnce([{ address: '93.184.216.34', family: 4 }] as never);
+    await expect(systemResolve('example.com')).resolves.toEqual(['93.184.216.34']);
+  });
+
+  it('gives no address for a name that does not exist', async () => {
+    failWith('ENOTFOUND');
+    await expect(systemResolve('nowhere.invalid')).resolves.toEqual([]);
+  });
+
+  it('turns a lookup that cannot be made into a page not available now', async () => {
+    failWith('EAI_AGAIN');
+    const error = await systemResolve('example.com').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WebFailure);
+    expect((error as WebFailure).detail).toEqual({
+      kind: 'FAILED',
+      code: 'PAGE_UNAVAILABLE',
+      retryable: true,
+    });
+  });
+});
 import { containsSecret, environmentSecrets } from './secret-scan.js';
 
 describe('the addresses a web tool may not reach', () => {

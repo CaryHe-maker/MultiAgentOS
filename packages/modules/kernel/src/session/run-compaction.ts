@@ -1,5 +1,6 @@
 import {
   entryBytes,
+  entryTokens,
   planCompaction,
   prune,
   type ArtifactRef,
@@ -78,8 +79,13 @@ export interface CompactionPorts {
   ): Promise<readonly ContextHistoryEntry[] | undefined>;
   /** How big the next request of this projection is: the provider's own count when it still holds. */
   sizeOf(target: CompactionTarget, entries: readonly ContextHistoryEntry[]): number;
-  /** The most input one call of the target may have (`perCallInputLimit`). */
+  /**
+   * The most input of its own one call of the target may have (`perCallInputLimit`): the part it
+   * inherited comes on top of it (D100).
+   */
   perCallInputLimit(target: CompactionTarget): number;
+  /** The most one whole request of the target may hold (D100). */
+  capTokens(target: CompactionTarget): number;
   prune(
     compactionId: string,
     target: CompactionTarget,
@@ -150,15 +156,14 @@ export class CompactionProcess {
         this.#ports.notify({
           type: 'ContextCompacted',
           trigger,
-          compactedTurns: 0,
+          compactedInputs: 0,
           prunedResults: result.pruned,
         });
       return;
     }
     this.#ports.audit({ type: 'COMPACTION_FAILED', compactionId: id, trigger, result });
-    // An idle compaction was not asked for, so its failure is not the user's business; an
-    // automatic one that merely had nothing to do, or no budget, ends in the usual wrap-up.
-    if (trigger === 'IDLE' || result.kind === 'CANCELLED') return;
+    // An automatic one that merely had nothing to do, or no budget, ends in the usual wrap-up.
+    if (result.kind === 'CANCELLED') return;
     const reason =
       result.kind === 'FAILED'
         ? result.reason
@@ -176,18 +181,24 @@ export class CompactionProcess {
     let entries = await this.#ports.requestSource(id, target);
     if (entries === undefined || cancelled()) return { kind: 'CANCELLED' };
 
-    const limit = this.#ports.perCallInputLimit(target);
+    // A task that started with its caller's context holds it as it is (D100): it is neither cut
+    // nor summarised, and the task's own budget comes on top of it, up to the cap of a request.
+    // That part is counted at the rate the whole is counted.
     const startTokens = request.currentTokens ?? this.#ports.sizeOf(target, entries);
+    const estimate = (list: readonly ContextHistoryEntry[]) =>
+      list.reduce((total, entry) => total + entryTokens(entry), 0);
+    const all = estimate(entries);
+    const frozenEstimate = estimate(entries.filter((entry) => entry.category === 'INHERITED'));
+    const frozen = all <= 0 ? 0 : Math.floor((frozenEstimate * startTokens) / all);
+    const cap = this.#ports.capTokens(target);
+    const own = this.#ports.perCallInputLimit(target);
+    const limit = Math.min(own + frozen, cap);
     const startBytes = Math.max(totalBytes(entries), 1);
     const goal =
       request.goalTokens ??
-      (trigger === 'IDLE'
-        ? config.idleTriggerRatio * limit
-        : trigger === 'AUTO'
-          ? config.triggerRatio * limit
-          : undefined);
+      (trigger === 'AUTO' ? Math.min(config.triggerRatio * own + frozen, cap) : undefined);
     const planConfig = {
-      keepTokens: config.keepTokens,
+      keepTokens: Math.floor(config.keepRatio * own),
       keepHumanBytes: config.keepHumanBytes,
       pruneMinBytes: config.pruneMinBytes,
       minReplacedTokens: Math.floor(config.summaryMaxTokens / 8),
@@ -283,7 +294,7 @@ export class CompactionProcess {
         type: 'ContextCompacted',
         trigger,
         summaryRef: outcome.summaryRef,
-        compactedTurns: range.replacedTurns,
+        compactedInputs: range.replacedInputs,
         prunedResults: pruned,
       });
       return { kind: 'CHANGED', pruned, summarised: true };

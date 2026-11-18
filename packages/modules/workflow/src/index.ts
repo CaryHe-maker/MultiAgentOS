@@ -24,6 +24,7 @@ export type {
   EndTool,
 } from './domain/agent/agent-cycle.js';
 export { projectHistory } from './domain/context/history-projection.js';
+export { compileTemplate } from './domain/graph/session-graph.js';
 export { callResultsOf } from './domain/spawn/spawn-graph.js';
 export { SessionLogStore, SessionStoreFailure } from './session/session-log-store.js';
 export { settleStaleRecords } from './session/settle-stale.js';
@@ -37,14 +38,15 @@ export {
 /** Module/Workflow 11. */
 export const DEFAULT_WORKFLOW_CONFIG: WorkflowConfig = Object.freeze({
   regenerationLimit: 3,
-  noProgressRounds: 2,
+  noProgressRounds: 8,
+  toolFailureRounds: 4,
   repeatedIntent: Object.freeze({ window: 20, warnAt: 3, stopAt: 5 }),
-  consecutiveErrorLimit: 5,
+  consecutiveErrorLimit: 8,
   maxNestedInstructions: 8,
   maxSubagentsPerCall: 8,
   maxDependencyDepth: 2,
-  maxTasks: 12,
-  maxSpawnCalls: 4,
+  // Experiment branch exp/stagger-1.1: on, at most 5 seconds.
+  staggerWorkersMs: 5000,
 });
 
 export interface WorkflowDeps {
@@ -65,6 +67,11 @@ export interface WorkflowDeps {
     readonly reason?: 'NO_BWRAP' | 'USERNS_DENIED' | 'PROFILE_FAILED';
   };
   readonly now?: () => Date;
+  /**
+   * Whether the repository lies in a git work tree, as the composition root found it: when it does
+   * not, git_inspect is not offered, since every call of it could only fail.
+   */
+  readonly git?: boolean;
 }
 
 /** The composition root serves the runner's three handlers at `inbox.workflow`. */
@@ -94,6 +101,7 @@ export function createWorkflow(deps: WorkflowDeps): WorkflowModule {
     runtime: () => ({
       sandbox: SANDBOX_TEXT[deps.sandbox?.state ?? 'UNAVAILABLE'],
       currentDate: now().toISOString().slice(0, 10),
+      ...(deps.git === undefined ? {} : { git: deps.git }),
     }),
     now,
   });

@@ -31,7 +31,6 @@ const fixtures = {
     thinking: { defaultEffort: 'none', allowedEfforts: ['none'] },
     promptRef: { id: 'fixture-prompt', version: 'v1.0.0' },
     unitRefs: [{ id: 'fixture-unit', version: 'v1.0.0' }],
-    startUnitRefs: [],
     actions: {
       end: [
         {
@@ -125,7 +124,6 @@ const fixtures = {
     ...common,
     kind: 'TEMPLATE',
     id: 'fixture-template',
-    origin: 'BUILTIN',
     nodes: [{ name: 'answer', kind: 'AGENT', agent: { id: 'fixture-agent', version: 'v1.0.0' } }],
   },
 } as const;

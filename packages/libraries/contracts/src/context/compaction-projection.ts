@@ -13,8 +13,8 @@ import type { ContextHistoryEntry } from './history-entry.js';
  * - A summary takes the place of everything in `[fromSeq, toSeq]` that is not in `keptSeqs`, at
  *   the place of the first entry it replaces. The entries that are kept follow it, in their own
  *   order. `keptSeqs` holds the PINNED entries of the range as they were when it was written, so
- *   a Turn that is no longer the current one cannot lose its prompt afterwards.
- * - A summary that was revoked (its Turns were undone) replaces nothing; a prune stays.
+ *   the work of an input that is no longer the latest cannot lose its prompt afterwards.
+ * - A summary that was revoked (what it covered was taken back) replaces nothing; a prune stays.
  * - A later compaction may take an earlier summary into its range.
  */
 export interface CompactionRecords {

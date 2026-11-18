@@ -11,7 +11,7 @@ const latest = catalog.latest('MODEL', 'deepseek-flash');
 if (latest === undefined) throw new Error('deepseek-flash is missing');
 const flash = latest;
 
-describe('model call cost (AgentToolPool 7)', () => {
+describe('model call cost (AgentToolPool 5a)', () => {
   it.each([
     ['2026-10-12T01:00:00Z', true], // Monday, first minute of the first window
     ['2026-10-12T03:59:00Z', true],

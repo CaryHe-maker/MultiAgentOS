@@ -5,7 +5,6 @@ import { placementOf } from './placement.js';
 const agent = { label: 'worker', effort: 'high' as const, writeRoots: ['.'] };
 const spawn = {
   writeScope: ['api'],
-  acceptance: [],
   inputs: [],
   tokens: 1000,
 };
@@ -15,7 +14,6 @@ const node = (task?: GraphNodeRecord['spawn']): GraphNodeRecord => ({
   name: 'fix-api',
   kind: 'AGENT',
   trigger: 'all_success',
-  iteration: 1,
   ...(task === undefined ? {} : { spawn: task }),
 });
 const dispatch = { parentAgentRunId: 'agr_main', delegationId: 'dlg_1' };
@@ -37,5 +35,11 @@ describe('placementOf', () => {
       link: { parentAgentRunId: 'agr_main', delegationId: 'dlg_1', taskName: 'fix-api' },
     });
     expect(placementOf(node(spawn), agent, dispatch).effort).toBe('high');
+  });
+
+  it('calls a task that inherits by the Agent its phase names, not by its caller (D35)', () => {
+    const inherits = { missionId: 'msc_root', agentRunId: 'agr_root', as: 'worker' };
+    const lead = { ...agent, label: 'lead' };
+    expect(placementOf(node({ ...spawn, inherits }), lead, dispatch).label).toBe('worker fix-api');
   });
 });

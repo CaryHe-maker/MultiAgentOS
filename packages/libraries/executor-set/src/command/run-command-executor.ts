@@ -1,6 +1,9 @@
 import {
   MEDIA_TYPES,
+  countSandboxDenials,
   type CommandOutput,
+  type ExecutorOutcome,
+  type SandboxRunResult,
   type Executor,
   type ExecutorEnvironment,
 } from '@multiagentos/contracts';
@@ -10,7 +13,10 @@ import { previewLimitsOf, retainBytes } from '../retention/retention.js';
 /** Leaves room in the preview for the status line and the notice of what was left out. */
 const FRAME_BYTES = 512;
 
-function statusLine(output: CommandOutput): string {
+/** A command this slow says how long it took, so a check run again and again shows its cost (D70). */
+const SLOW_MS = 10_000;
+
+function statusLine(output: CommandOutput, tookMs = 0): string {
   const how =
     output.timedOut || output.signal !== null
       ? `${output.timedOut ? 'timed out' : 'stopped'}${output.signal === null ? '' : ` (${output.signal})`}`
@@ -19,7 +25,8 @@ function statusLine(output: CommandOutput): string {
     output.sandboxDenials > 0
       ? `; the sandbox refused ${String(output.sandboxDenials)} operation${output.sandboxDenials === 1 ? '' : 's'}`
       : '';
-  return `${how}${denied}${output.backend === 'UNISOLATED' ? ' [not isolated]' : ''}`;
+  const took = tookMs >= SLOW_MS ? `, took ${String(Math.round(tookMs / 1000))} s` : '';
+  return `${how}${took}${denied}${output.backend === 'UNISOLATED' ? ' [not isolated]' : ''}`;
 }
 
 /**
@@ -36,15 +43,25 @@ export function createRunCommandExecutor(): Executor<'COMMAND'> {
         if (scope.kind !== 'SANDBOX') return violation('SCOPE_MISSING');
         const limits = previewLimitsOf(environment);
         throwIfAborted(environment.signal);
+        const startedAt = environment.now().getTime();
         const result = await environment.sandbox.run({
           scope,
           command: input.command,
           timeoutMs: input.timeoutMs,
           maxOutputBytes: fullOutputLimit(environment),
           signal: environment.signal,
+          ...(input.background === true || input.promoteOnTimeout === true
+            ? {
+                detach: {
+                  immediately: input.background === true,
+                  promoteOnTimeout: input.promoteOnTimeout === true,
+                },
+              }
+            : {}),
         });
         if (result.kind === 'REFUSED')
           return rejected(result.reason === 'WORKDIR_INVALID' ? 'OUT_OF_SCOPE' : result.reason);
+        if (result.kind === 'DETACHED') return detachedResult(result, input.timeoutMs, limits);
 
         const base: CommandOutput = {
           exitCode: result.exitCode,
@@ -53,7 +70,7 @@ export function createRunCommandExecutor(): Executor<'COMMAND'> {
           backend: result.backend,
           sandboxDenials: result.denials,
         };
-        const head = `${statusLine(base)}\n`;
+        const head = `${statusLine(base, environment.now().getTime() - startedAt)}\n`;
         const room = Math.max(1, limits.maxBytes - Buffer.byteLength(head, 'utf8') - FRAME_BYTES);
         const mediaType = MEDIA_TYPES.fileText;
         const preview = previewOf(result.output, room, limits.maxLines);
@@ -80,6 +97,38 @@ export function createRunCommandExecutor(): Executor<'COMMAND'> {
         });
       }),
   };
+}
+
+/**
+ * A command that runs on as a job (Orchestration 6.1): what it printed so far, and its key. The
+ * caller learns the job's name from Workflow, which owns the numbering.
+ */
+function detachedResult(
+  result: Extract<SandboxRunResult, { kind: 'DETACHED' }>,
+  timeoutMs: number,
+  limits: { maxBytes: number; maxLines: number },
+): ExecutorOutcome {
+  if (result.jobKey === undefined) return rejected('SANDBOX_UNAVAILABLE');
+  const output: CommandOutput = {
+    exitCode: null,
+    signal: null,
+    timedOut: false,
+    backend: result.backend,
+    sandboxDenials: countSandboxDenials(result.output),
+    job: { jobKey: result.jobKey, promoted: result.promoted },
+  };
+  // What comes next is said with it (D95): left alone, a model stopped the job at once and ran the
+  // command again in the foreground with a longer timeout.
+  const next =
+    'You are told when it ends, and its result comes with that. When you need the result, wait for it with sleep (until jobs); until then do what does not depend on it. If it misbehaves, stop it with job_kill.';
+  const head = result.promoted
+    ? `still running after ${String(Math.round(timeoutMs / 1000))} s: moved to the background. ${next}\n`
+    : `started in the background. ${next}\n`;
+  const preview = retainBytes(result.output, Math.max(1, limits.maxBytes - 512), 'TAIL').tail;
+  return completed({
+    output,
+    artifact: { mediaType: MEDIA_TYPES.fileText, text: head + preview },
+  });
 }
 
 const fullOutputLimit = (environment: ExecutorEnvironment): number =>

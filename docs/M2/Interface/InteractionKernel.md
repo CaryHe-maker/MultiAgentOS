@@ -1,7 +1,6 @@
 # UserInteraction 与 Kernel 的接口
 
-> 状态：已评审（阶段 1、2 的部分）。约定见 [Interface](README.md)。
-> 标"阶段 N"的条目在该阶段的文档门中补全。
+> 状态：已实现；发布前再与代码核对一次。约定见 [Interface](README.md)。
 
 ## 1. 范围
 
@@ -11,14 +10,14 @@ UserInteraction 不保存任何 Session 信息（M2Design 第 2.4 节），界�
 本进程的仓库根目录在启动时由组合根确定（M2Design 第 2.3 节 Session 第 0 条），写入 Kernel 的配置；
 UserInteraction 的请求不携带仓库路径。
 
-| 方向 | 内容 | 阶段 |
-|---|---|---|
-| UserInteraction → Kernel | 新建、Fork、打开、列出、删除 Session；以模板开启运行；回答授权与人类请求；读取产物；关闭 | 1（Fork 为 2） |
-| UserInteraction → Kernel | 回退与差异 | 2 |
-| UserInteraction → Kernel | 暂停、继续、中止、运行中插话 | 5 |
-| UserInteraction → Kernel | `/compact` | 8 |
-| Kernel → UserInteraction | 压缩完成的通知 | 8 |
-| Kernel → UserInteraction | 授权询问与结果、人类请求与结果、发布的消息、运行状态、活动、运行结束；Session 级事件；系统级事件（Session 列表、删除结果） | 1 |
+| 方向 | 内容 |
+|---|---|
+| UserInteraction → Kernel | 新建、Fork、打开、列出、删除 Session；以模板开启运行；回答授权与人类请求；读取产物；关闭 |
+| UserInteraction → Kernel | 回退与差异 |
+| UserInteraction → Kernel | 暂停、继续、中止、运行中插话 |
+| UserInteraction → Kernel | `/compact` |
+| Kernel → UserInteraction | 压缩完成的通知 |
+| Kernel → UserInteraction | 授权询问与结果、人类请求与结果、发布的消息、运行状态、活动、运行结束；Session 级事件；系统级事件（Session 列表、删除结果） |
 
 ## 2. UserInteraction → Kernel
 
@@ -35,25 +34,25 @@ interface InteractionGatewayPort {
   answerHuman(request: AnswerHumanRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   readArtifact(request: ReadArtifactRequest, context: BoundaryContext): Promise<ArtifactContent | SyscallRejected>;
   shutdown(request: ShutdownRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
-  undoTurns(request: UndoTurnsRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;      // 阶段 2
-  confirmUndo(request: ConfirmUndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;  // 阶段 2
-  diffTurns(request: DiffTurnsRequest, context: BoundaryContext): Promise<TurnDiff | SyscallRejected>;        // 阶段 2
-  pauseRun(request: PauseRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;          // 阶段 5
-  resumeRun(request: ResumeRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;        // 阶段 5
-  interruptRun(request: InterruptRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;  // 阶段 5
-  steerRun(request: SteerRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;          // 阶段 5：运行中插话，只在 RUNNING 时受理（M2Design 第 4.5 节）
-  // 阶段 8：compactContext（第 2.4 节）
+  undoTurns(request: UndoTurnsRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  confirmUndo(request: ConfirmUndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  diffTurns(request: DiffTurnsRequest, context: BoundaryContext): Promise<TurnDiff | SyscallRejected>;
+  pauseRun(request: PauseRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  resumeRun(request: ResumeRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  interruptRun(request: InterruptRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  steerRun(request: SteerRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;          // 运行中插话，只在 RUNNING 时受理（M2Design 第 4.5 节）
+  // compactContext（第 2.4 节）
 }
 ```
 
-M1 的 `createRun` 与 `cancelRun` 在 major 1 中删除：`createRun` 由 `startSession` 与 `startRun` 取代，`cancelRun` 由阶段 5 的 `interruptRun` 取代。
+M1 的 `createRun` 与 `cancelRun` 在 major 1 中删除：`createRun` 由 `startSession` 与 `startRun` 取代，`cancelRun` 由 `interruptRun` 取代。
 
 ### 2.2 Session 请求
 
 ```ts
 interface StartSessionRequest {      // 草稿中提交第一条提示词时发出（M2Design 第 2.3 节 Session 第 2 条）
   requestId: string;
-  mode: 'NEW' | 'FORK';              // 'FORK' 在阶段 2 开放
+  mode: 'NEW' | 'FORK';              // 'NEW' 新建，'FORK' 从当前 Session 分出
   fromSessionId?: string;            // mode = 'FORK' 时必填，必须是当前打开的 Session
   prompt: UserInput;
 }
@@ -61,11 +60,12 @@ interface StartSessionRequest {      // 草稿中提交第一条提示词时发�
 interface OpenSessionRequest {
   requestId: string;
   sessionId: string;
+  confirmWorkspaceChange?: boolean;  // 用户同意在本进程的文件夹里打开最后在别的文件夹工作过的 Session（M2Design 第 2.3 节）
 }
 
 interface StartRunRequest {          // mas run <模板> "<目标>"，总是新建 Session
   requestId: string;
-  template: DefinitionRef;           // 阶段 1 只接受内置模板 analyze；阶段 7 开放使用者模板
+  template: DefinitionRef;           // `mas run` 总是内置模板 mission
   goal: UserInput;
 }
 
@@ -92,7 +92,8 @@ interface DeleteSessionRequest {
 
 - `startSession`、`openSession`、`startRun` 受理时，Kernel 依次收敛当前运行、关闭当前 Session，再打开或新建目标 Session；
   结果以 Session 级事件 `SessionOpened` 或 `SessionFailed` 告知。
-- `openSession` 只接受引用存在、未删除、且仓库与本进程一致的 Session，否则以 `SESSION_NOT_FOUND` 拒绝，不说明是哪一种情况。
+- `openSession` 只接受引用存在、未删除的 Session，否则以 `SESSION_NOT_FOUND` 拒绝，不说明是哪一种情况。
+- Session 最后在别的文件夹工作过时，必须带 `confirmWorkspaceChange: true`，否则以 `WORKSPACE_CHANGE_NOT_CONFIRMED` 拒绝：确认由 Kernel 判定，不依赖客户端是否弹过确认。确认后 Kernel 让快照另起一段、把引用改为本进程的文件夹，再打开；Workflow 在日志里追加 `WORKSPACE_BOUND`。
 - **对当前 Session 的 `openSession`** 用于运行结束后在同一 Session 中继续（M2Design 第 2.3 节 WorkflowRun 第 1 条，例如因额度结束后用户确认继续）：
   当前运行已经 CLOSED 时，Kernel 不关闭 Session、不再下达 Session 命令，直接开启新的运行（`RunStart(initialInput: false)`），
   不再发出 `SessionOpened`，结果以新运行的 `RunStateChanged` 告知；当前运行尚未 CLOSED 时以 `SESSION_IN_USE` 拒绝。
@@ -110,18 +111,18 @@ interface AnswerAuthorizationRequest {
 
 type AuthorizationAnswer =
   | { scope: 'ALLOW' }               // 不确定级与安全级：本运行内对这个资源键有效；project.instructions：信任这份内容
-  | { scope: 'ONCE' }                // 阶段 2：极危险级只有它与 DENY；这个 UnitAttempt 结束时作废
+  | { scope: 'ONCE' }                // 极危险级只有它与 DENY；这个 UnitAttempt 结束时作废
   | { scope: 'DENY' };
-  // 阶段 3：本运行内这条命令、本运行内这个前缀
+  // 本运行内这条命令、本运行内这个前缀
 
-interface UndoTurnsRequest {         // 阶段 2：只在 AWAITING_INPUT，否则 UNDO_NOT_AVAILABLE
+interface UndoTurnsRequest {         // 只在 AWAITING_INPUT，否则 UNDO_NOT_AVAILABLE
   requestId: string;
   sessionId: string;
   workflowRunId: string;
   scope: 'LAST' | 'ALL';
 }
 
-interface ConfirmUndoRequest {       // 阶段 2：回答 UndoConfirmationRequested
+interface ConfirmUndoRequest {       // 回答 UndoConfirmationRequested
   requestId: string;
   sessionId: string;
   workflowRunId: string;
@@ -129,13 +130,13 @@ interface ConfirmUndoRequest {       // 阶段 2：回答 UndoConfirmationReques
   decision: 'FORCE' | 'CANCEL';
 }
 
-interface DiffTurnsRequest {         // 阶段 2：倒数第 n 个尚未被回退的 Turn，缺省 1
+interface DiffTurnsRequest {         // 倒数第 n 个尚未被回退的 Turn，缺省 1
   requestId: string;
   sessionId: string;
   n?: number;
 }
 
-interface TurnDiff {                 // 阶段 2
+interface TurnDiff {
   requestId: string;
   outcome: 'ACCEPTED';
   turnId: string;
@@ -143,7 +144,7 @@ interface TurnDiff {                 // 阶段 2
   diffRef: ArtifactRef;              // 统一 diff 文本；被排除的文件不在其中
 }
 
-// 阶段 5：运行控制。四个请求都只带运行的标识；Kernel 不解释说明的内容，只存正文并转交 Workflow
+// 运行控制。四个请求都只带运行的标识；Kernel 不解释说明的内容，只存正文并转交 Workflow
 interface PauseRunRequest { requestId: string; sessionId: string; workflowRunId: string }
 interface InterruptRunRequest { requestId: string; sessionId: string; workflowRunId: string }
 interface ResumeRunRequest {
@@ -160,8 +161,8 @@ interface SteerRunRequest {
   sessionId: string;
   workflowRunId: string;
   humanRequestId: string;
-  input: UserInput;                  // kind = 'prompt'（开放输入）；阶段 5：局部询问的答复，kind 为 'ask' | 'confirm' | 'review'，正文是答复文本，结构化字段按 UserInput 的 `fields` 给出
-  template?: DefinitionRef;          // 以 /run 发起本 Turn 时给出（阶段 7）
+  input: UserInput;                  // kind = 'prompt'（开放输入）；局部询问的答复，kind 为 'ask' | 'confirm' | 'review'，正文是答复文本，结构化字段按 UserInput 的 `fields` 给出
+  template?: DefinitionRef;          // 以 /run 发起本 Turn 时给出
 }
 
 interface ReadArtifactRequest {
@@ -171,10 +172,10 @@ interface ReadArtifactRequest {
 }
 ```
 
-`ArtifactContent`、`ShutdownRequest` 的字段与 M1Interface 第 4.2、4.3 节相同，以 major 1 发布。
+`ArtifactContent` 的字段与 M1Interface 第 4.2 节相同，以 major 1 发布。`ShutdownRequest` 在 M1 的基础上增加 `source`（`EXIT_COMMAND`、`INTERRUPT_TWICE`、`RUN_FINISHED`、`EXIT_CODE`）：谁请求了退出，只写进 Kernel 的系统级开发者记录（[Persistence](Persistence.md) 第 4.5 节），不转给 Workflow、不进 Session 日志。
 `readArtifact` 读取已按保留期回收的正文（例如 7 天前的完整工具输出）时以 `ARTIFACT_EXPIRED` 拒绝，界面显示"完整输出已过期删除"。
 
-### 2.4 `/compact`（阶段 8）
+### 2.4 `/compact`
 
 ```ts
 interface CompactContextRequest {
@@ -198,7 +199,7 @@ type KernelToInteractionEvent =
   | AuthorizationRequest | AuthorizationResolved
   | HumanRequest | HumanResolved
   | MessagePublished | RunStateChanged | ActivityEvent | RunFinished;
-  // 阶段 8：ContextCompacted、CompactionFailed（第 3.4 节）
+  // ContextCompacted、CompactionFailed（第 3.4 节）、ExternalReadPaused（Kernel/Core 5h）、BackgroundJobs
 
 type AuthorizationRequest =
   | {
@@ -207,31 +208,40 @@ type AuthorizationRequest =
     }
   | {
       type: 'AuthorizationRequest'; questionId: string; capability: 'project.instructions';
-      path: string; contentRef: ArtifactRef; truncated: boolean;   // path：'AGENTS.md'，阶段 2 起也可以是子目录的 AGENTS.md
+      path: string; contentRef: ArtifactRef; truncated: boolean;   // path：'AGENTS.md'，也可以是子目录的 AGENTS.md
     }
-  | {  // 阶段 2：不确定级，回答 ALLOW 或 DENY
+  | {  // 不确定级，回答 ALLOW 或 DENY
       type: 'AuthorizationRequest'; questionId: string; capability: 'workspace.write';
       writeRoot: string; critical: false;
     }
-  | {  // 阶段 2：写 AGENTS.md，极危险级，回答 ONCE 或 DENY；展示确切内容
+  | {  // 写 AGENTS.md，极危险级，回答 ONCE 或 DENY；展示确切内容
       type: 'AuthorizationRequest'; questionId: string; capability: 'workspace.write';
       path: string; contentRef: ArtifactRef; critical: true;
     };
-  // 阶段 3：command.exec、command.network；阶段 6：web.search、web.fetch
+  | {  // 读工作区之外的目录，危险级，回答 ALLOW 或 DENY；root 是回答所授权的目录，path 是被请求的路径
+      type: 'AuthorizationRequest'; questionId: string; capability: 'external.read';
+      root: string; path: string; provider: string;
+    };
+  // command.exec、command.network、web.search、web.fetch
 
-interface UndoConfirmationRequested {  // 阶段 2：有外部修改时；不是授权询问
+interface ExternalReadPaused {       // 连续两次读取外部文件失败，运行已暂停（Kernel/Core 5h）；控制台用红字显示
+  type: 'ExternalReadPaused';
+  attempts: { path: string; reason: 'UNAVAILABLE' | 'DECLINED' | 'FAILED' }[];
+}
+
+interface UndoConfirmationRequested {  // 有外部修改时；不是授权询问
   type: 'UndoConfirmationRequested';
   undoId: string;
   files: { path: string; change: 'ADDED' | 'MODIFIED' | 'DELETED' | 'UNKNOWN' }[];
 }
 
-interface UndoCancelled {            // 阶段 2
+interface UndoCancelled {
   type: 'UndoCancelled';
   undoId: string;
   reason: 'USER_CANCELLED' | 'NEW_INPUT' | 'SESSION_CLOSED' | 'FILE_CHANGED';
 }
 
-interface WorkspaceReverted {        // 阶段 2：发给 UserInteraction 与 Workflow
+interface WorkspaceReverted {        // 发给 UserInteraction 与 Workflow
   type: 'WorkspaceReverted';
   revertedTurnIds: string[];
   forced: boolean;
@@ -248,7 +258,7 @@ interface AuthorizationResolved {
 interface HumanRequest {
   type: 'HumanRequest';
   humanRequestId: string;
-  kind: 'prompt' | 'ask' | 'confirm' | 'review';   // 阶段 5：后三种是局部询问，不要求静止，不结束 Turn
+  kind: 'prompt' | 'ask' | 'confirm' | 'review';   // 后三种是局部询问，不要求静止，不结束 Turn
   attachedAgentRunId?: string;       // 局部询问：发起 ask_user 的 AgentRun；界面据此标明来自哪个 Agent 与任务名
   question?: string;                 // 局部询问：问题文本（≤1000）
   fields?: HumanField[];             // 局部询问：至多 8 个，type 为 'text' | 'textarea' | 'select' | 'multiselect' | 'confirm'
@@ -267,12 +277,12 @@ interface MessagePublished {         // message-publish 完成时发出
   wrapUpReason?: WrapUpReason;      // 回复来自提前收尾的 final-call 时带上；界面在回复后提示
   messageRef: ArtifactRef;           // UserInteraction 经 readArtifact 读取正文
   agentLabel: string;                // ≤80
-  kind: 'REPLY' | 'DEGRADED_REPLY' | 'RUN_RESULT';   // DEGRADED_REPLY 的产物是 { reason }，文字由 UserInteraction 生成
+  kind: 'REPLY' | 'DEGRADED_REPLY';   // DEGRADED_REPLY 的产物是 { reason }，文字由 UserInteraction 生成
 }
 
 interface RunStateChanged {
   type: 'RunStateChanged';
-  state: 'RUNNING' | 'AWAITING_INPUT' | 'CONVERGING' | 'PAUSING' | 'PAUSED' | 'INTERRUPTING';   // 阶段 5 增加后三种
+  state: 'RUNNING' | 'AWAITING_INPUT' | 'CONVERGING' | 'PAUSING' | 'PAUSED' | 'INTERRUPTING';
   turnId?: string;                   // 有开启中的 Turn 时给出
 }
 
@@ -280,18 +290,25 @@ interface ActivityEvent {            // 只用于界面，由 Kernel 依据登�
   type: 'ActivityEvent';
   agentRunId: string;
   label: string;                     // 登记时的 display.label
-  parentAgentRunId?: string;         // 阶段 4
+  parentAgentRunId?: string;
   phase: ActivityPhase;
   unit?: { unitAttemptId: string; toolName: string; argsSummary: string; state: 'QUEUED' | 'RUNNING' | 'DONE'; fullRef?: ArtifactRef };   // toolName 与 argsSummary 取自 submitUnit 的 display；fullRef 只在 DONE 且预览截断时给出
   retry?: { attempt: number; retryAt: string };   // phase = 'RETRYING' 时必填：第几次技术重试、何时重试（M2Design 第 7.4 节）
-  todos?: { total: number; done: number; current?: string };   // 阶段 2：Workflow 经 updateActivity 交来的待办进度，原样转发
+  todos?: { total: number; done: number; current?: string };   // Workflow 经 updateActivity 交来的待办进度，原样转发
   at: string;
+}
+
+interface BackgroundJobs {           // 只用于界面：一个任务正在运行的后台命令（Orchestration 6.1），有变化就发
+  type: 'BackgroundJobs';
+  agentRunId: string;                // 启动它的 AgentRun
+  missionId?: string;                // 它的任务；活动区按任务计，任务换了新的一段也还在
+  startedAt: string[];               // 每一条开始运行的时刻（转到后台的命令从它开始运行时算）；空数组表示已经没有了
 }
 
 type ActivityPhase =
   | 'ASSEMBLING' | 'THINKING' | 'RETRYING' | 'CALLING_TOOL' | 'AWAITING_AUTHORIZATION'
   | 'QUEUED' | 'WRAPPING_UP' | 'ENDED';
-  // 阶段 4：WAITING_SUBTASKS；阶段 5：AWAITING_ANSWER（等待 ask_user 的答复）、PAUSED；阶段 8：COMPACTING
+  // WAITING_SUBTASKS、AWAITING_ANSWER（等待 ask_user 的答复）、PAUSED、COMPACTING
 
 interface RunFinished extends RunEnd {   // RunEnd 见 WorkflowKernel 第 3.1 节
   type: 'RunFinished';
@@ -314,7 +331,7 @@ interface SessionOpened {
   title?: string;                    // ≤80，来自第一条 prompt
   turnCount: number;
   fork?: { fromSessionId: string; fromTurnCount: number };
-  divergedFiles?: string[];          // 阶段 2：打开时的工作区差异（M2Design 第 2.3 节 Session 第 6 条）
+  divergedFiles?: string[];          // 打开时的工作区差异（M2Design 第 2.3 节 Session 第 6 条）
 }
 
 interface SessionFailed {
@@ -343,12 +360,14 @@ interface SessionList {
   requestId: string;                 // 对应的 listSessions
   sessions: {
     sessionId: string;
+    repositoryRoot: string;          // 最后一次工作的文件夹（Kernel 的引用为准）
+    here: boolean;                   // 是不是本进程的文件夹；不是的，打开时要用户确认
     title?: string;                  // ≤80
     createdAt: string;
     lastActiveAt: string;
     turnCount: number;
     fork?: { fromSessionId: string; fromTurnCount: number };
-  }[];                               // 只含本仓库、未删除的 Session，按最后活动时间倒序
+  }[];                               // 所有未删除的 Session（各个文件夹的），按最后活动时间倒序
 }
 
 interface SessionDeleted {
@@ -359,14 +378,14 @@ interface SessionDeleted {
 }
 ```
 
-### 3.4 压缩的通知（阶段 8）
+### 3.4 压缩的通知
 
 运行级事件，属于 `KernelToInteractionEvent`。
 
 ```ts
 interface ContextCompacted {         // 压缩生效（Workflow 已记入日志）之后发出
   type: 'ContextCompacted';
-  trigger: 'AUTO' | 'OVERFLOW' | 'USER' | 'IDLE';
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
   summaryRef?: ArtifactRef;          // 界面可以经 readArtifact 展示摘要；只有修剪、没有写摘要时省略
   compactedTurns: number;            // 被摘要取代的 Turn 数（部分取代的 Turn 也计入）；只有修剪时为 0
   prunedResults: number;            // 被修剪的工具结果数
@@ -374,7 +393,7 @@ interface ContextCompacted {         // 压缩生效（Workflow 已记入日志�
 
 interface CompactionFailed {
   type: 'CompactionFailed';
-  trigger: 'AUTO' | 'OVERFLOW' | 'USER';   // 空闲触发的失败不通知界面（M2Design 第 9.6 节）
+  trigger: 'AUTO' | 'OVERFLOW' | 'USER';
   reason: 'NOTHING_TO_COMPACT' | 'BUDGET_INSUFFICIENT' | 'SUMMARY_FAILED' | 'NOT_RECORDED';
 }
 ```
@@ -393,10 +412,10 @@ interface CompactionFailed {
 
 | 原因码 | 出现位置 | 含义 |
 |---|---|---|
-| `SESSION_NOT_FOUND` | `SyscallRejected`（`openSession`、`deleteSession`、`startSession` 的 Fork） | 引用不存在、已删除，或仓库与本进程不一致 |
+| `SESSION_NOT_FOUND` | `SyscallRejected`（`openSession`、`deleteSession`、`startSession` 的 Fork） | 引用不存在或已删除 |
+| `WORKSPACE_CHANGE_NOT_CONFIRMED` | `SyscallRejected`（`openSession`） | Session 最后在别的文件夹工作过，请求没有带 `confirmWorkspaceChange: true` |
 | `SESSION_IN_USE` | `SyscallRejected`（`deleteSession`、对当前 Session 的 `openSession`） | 不能删除当前打开的 Session；当前 Session 的运行尚未结束时不能在其中开启新的运行 |
-| `TEMPLATE_UNSUPPORTED` | `SyscallRejected`（`startRun`） | 阶段 1 只接受 `analyze` |
 | `QUESTION_NOT_PENDING` | `SyscallRejected`（`answerAuthorization`） | 沿用 M1 |
 | `HUMAN_REQUEST_NOT_PENDING` | `SyscallRejected`（`answerHuman`） | 请求不存在或已答复 |
 | `ARTIFACT_EXPIRED` | `SyscallRejected`（`readArtifact`） | 正文已按保留期回收 |
-| `REQUEST_CONFLICT` | `SyscallRejected`（`compactContext`） | 阶段 8：不是 Turn-chat，或运行不处于 AWAITING_INPUT（沿用 M1 的原因码） |
+| `REQUEST_CONFLICT` | `SyscallRejected`（`compactContext`） | 不是 Turn-chat，或运行不处于 AWAITING_INPUT（沿用 M1 的原因码） |

@@ -1,9 +1,10 @@
-import type {
-  AppendLogPort,
-  ArtifactOwnerLine,
-  ArtifactRef,
-  ArtifactStorePort,
-  UserInput,
+import {
+  sha256Hex,
+  type AppendLogPort,
+  type ArtifactOwnerLine,
+  type ArtifactRef,
+  type ArtifactStorePort,
+  type UserInput,
 } from '@multiagentos/contracts';
 
 export type ArtifactRetention = ArtifactOwnerLine['retention'];
@@ -22,8 +23,12 @@ export interface SessionArtifactsDeps {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const USER_INPUT_MEDIA_TYPE = 'text/plain; charset=utf-8';
 
-/** A SESSION registration never expires; an EXPIRING one does, whether or not its body is gone. */
+/**
+ * A SESSION registration never expires; an EXPIRING or ONCE one does, whether or not its body is
+ * gone, and a released one has. A released artifact reads as expired at once (Kernel/Execution 6d).
+ */
 export function isExpired(line: ArtifactOwnerLine, retentionDays: number, now: Date): boolean {
+  if (line.releasedAt !== undefined) return true;
   if (line.retention === 'SESSION') return false;
   return now.getTime() >= new Date(line.retainedSince).getTime() + retentionDays * DAY_MS;
 }
@@ -48,33 +53,42 @@ export class SessionArtifacts {
     for await (const line of this.#deps.owners.readAll()) this.#owners.set(line.artifactId, line);
   }
 
-  /** The strongest registration wins: SESSION is never given up, and `fullOutput` stays set. */
+  /**
+   * The strongest registration wins: SESSION is never given up, and `fullOutput` stays set. The
+   * owner line goes in before the body is written: a sweep that read the index before the line
+   * began before the write, so the body is newer than its cutoff, and one that read it after the
+   * line keeps the body as marked. Written the other way round, a body could land just before a
+   * sweep began while its line came after the index was read, and be removed while in use.
+   */
   async put(
     text: string,
     mediaType: string,
     retention: ArtifactRetention,
     options: { readonly fullOutput?: boolean } = {},
   ): Promise<ArtifactRef> {
-    const ref = await this.#deps.store.put(Buffer.from(text, 'utf8'), mediaType);
-    const known = this.#owners.get(ref.artifactId);
+    const content = Buffer.from(text, 'utf8');
+    const sha256 = sha256Hex(content);
+    const artifactId = `art_${sha256}`;
+    const known = this.#owners.get(artifactId);
     const fullOutput = options.fullOutput === true || known?.fullOutput === true;
     const kept = known?.retention === 'SESSION' ? 'SESSION' : retention;
-    if (known?.retention === 'SESSION' && fullOutput === (known.fullOutput === true)) return ref;
-    const at = this.#deps.now().toISOString();
-    const line: ArtifactOwnerLine = {
-      artifactId: ref.artifactId,
-      mediaType: ref.mediaType,
-      sha256: ref.sha256,
-      size: ref.size,
-      retention: kept,
-      source: known?.source ?? 'PRODUCED',
-      ...(fullOutput ? { fullOutput: true as const } : {}),
-      retainedSince: at,
-      at,
-    };
-    await this.#deps.owners.append(line);
-    this.#owners.set(ref.artifactId, line);
-    return ref;
+    if (known?.retention !== 'SESSION' || fullOutput !== (known.fullOutput === true)) {
+      const at = this.#deps.now().toISOString();
+      const line: ArtifactOwnerLine = {
+        artifactId,
+        mediaType,
+        sha256,
+        size: content.byteLength,
+        retention: kept,
+        source: known?.source ?? 'PRODUCED',
+        ...(fullOutput ? { fullOutput: true as const } : {}),
+        retainedSince: at,
+        at,
+      };
+      await this.#deps.owners.append(line);
+      this.#owners.set(artifactId, line);
+    }
+    return this.#deps.store.put(content, mediaType);
   }
 
   /**
@@ -129,6 +143,48 @@ export class SessionArtifacts {
 
   isFullOutput(ref: ArtifactRef): boolean {
     return this.#owners.get(ref.artifactId)?.fullOutput === true;
+  }
+
+  /**
+   * Keeps what a handover carries for as long as the Session lives: an output that would be
+   * reclaimed after its days is registered again as SESSION, keeping its full-output mark. False,
+   * and nothing changed, when one of them is not this Session's or has expired already.
+   */
+  async retain(refs: readonly ArtifactRef[]): Promise<boolean> {
+    if (!refs.every((ref) => this.owns(ref))) return false;
+    for (const ref of refs) {
+      const known = this.#owners.get(ref.artifactId);
+      if (known === undefined || known.retention === 'SESSION') continue;
+      const at = this.#deps.now().toISOString();
+      const line: ArtifactOwnerLine = { ...known, retention: 'SESSION', retainedSince: at, at };
+      await this.#deps.owners.append(line);
+      this.#owners.set(ref.artifactId, line);
+    }
+    return true;
+  }
+
+  /**
+   * Releases what was registered ONCE, made for one consumer that is done with it: the
+   * registration says so, it reads as expired from now on, and the next sweep reclaims the body.
+   * Anything kept for longer (SESSION, or EXPIRING) is left as it is. Returns the bytes released.
+   */
+  async release(refs: readonly ArtifactRef[]): Promise<number> {
+    let bytes = 0;
+    for (const ref of refs) {
+      const known = this.#owners.get(ref.artifactId);
+      if (
+        known?.retention !== 'ONCE' ||
+        known.releasedAt !== undefined ||
+        known.sha256 !== ref.sha256
+      )
+        continue;
+      const at = this.#deps.now().toISOString();
+      const line: ArtifactOwnerLine = { ...known, releasedAt: at, at };
+      await this.#deps.owners.append(line);
+      this.#owners.set(ref.artifactId, line);
+      bytes += known.size;
+    }
+    return bytes;
   }
 
   /** A body missing from the store counts as expired, whatever the registration says. */

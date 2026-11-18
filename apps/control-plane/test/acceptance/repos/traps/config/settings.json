@@ -1,6 +1,0 @@
-{
-  "smtpHost": "smtp.example.org",
-  "smtpPort": 587,
-  "maxMessageBytes": 1048576,
-  "retryCount": 3
-}

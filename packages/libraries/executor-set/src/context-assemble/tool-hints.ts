@@ -53,6 +53,8 @@ export const REJECTED_HINTS: Record<UnitRejectedCode, string> = {
     'the earlier conversation was just compacted; the system sets the context up again',
   CONTEXT_OVERFLOW: 'the conversation is longer than the model can take',
   DOMAIN_DENIED: 'the user has forbidden this site; do not try it again, use another source',
+  EXTERNAL_PATH_UNAVAILABLE:
+    'no such path, or it cannot be read; give the absolute path of an existing file or folder outside the repository (a path inside it is read with read_file), and do not guess',
   SECRET_IN_REQUEST:
     'the query or address contains something that looks like a credential, so it was not sent; leave it out',
   UNSUPPORTED_CONTENT:

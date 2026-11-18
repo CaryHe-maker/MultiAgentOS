@@ -34,7 +34,7 @@ const environment = (over: Partial<ExecutorEnvironment>): ExecutorEnvironment =>
 const status = {
   round: 2,
   maxRounds: 10,
-  budget: { agentRun: 'NORMAL', turn: 'NORMAL', run: 'NORMAL' },
+  budget: { agentRun: 'NORMAL', input: 'NORMAL', run: 'NORMAL' },
   final: false,
 } as const;
 const call = { toolCallId: 'call_1', toolName: 'read_file', arguments: { path: 'a' } };
@@ -92,7 +92,8 @@ describe('context-assemble', () => {
     expect(history[1]).toMatchObject({ reasoningContent: 'hmm' });
     expect(history[2]?.content).toBe('the user rejected tool "read_file"\n[toolCallId: call_1]');
     expect(history[3]?.content).toContain('not trusted by the user');
-    expect(pack.items.at(-1)?.segment).toBe('STATUS');
+    // Round 2 with the budget normal: there is no status to tell (D61).
+    expect(pack.items.some((item) => item.segment === 'STATUS')).toBe(false);
   });
 
   it('ends every tool result with its toolCallId, whatever the result was', async () => {
@@ -306,10 +307,20 @@ describe('model-call', () => {
   });
   async function run(
     reply: () => Response,
-    over: { final?: boolean; finalMode?: 'AUTO' | 'FORCED' } = {},
+    over: {
+      final?: boolean;
+      finalMode?: 'AUTO' | 'FORCED';
+      finishTools?: string[];
+      history?: ResolvedHistoryEntry[];
+    } = {},
   ) {
     const bodies: Record<string, unknown>[] = [];
-    const pack = await packOf(assembleInput({ toolSpecs: [...tools] }));
+    const pack = await packOf(
+      assembleInput({
+        toolSpecs: [...tools],
+        ...(over.history === undefined ? {} : { history: over.history }),
+      }),
+    );
     const executor = createModelCallExecutor({
       fetch: (_url, init) => {
         bodies.push(JSON.parse(init?.body as string) as Record<string, unknown>);
@@ -321,6 +332,7 @@ describe('model-call', () => {
         contextPack: pack,
         final: over.final ?? false,
         ...(over.finalMode === undefined ? {} : { finalMode: over.finalMode }),
+        ...(over.finishTools === undefined ? {} : { finishTools: over.finishTools }),
       },
       environment({ scope, limits: { deadline, maxOutputBytes: 100_000, maxOutputTokens: 100 } }),
     );
@@ -342,22 +354,61 @@ describe('model-call', () => {
       expect(outcome.result.artifact.text).not.toContain('new thought');
   });
 
+  it('replays the thinking of only the latest steps when a window is set', async () => {
+    const turn = (seq: number, id: string, thought: string): ResolvedHistoryEntry => ({
+      ...entry(seq),
+      kind: 'MODEL_TURN',
+      text: `step ${String(seq)}`,
+      toolCalls: [{ ...call, toolCallId: id }],
+      reasoningContent: thought,
+    });
+    const result = (seq: number, id: string): ResolvedHistoryEntry => ({
+      ...entry(seq),
+      kind: 'TOOL_RESULT',
+      toolCallId: id,
+      toolName: 'read_file',
+      status: 'REJECTED',
+      reasonCode: 'USER_DECLINED',
+    });
+    const history = [
+      { ...entry(1, 'PINNED'), kind: 'HUMAN' as const, text: 'go' },
+      turn(2, 'call_a', 'first thought'),
+      result(3, 'call_a'),
+      turn(4, 'call_b', 'second thought'),
+      result(5, 'call_b'),
+      turn(6, 'call_c', 'third thought'),
+      result(7, 'call_c'),
+    ];
+    const { body } = await run(() => answer(toolCall('read_file', '{}')), { history });
+    // Every assistant message replays its own thinking (ExecutorSet 6.3).
+    expect(
+      (body['messages'] as { role: string; reasoning_content?: string }[])
+        .filter((message) => message.role === 'assistant')
+        .map((message) => message.reasoning_content),
+    ).toEqual(['first thought', 'second thought', 'third thought']);
+  });
+
   it('leaves a final call free first, and forces the tool with thinking off on the retry', async () => {
     const free = await run(() => answer(toolCall('reply', '{}')), {
       final: true,
       finalMode: 'AUTO',
+      finishTools: ['reply'],
     });
     expect(free.body['tool_choice']).toBe('auto');
     const forced = await run(() => answer(toolCall('reply', '{}')), {
       final: true,
       finalMode: 'FORCED',
+      finishTools: ['reply'],
     });
     expect(forced.body['tool_choice']).toMatchObject({ function: { name: 'reply' } });
     expect(forced.body['thinking']).toEqual({ type: 'disabled' });
   });
 
   it('fails retryably when a final call does not end properly', async () => {
-    const { outcome } = await run(() => answer(toolCall('read_file', '{}')), { final: true });
+    const { outcome } = await run(() => answer(toolCall('read_file', '{}')), {
+      final: true,
+      finishTools: ['reply'],
+    });
     expect(outcome).toMatchObject({
       reasonCode: 'PROVIDER_TOOL_CHOICE_IGNORED',
       retryable: true,

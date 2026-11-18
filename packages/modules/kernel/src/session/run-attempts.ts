@@ -35,8 +35,10 @@ export interface PinnedAgent {
   readonly cacheHitWeight: number;
   /** The rendered Prompt of the Agent. */
   readonly instructions: string;
-  /** The tools of a call: the Units' and the end tools, or only those allowed in a final call. */
-  readonly toolSpecs: (final: boolean) => ModelToolSpec[];
+  /** The tools of every call: the Units', the task tools and the end tools (D102). */
+  readonly toolSpecs: readonly ModelToolSpec[];
+  /** The end tools a final call may call, by the name the model writes. */
+  readonly finalToolNames: readonly string[];
 }
 
 /** Core starts an attempt through Execution once admission and authorization allowed it. */
@@ -44,7 +46,6 @@ export interface AttemptSpec {
   readonly requestId: string;
   readonly agentRunId: string;
   readonly unitRunId: string;
-  readonly turnId: string;
   readonly unit: UnitDefinition;
   readonly input: UnitInput;
   readonly scope: ExecutionScope;
@@ -139,6 +140,46 @@ export type AttemptAudit =
       readonly command: string;
       readonly workdir: string;
     }
+  /** The user was asked to allow a capability for a Unit (M2Design 5.2): what was asked, for whom. */
+  | {
+      readonly type: 'AUTHORIZATION_ASKED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly capability: string;
+    }
+  /** The budget of the work of an input was added to (M2Design 7.3, rule 6): how much, by whom. */
+  | {
+      readonly type: 'BUDGET_EXTENDED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly tokens: number;
+      readonly by: 'USER' | 'CONFIGURED';
+    }
+  /** The run may start more subtasks (D62): how many in all now, by whom. */
+  | {
+      readonly type: 'TASK_QUOTA_EXTENDED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly limit: number;
+      readonly by: 'USER' | 'CONFIGURED';
+    }
+  /** A command ran without a question under `kernel.command.approval: auto` (M2Design 5.2). */
+  | {
+      readonly type: 'COMMAND_AUTO_APPROVED';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly command: string;
+      readonly workdir: string;
+    }
+  /** A read outside the workspace was let through: what was asked, and the folder that allowed it. */
+  | {
+      readonly type: 'EXTERNAL_READ';
+      readonly requestId: string;
+      readonly agentRunId: string;
+      readonly executionKind: string;
+      readonly path: string;
+      readonly root: string;
+    }
   | {
       readonly type: 'SETTLEMENT_ANOMALY';
       readonly unitAttemptId: string;
@@ -189,7 +230,7 @@ interface Attempt {
 }
 
 /** Built-in Units finish in Execution without an execution instance. */
-const BUILT_IN: ReadonlySet<ExecutionKind> = new Set(['REPORT_PUBLISH', 'MESSAGE_PUBLISH']);
+const BUILT_IN: ReadonlySet<ExecutionKind> = new Set(['MESSAGE_PUBLISH']);
 const isViolation = (code: ReasonCode | undefined): code is ViolationCode =>
   code === 'SCOPE_MISSING' || code === 'PATH_ESCAPE' || code === 'GUARD_FAILURE';
 
@@ -276,7 +317,7 @@ export class RunAttempts {
 
   /**
    * What the provider counted for this Agent's last request, next to the estimate of it. By Agent:
-   * main is a new AgentRun each Turn, with the same history. Stage 4 narrows it to one history.
+   * main is a new AgentRun for each input, with the same history. A SubAgent has a history of its own.
    */
   calibrationOf(agentId: string): TokenCalibration | undefined {
     return this.#calibrations.get(agentId);
@@ -439,6 +480,7 @@ export class RunAttempts {
             | 'COMMAND_DENIED'
             | 'ADDRESS_FORBIDDEN'
             | 'DOMAIN_DENIED'
+            | 'EXTERNAL_PATH_UNAVAILABLE'
             | 'SANDBOX_UNAVAILABLE'
             | 'WRITE_SCOPE_DELEGATED'
             | 'ADMISSION_CHECK_FAILED';
@@ -531,6 +573,7 @@ export class RunAttempts {
         ...(check.outputRef === undefined ? {} : { outputRef: check.outputRef }),
         ...(check.fullRef === undefined ? {} : { fullRef: check.fullRef }),
         ...(check.reasoningRef === undefined ? {} : { reasoningRef: check.reasoningRef }),
+        ...(check.usage === undefined ? {} : { usage: check.usage }),
         ...(check.changedFiles === undefined ? {} : { changedFiles: [...check.changedFiles] }),
       };
     }

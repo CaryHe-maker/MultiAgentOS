@@ -8,6 +8,7 @@ export { DEFAULT_KERNEL_CONFIG } from './interfaces/index.js';
 export {
   createSubprocessRunner,
   createSupervisor,
+  probeLandlock,
   probeSandbox,
   type ModuleHostControl,
   type SupervisorDeps,
@@ -23,9 +24,11 @@ export {
 } from './session-kernel.js';
 export {
   agentShareFrom,
+  compactionAgentFrom,
   pinAgentFrom,
   pinnedAgentOf,
   type AgentCatalog,
+  type CompactionCatalog,
   type PinFailure,
 } from './session/pinned-agent.js';
 export type { PinnedAgent } from './session/run-attempts.js';

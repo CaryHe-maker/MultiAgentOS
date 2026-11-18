@@ -4,7 +4,7 @@ import { IdSchemas } from '../platform-common/ids.js';
 import { closed, text } from '../platform-common/schema-helpers.js';
 
 /**
- * What a human request asks for (M2Design 4.2). `prompt` is open input and ends the Turn; the other
+ * What a human request asks for (M2Design 4.2). `prompt` is open input and settles the work of the input before it; the other
  * three are local questions: they block only the AgentRun that asked, and need no stillness.
  */
 export const HUMAN_REQUEST_KINDS = ['prompt', 'ask', 'confirm', 'review'] as const;

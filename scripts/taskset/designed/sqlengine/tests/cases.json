@@ -1,0 +1,584 @@
+{
+ "sqlite": "3.46.1",
+ "cases": [
+  {
+   "name": "select_literals",
+   "statements": [
+    "SELECT 1, 2.5, 'text', NULL, x'0aff', 1 + 2 * 3, 7 / 2, 7.0 / 2, 7 % 3, -7 % 3, 2 || 3"
+   ],
+   "stdout": "1|2.5|text|NULL|x'0aff'|7|3|3.5|1|-1|23\n"
+  },
+  {
+   "name": "typeof_and_affinity",
+   "statements": [
+    "CREATE TABLE t(i INTEGER, r REAL, t TEXT, b BLOB, n NUMERIC, x)",
+    "INSERT INTO t VALUES ('12', '12', 12, 12, '12.0', '12'), ('1.5', 3, 4.0, 'b', 'abc', 1.0), (NULL, '1e2', x'00', x'01', '0x10', x'02')",
+    "SELECT typeof(i), i, typeof(r), r, typeof(t), t, typeof(b), typeof(n), n, typeof(x), x FROM t ORDER BY rowid"
+   ],
+   "stdout": "integer|12|real|12.0|text|12|integer|integer|12|text|12\nreal|1.5|real|3.0|text|4.0|text|text|abc|real|1.0\nnull|NULL|real|100.0|blob|x'00'|blob|text|0x10|blob|x'02'\n"
+  },
+  {
+   "name": "integer_overflow_and_division",
+   "statements": [
+    "SELECT 9223372036854775807 + 1, -9223372036854775808 - 1, 9223372036854775807 * 2, 5 / 0, 5 % 0, 5.0 / 0, -9223372036854775808 / -1, 1e308 * 10, typeof(9223372036854775807 + 0)"
+   ],
+   "stdout": "9.223372036854776e+18|-9.223372036854776e+18|1.8446744073709552e+19|NULL|NULL|NULL|9.223372036854776e+18|inf|integer\n"
+  },
+  {
+   "name": "comparison_rules",
+   "statements": [
+    "SELECT 1 = 1.0, '1' = 1, 1 < 'a', x'00' > 'z', NULL = NULL, NULL IS NULL, 1 IS 1, 'a' < 'b', 'B' < 'a', 'a' = 'A' COLLATE NOCASE, 2 IS NOT DISTINCT FROM 2, NULL IS DISTINCT FROM 1",
+    "CREATE TABLE t(a TEXT, b INTEGER)",
+    "INSERT INTO t VALUES ('10', '10'), ('9', '9')",
+    "SELECT a < '9', b < 9, a = 10, b = '10' FROM t ORDER BY rowid"
+   ],
+   "stdout": "1|0|1|1|NULL|1|1|1|1|1|1|1\n1|0|1|1\n0|0|0|0\n"
+  },
+  {
+   "name": "three_valued_logic",
+   "statements": [
+    "SELECT NULL AND 0, NULL AND 1, NULL OR 1, NULL OR 0, NOT NULL, 1 AND 2, 0 OR 0, NULL IN (1, 2), 1 IN (1, NULL), 3 NOT IN (1, NULL), 3 BETWEEN 1 AND NULL"
+   ],
+   "stdout": "0|NULL|1|NULL|NULL|1|0|NULL|1|NULL|NULL\n"
+  },
+  {
+   "name": "cast_rules",
+   "statements": [
+    "SELECT CAST('12abc' AS INTEGER), CAST('  7 ' AS INTEGER), CAST(3.99 AS INTEGER), CAST(-3.99 AS INTEGER), CAST('1e3' AS REAL), CAST(12 AS TEXT) || 'x', CAST('abc' AS NUMERIC), CAST('3.0' AS NUMERIC), typeof(CAST('3.0' AS NUMERIC)), CAST(x'414243' AS TEXT), typeof(CAST('5' AS BLOB)), CAST(NULL AS INTEGER)"
+   ],
+   "stdout": "12|7|3|-3|1000.0|12x|0|3|integer|ABC|blob|NULL\n"
+  },
+  {
+   "name": "rowid_and_integer_primary_key",
+   "statements": [
+    "CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT)",
+    "INSERT INTO t(v) VALUES ('a'), ('b')",
+    "INSERT INTO t VALUES (10, 'c')",
+    "INSERT INTO t(v) VALUES ('d')",
+    "SELECT rowid, id, v FROM t ORDER BY id",
+    "INSERT INTO t VALUES ('x', 'bad')",
+    "INSERT INTO t VALUES (10, 'dup')",
+    "DELETE FROM t WHERE id = 11",
+    "INSERT INTO t(v) VALUES ('e')",
+    "SELECT id, v FROM t ORDER BY id"
+   ],
+   "stdout": "1|1|a\n2|2|b\n10|10|c\n11|11|d\nerror\nerror\n1|a\n2|b\n10|c\n11|e\n"
+  },
+  {
+   "name": "constraints",
+   "statements": [
+    "CREATE TABLE t(a INTEGER NOT NULL, b TEXT UNIQUE, c INTEGER CHECK (c > 0), d TEXT DEFAULT 'dflt', e REAL DEFAULT (1.5 * 2), UNIQUE(a, c))",
+    "INSERT INTO t(a, b, c) VALUES (1, 'x', 5)",
+    "INSERT INTO t(a, b, c) VALUES (NULL, 'y', 5)",
+    "INSERT INTO t(a, b, c) VALUES (2, 'x', 5)",
+    "INSERT INTO t(a, b, c) VALUES (2, 'z', 0)",
+    "INSERT INTO t(a, b, c) VALUES (1, 'w', 5)",
+    "INSERT INTO t(a, b, c) VALUES (2, NULL, 6), (3, NULL, 7)",
+    "SELECT * FROM t ORDER BY a"
+   ],
+   "stdout": "error\nerror\nerror\nerror\n1|x|5|dflt|3.0\n2|NULL|6|dflt|3.0\n3|NULL|7|dflt|3.0\n"
+  },
+  {
+   "name": "insert_or_replace_ignore",
+   "statements": [
+    "CREATE TABLE kv(k TEXT PRIMARY KEY, v INTEGER)",
+    "INSERT INTO kv VALUES ('a', 1), ('b', 2)",
+    "INSERT OR REPLACE INTO kv VALUES ('a', 10)",
+    "INSERT OR IGNORE INTO kv VALUES ('b', 20), ('c', 3)",
+    "REPLACE INTO kv VALUES ('d', 4)",
+    "SELECT * FROM kv ORDER BY k"
+   ],
+   "stdout": "a|10\nb|2\nc|3\nd|4\n"
+  },
+  {
+   "name": "upsert",
+   "statements": [
+    "CREATE TABLE stock(item TEXT PRIMARY KEY, qty INTEGER, updated INTEGER DEFAULT 0)",
+    "INSERT INTO stock VALUES ('apple', 5, 0)",
+    "INSERT INTO stock(item, qty) VALUES ('apple', 3), ('pear', 2) ON CONFLICT(item) DO UPDATE SET qty = qty + excluded.qty, updated = 1",
+    "INSERT INTO stock(item, qty) VALUES ('pear', 100) ON CONFLICT DO NOTHING",
+    "INSERT INTO stock(item, qty) VALUES ('kiwi', 1) ON CONFLICT(item) DO UPDATE SET qty = 0 WHERE excluded.qty > 5",
+    "SELECT * FROM stock ORDER BY item"
+   ],
+   "stdout": "apple|8|1\nkiwi|1|0\npear|2|0\n"
+  },
+  {
+   "name": "returning",
+   "statements": [
+    "CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT, n INTEGER DEFAULT 0)",
+    "INSERT INTO t(v) VALUES ('a') RETURNING id, v, n",
+    "INSERT INTO t(v) VALUES ('b') RETURNING id, v, n",
+    "UPDATE t SET n = n + 5 WHERE v = 'b' RETURNING id, n * 2",
+    "DELETE FROM t WHERE id = 1 RETURNING *",
+    "SELECT * FROM t"
+   ],
+   "stdout": "1|a|0\n2|b|0\n2|10\n1|a|0\n2|b|5\n"
+  },
+  {
+   "name": "default_values_and_expressions",
+   "statements": [
+    "CREATE TABLE t(id INTEGER PRIMARY KEY, a TEXT DEFAULT 'x', b INTEGER DEFAULT -1, c REAL)",
+    "INSERT INTO t DEFAULT VALUES",
+    "INSERT INTO t(c) VALUES (2.5)",
+    "SELECT * FROM t ORDER BY id"
+   ],
+   "stdout": "1|x|-1|NULL\n2|x|-1|2.5\n"
+  },
+  {
+   "name": "where_order_limit",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT name, salary FROM emp WHERE salary > 60000 ORDER BY salary DESC, name LIMIT 3",
+    "SELECT name FROM emp ORDER BY name LIMIT 2 OFFSET 2",
+    "SELECT name FROM emp ORDER BY name COLLATE NOCASE",
+    "SELECT name, dept_id FROM emp ORDER BY dept_id NULLS LAST, name",
+    "SELECT name, dept_id FROM emp ORDER BY dept_id DESC NULLS FIRST, id",
+    "SELECT name FROM emp ORDER BY 1 DESC LIMIT 1",
+    "SELECT name AS n FROM emp ORDER BY n LIMIT 1",
+    "SELECT name FROM emp ORDER BY id LIMIT -1 OFFSET 5"
+   ],
+   "stdout": "Ann|120000.0\nBob|95000.0\nGus|95000.0\nCid\nDee\nAnn\nBob\nCid\nDee\nEve\nfay\nGus\nAnn|1\nBob|1\nGus|1\nCid|2\nDee|2\nfay|3\nEve|NULL\nEve|NULL\nfay|3\nCid|2\nDee|2\nAnn|1\nBob|1\nGus|1\nfay\nAnn\nfay\nGus\n"
+  },
+  {
+   "name": "distinct_and_expressions",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT DISTINCT dept_id FROM emp ORDER BY dept_id",
+    "SELECT DISTINCT salary > 80000, dept_id IS NULL FROM emp ORDER BY 1, 2",
+    "SELECT id, salary * 1.1, salary / 1000, name || '<' || coalesce(email, '-') || '>' FROM emp ORDER BY id"
+   ],
+   "stdout": "NULL\n1\n2\n3\n0|0\n0|1\n1|0\n1|132000.0|120.0|Ann<ann@x.com>\n2|104500.00000000001|95.0|Bob<bob@x.com>\n3|77000.0|70.0|Cid<->\n4|90200.55|82.0005|Dee<dee@y.org>\n5|55000.00000000001|50.0|Eve<eve@x.com>\n6|67100.0|61.0|fay<FAY@X.COM>\n7|104500.00000000001|95.0|Gus<->\n"
+  },
+  {
+   "name": "like_glob_escape",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT name FROM emp WHERE name LIKE 'f%' ORDER BY name",
+    "SELECT name FROM emp WHERE email LIKE '%@x.com' ORDER BY name",
+    "SELECT name FROM emp WHERE name GLOB '[A-C]*' ORDER BY name",
+    "SELECT name FROM emp WHERE name GLOB '?u?'",
+    "SELECT '50%' LIKE '50!%' ESCAPE '!', 'abc' LIKE 'a_c', 'ABC' LIKE 'abc', 'ABC' GLOB 'abc', 'a.c' GLOB 'a?c'"
+   ],
+   "stdout": "fay\nAnn\nBob\nEve\nfay\nAnn\nBob\nCid\nGus\n1|1|1|0|1\n"
+  },
+  {
+   "name": "in_between_case",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT name FROM emp WHERE dept_id IN (2, 3) ORDER BY name",
+    "SELECT name FROM emp WHERE dept_id NOT IN (1, 2) ORDER BY name",
+    "SELECT name FROM emp WHERE salary BETWEEN 60000 AND 90000 ORDER BY salary",
+    "SELECT name, CASE WHEN salary >= 95000 THEN 'high' WHEN salary >= 70000 THEN 'mid' ELSE 'low' END, CASE dept_id WHEN 1 THEN 'eng' WHEN 2 THEN 'ops' END FROM emp ORDER BY id"
+   ],
+   "stdout": "Cid\nDee\nfay\nfay\nfay\nCid\nDee\nAnn|high|eng\nBob|high|eng\nCid|mid|ops\nDee|mid|ops\nEve|low|NULL\nfay|low|NULL\nGus|high|eng\n"
+  },
+  {
+   "name": "inner_left_cross_joins",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT e.name, d.name FROM emp e JOIN dept d ON e.dept_id = d.id ORDER BY e.id",
+    "SELECT e.name, d.name FROM emp e LEFT JOIN dept d ON e.dept_id = d.id ORDER BY e.id",
+    "SELECT d.name, count(e.id) FROM dept d LEFT JOIN emp e ON e.dept_id = d.id GROUP BY d.id ORDER BY d.id",
+    "SELECT count(*) FROM emp CROSS JOIN dept",
+    "SELECT e.name, m.name FROM emp e LEFT JOIN emp m ON e.manager = m.id ORDER BY e.id",
+    "SELECT e.name FROM emp e, dept d WHERE e.dept_id = d.id AND d.budget > 200000 ORDER BY e.name"
+   ],
+   "stdout": "Ann|eng\nBob|eng\nCid|ops\nDee|ops\nfay|hr\nGus|eng\nAnn|eng\nBob|eng\nCid|ops\nDee|ops\nEve|NULL\nfay|hr\nGus|eng\neng|3\nops|2\nhr|1\nempty|0\n28\nAnn|NULL\nBob|Ann\nCid|Ann\nDee|Cid\nEve|Ann\nfay|Ann\nGus|Bob\nAnn\nBob\nGus\n"
+  },
+  {
+   "name": "using_and_natural_join",
+   "statements": [
+    "CREATE TABLE a(k INTEGER, x TEXT)",
+    "CREATE TABLE b(k INTEGER, y TEXT)",
+    "INSERT INTO a VALUES (1, 'a1'), (2, 'a2'), (3, 'a3')",
+    "INSERT INTO b VALUES (2, 'b2'), (3, 'b3'), (3, 'b3b'), (4, 'b4')",
+    "SELECT * FROM a JOIN b USING (k) ORDER BY k, y",
+    "SELECT * FROM a NATURAL JOIN b ORDER BY k, y",
+    "SELECT * FROM a LEFT JOIN b USING (k) ORDER BY k, y",
+    "SELECT a.*, b.y FROM a JOIN b ON a.k < b.k ORDER BY a.k, b.y"
+   ],
+   "stdout": "2|a2|b2\n3|a3|b3\n3|a3|b3b\n2|a2|b2\n3|a3|b3\n3|a3|b3b\n1|a1|NULL\n2|a2|b2\n3|a3|b3\n3|a3|b3b\n1|a1|b2\n1|a1|b3\n1|a1|b3b\n1|a1|b4\n2|a2|b3\n2|a2|b3b\n2|a2|b4\n3|a3|b4\n"
+  },
+  {
+   "name": "join_with_subquery_table",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT d.name, s.total FROM dept d JOIN (SELECT dept_id, sum(salary) AS total FROM emp GROUP BY dept_id) s ON s.dept_id = d.id ORDER BY s.total DESC"
+   ],
+   "stdout": "eng|310000.0\nops|152000.5\nhr|61000.0\n"
+  },
+  {
+   "name": "group_by_having",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT dept_id, count(*), sum(salary), avg(salary), min(name), max(hired) FROM emp GROUP BY dept_id ORDER BY dept_id",
+    "SELECT dept_id, count(*) AS n FROM emp GROUP BY dept_id HAVING n > 1 ORDER BY n DESC, dept_id",
+    "SELECT count(*), count(email), count(DISTINCT dept_id), sum(dept_id), total(dept_id), avg(dept_id) FROM emp",
+    "SELECT sum(x), total(x), avg(x), max(x), count(x) FROM (SELECT NULL AS x)",
+    "SELECT group_concat(name), group_concat(name, '; ') FROM (SELECT name FROM emp ORDER BY id)",
+    "SELECT dept_id, group_concat(DISTINCT salary) FROM emp WHERE dept_id = 1 GROUP BY dept_id",
+    "SELECT count(*) FILTER (WHERE salary > 80000), sum(salary) FILTER (WHERE dept_id = 1) FROM emp",
+    "SELECT salary > 80000 AS high, count(*) FROM emp GROUP BY high ORDER BY high"
+   ],
+   "stdout": "NULL|1|50000.0|50000.0|Eve|2022-02-01\n1|3|310000.0|103333.33333333333|Ann|2023-01-05\n2|2|152000.5|76000.25|Cid|2021-11-30\n3|1|61000.0|61000.0|fay|2017-06-09\n1|3\n2|2\n7|5|3|10|10.0|1.6666666666666667\nNULL|0.0|NULL|NULL|0\nAnn,Bob,Cid,Dee,Eve,fay,Gus|Ann; Bob; Cid; Dee; Eve; fay; Gus\n1|120000.0,95000.0\n4|310000.0\n0|3\n1|4\n"
+  },
+  {
+   "name": "bare_column_with_max",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT name, max(salary) FROM emp",
+    "SELECT dept_id, name, min(salary) FROM emp GROUP BY dept_id ORDER BY dept_id"
+   ],
+   "stdout": "Ann|120000.0\nNULL|Eve|50000.0\n1|Bob|95000.0\n2|Cid|70000.0\n3|fay|61000.0\n"
+  },
+  {
+   "name": "sum_integer_vs_real",
+   "statements": [
+    "CREATE TABLE n(v)",
+    "INSERT INTO n VALUES (1), (2), (3)",
+    "SELECT sum(v), typeof(sum(v)), avg(v), total(v) FROM n",
+    "INSERT INTO n VALUES (0.5)",
+    "SELECT sum(v), typeof(sum(v)) FROM n",
+    "INSERT INTO n VALUES (9223372036854775807)",
+    "SELECT sum(v) FROM n",
+    "SELECT total(v) FROM n"
+   ],
+   "stdout": "6|integer|2.0|6.0\n6.5|real\n9.223372036854776e+18\n9.223372036854776e+18\n"
+  },
+  {
+   "name": "scalar_and_correlated_subqueries",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT name, (SELECT name FROM dept WHERE id = emp.dept_id) FROM emp ORDER BY id",
+    "SELECT name FROM emp e WHERE salary > (SELECT avg(salary) FROM emp WHERE dept_id = e.dept_id) ORDER BY name",
+    "SELECT name FROM dept d WHERE EXISTS (SELECT 1 FROM emp WHERE dept_id = d.id) ORDER BY name",
+    "SELECT name FROM dept d WHERE NOT EXISTS (SELECT 1 FROM emp WHERE dept_id = d.id) ORDER BY name",
+    "SELECT name FROM emp WHERE dept_id IN (SELECT id FROM dept WHERE budget > 100000) ORDER BY name",
+    "SELECT (SELECT max(salary) FROM emp), (SELECT name FROM emp WHERE id = 99)"
+   ],
+   "stdout": "Ann|eng\nBob|eng\nCid|ops\nDee|ops\nEve|NULL\nfay|hr\nGus|eng\nAnn\nDee\neng\nhr\nops\nempty\nAnn\nBob\nCid\nDee\nGus\n120000.0|NULL\n"
+  },
+  {
+   "name": "set_operations",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT dept_id FROM emp UNION SELECT id FROM dept ORDER BY 1",
+    "SELECT dept_id FROM emp UNION ALL SELECT id FROM dept ORDER BY 1",
+    "SELECT dept_id FROM emp INTERSECT SELECT id FROM dept ORDER BY 1",
+    "SELECT id FROM dept EXCEPT SELECT dept_id FROM emp ORDER BY 1",
+    "SELECT name FROM emp WHERE id < 3 UNION SELECT name FROM dept ORDER BY name LIMIT 4",
+    "VALUES (1, 'a')",
+    "SELECT * FROM (VALUES (3), (1), (2)) ORDER BY 1"
+   ],
+   "stdout": "NULL\n1\n2\n3\n4\nNULL\n1\n1\n1\n1\n2\n2\n2\n3\n3\n4\n1\n2\n3\n4\nAnn\nBob\nempty\neng\n1|a\n1\n2\n3\n"
+  },
+  {
+   "name": "cte_and_recursive",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "WITH big AS (SELECT * FROM emp WHERE salary > 90000) SELECT name FROM big ORDER BY name",
+    "WITH RECURSIVE cnt(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM cnt WHERE x < 10) SELECT group_concat(x) FROM cnt",
+    "WITH RECURSIVE chain(id, name, depth) AS (SELECT id, name, 0 FROM emp WHERE manager IS NULL UNION ALL SELECT e.id, e.name, c.depth + 1 FROM emp e JOIN chain c ON e.manager = c.id) SELECT name, depth FROM chain ORDER BY depth, name",
+    "WITH RECURSIVE fib(a, b, n) AS (SELECT 0, 1, 1 UNION ALL SELECT b, a + b, n + 1 FROM fib WHERE n < 30) SELECT max(a) FROM fib",
+    "WITH a AS (SELECT 1 AS x), b AS (SELECT x + 1 AS y FROM a) SELECT * FROM a, b"
+   ],
+   "stdout": "Ann\nBob\nGus\n1,2,3,4,5,6,7,8,9,10\nAnn|0\nBob|1\nCid|1\nEve|1\nfay|1\nDee|2\nGus|2\n514229\n1|2\n"
+  },
+  {
+   "name": "window_ranking",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT name, dept_id, salary, row_number() OVER (PARTITION BY dept_id ORDER BY salary DESC, id), rank() OVER (ORDER BY salary DESC), dense_rank() OVER (ORDER BY salary DESC) FROM emp ORDER BY id",
+    "SELECT name, ntile(3) OVER (ORDER BY id) FROM emp ORDER BY id"
+   ],
+   "stdout": "Ann|1|120000.0|1|1|1\nBob|1|95000.0|2|2|2\nCid|2|70000.0|2|5|4\nDee|2|82000.5|1|4|3\nEve|NULL|50000.0|1|7|6\nfay|3|61000.0|1|6|5\nGus|1|95000.0|3|2|2\nAnn|1\nBob|1\nCid|1\nDee|2\nEve|2\nfay|3\nGus|3\n"
+  },
+  {
+   "name": "window_aggregates_and_frames",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT id, salary, sum(salary) OVER (ORDER BY id), avg(salary) OVER (ORDER BY id ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING), count(*) OVER () FROM emp ORDER BY id",
+    "SELECT id, lag(name) OVER (ORDER BY id), lead(name, 2, 'none') OVER (ORDER BY id), first_value(name) OVER (PARTITION BY dept_id ORDER BY id), last_value(name) OVER (PARTITION BY dept_id ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) FROM emp ORDER BY id",
+    "SELECT dept_id, salary, max(salary) OVER (PARTITION BY dept_id) - salary FROM emp ORDER BY id"
+   ],
+   "stdout": "1|120000.0|120000.0|107500.0|7\n2|95000.0|215000.0|95000.0|7\n3|70000.0|285000.0|82333.5|7\n4|82000.5|367000.5|67333.5|7\n5|50000.0|417000.5|64333.5|7\n6|61000.0|478000.5|68666.66666666667|7\n7|95000.0|573000.5|78000.0|7\n1|NULL|Cid|Ann|Gus\n2|Ann|Dee|Ann|Gus\n3|Bob|Eve|Cid|Dee\n4|Cid|fay|Cid|Dee\n5|Dee|Gus|Eve|Eve\n6|Eve|none|fay|fay\n7|fay|none|Ann|Gus\n1|120000.0|0.0\n1|95000.0|25000.0\n2|70000.0|12000.5\n2|82000.5|0.0\nNULL|50000.0|0.0\n3|61000.0|0.0\n1|95000.0|25000.0\n"
+  },
+  {
+   "name": "string_functions",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT length('h\u00e9llo'), upper('abc'), lower('\u00c0BC'), substr('hello', 2, 3), substr('hello', -3), substr('hello', 0, 2), substring('hello', 2), instr('banana', 'na'), replace('aaa', 'a', 'bb'), trim('  x  '), ltrim('xxa', 'x'), rtrim('ayy', 'y'), trim('--a--', '-')",
+    "SELECT hex('abc'), hex(255), unhex('414243'), quote('it''s'), quote(NULL), quote(1.5), quote(x'01'), char(72, 105), unicode('A'), length(x'0102'), typeof(zeroblob(2)), length(12345), length(NULL)",
+    "SELECT printf('%5.2f|%-4s|%04d|%x|%s|%%', 3.14159, 'ab', 42, 255, NULL), format('%d items', 3), printf('%.3e', 12345.678), printf('%c', 'hello')"
+   ],
+   "stdout": "5|ABC|\u00c0bc|ell|llo|h|ello|3|bbbbbb|x|a|a|a\n616263|323535|x'414243'|'it''s'|NULL|1.5|X'01'|Hi|65|2|blob|5|NULL\n 3.14|ab  |0042|ff||%|3 items|1.235e+04|h\n"
+  },
+  {
+   "name": "numeric_functions",
+   "statements": [
+    "SELECT abs(-5), abs(-2.5), round(2.5), round(-2.5), round(3.14159, 2), round(1234.5678, -2), sign(-3), sign(0), max(3, 7, 5), min(3, 'a', 1), coalesce(NULL, NULL, 'z'), ifnull(NULL, 4), nullif(5, 5), nullif(5, 6), iif(1 > 2, 'y', 'n')",
+    "SELECT ceil(1.2), floor(-1.2), sqrt(16), pow(2, 10), mod(7, 3), exp(0), ln(1), log10(1000), log2(8), log(2, 8), round(pi(), 5), typeof(ceil(1.2))",
+    "SELECT 5 & 3, 5 | 3, ~5, 1 << 4, -16 >> 2"
+   ],
+   "stdout": "5|2.5|3.0|-3.0|3.14|1235.0|-1|0|7|1|z|4|NULL|5|n\n2.0|-2.0|4.0|1024.0|1.0|1.0|0.0|3.0|3.0|3.0|3.14159|real\n1|7|-6|16|-4\n"
+  },
+  {
+   "name": "date_functions",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "SELECT date('2024-01-31', '+1 month'), date('2024-03-15', 'start of month'), date('2024-03-15', '-1 day', 'weekday 0'), time('12:34:56', '+30 minutes'), datetime('2024-02-28 23:00:00', '+2 hours'), julianday('2000-01-01'), strftime('%Y/%m/%d %H:%M %j %w', '2024-12-31 08:05:00'), unixepoch('2024-01-01 00:00:00'), date(1700000000, 'unixepoch'), date('2023-02-29'), date('2024-01-01', '+1 year', '-1 day')",
+    "SELECT name, strftime('%Y', hired) AS y FROM emp WHERE hired >= '2020-01-01' ORDER BY hired"
+   ],
+   "stdout": "2024-03-02|2024-03-01|2024-03-17|13:04:56|2024-02-29 01:00:00|2451544.5|2024/12/31 08:05 366 2|1704067200|2023-11-14|2023-03-01|2024-12-31\nBob|2020\nDee|2021\nEve|2022\nGus|2023\n"
+  },
+  {
+   "name": "typeof_of_functions",
+   "statements": [
+    "SELECT typeof(1/2), typeof(1/2.0), typeof('1' + 1), typeof('a' || 1), typeof(x'00' || 'a'), '1' + '2', 'abc' + 1, '3x' * 2, typeof(max(1, 2.0))"
+   ],
+   "stdout": "integer|real|integer|text|text|3|1|6|real\n"
+  },
+  {
+   "name": "changes_function",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "UPDATE emp SET salary = salary + 1 WHERE dept_id = 1",
+    "SELECT changes()",
+    "DELETE FROM emp WHERE id > 100",
+    "SELECT changes()"
+   ],
+   "stdout": "3\n0\n"
+  },
+  {
+   "name": "update_and_delete",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "UPDATE emp SET salary = salary * 1.1, email = lower(email) WHERE dept_id = 1",
+    "UPDATE emp SET manager = (SELECT id FROM emp WHERE name = 'Dee') WHERE name = 'Gus'",
+    "DELETE FROM emp WHERE email IS NULL",
+    "SELECT id, name, salary, email, manager FROM emp ORDER BY id",
+    "UPDATE emp SET name = NULL WHERE id = 1",
+    "SELECT count(*) FROM emp"
+   ],
+   "stdout": "1|Ann|132000.0|ann@x.com|NULL\n2|Bob|104500.00000000001|bob@x.com|1\n4|Dee|82000.5|dee@y.org|3\n5|Eve|50000.0|eve@x.com|1\n6|fay|61000.0|FAY@X.COM|1\nerror\n5\n"
+  },
+  {
+   "name": "update_from",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "CREATE TABLE raise(dept_id INTEGER, pct REAL)",
+    "INSERT INTO raise VALUES (1, 0.1), (2, 0.2)",
+    "UPDATE emp SET salary = salary * (1 + raise.pct) FROM raise WHERE raise.dept_id = emp.dept_id",
+    "SELECT id, salary FROM emp ORDER BY id"
+   ],
+   "stdout": "error\n1|120000.0\n2|95000.0\n3|70000.0\n4|82000.5\n5|50000.0\n6|61000.0\n7|95000.0\n"
+  },
+  {
+   "name": "insert_select_and_ctas",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "CREATE TABLE archive(name TEXT, salary REAL)",
+    "INSERT INTO archive SELECT name, salary FROM emp WHERE salary < 70000",
+    "SELECT * FROM archive ORDER BY name",
+    "CREATE TABLE summary AS SELECT dept_id, count(*) AS n FROM emp GROUP BY dept_id",
+    "SELECT * FROM summary ORDER BY dept_id",
+    "SELECT typeof(n) FROM summary LIMIT 1"
+   ],
+   "stdout": "Eve|50000.0\nfay|61000.0\nNULL|1\n1|3\n2|2\n3|1\ninteger\n"
+  },
+  {
+   "name": "alter_table",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "ALTER TABLE dept ADD COLUMN floor INTEGER DEFAULT 1",
+    "ALTER TABLE dept RENAME COLUMN name TO title",
+    "ALTER TABLE dept RENAME TO department",
+    "SELECT id, title, floor FROM department ORDER BY id",
+    "SELECT * FROM dept",
+    "ALTER TABLE department ADD COLUMN code TEXT NOT NULL",
+    "INSERT INTO department(id, title) VALUES (9, 'new')",
+    "SELECT title, floor FROM department WHERE id = 9"
+   ],
+   "stdout": "1|eng|1\n2|ops|1\n3|hr|1\n4|empty|1\nerror\nerror\nnew|1\n"
+  },
+  {
+   "name": "views",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "CREATE VIEW eng AS SELECT name, salary FROM emp WHERE dept_id = 1",
+    "SELECT * FROM eng ORDER BY name",
+    "INSERT INTO emp(name, dept_id, salary) VALUES ('Hal', 1, 1)",
+    "SELECT count(*) FROM eng",
+    "CREATE VIEW dept_stats(d, n, top) AS SELECT dept_id, count(*), max(salary) FROM emp GROUP BY dept_id",
+    "SELECT * FROM dept_stats WHERE n > 1 ORDER BY d",
+    "DROP VIEW eng",
+    "SELECT * FROM eng"
+   ],
+   "stdout": "Ann|120000.0\nBob|95000.0\nGus|95000.0\n4\n1|4|120000.0\n2|2|82000.5\nerror\n"
+  },
+  {
+   "name": "indexes",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "CREATE INDEX emp_salary ON emp(salary)",
+    "CREATE UNIQUE INDEX emp_email ON emp(email)",
+    "INSERT INTO emp(name, email) VALUES ('Dup', 'ann@x.com')",
+    "INSERT INTO emp(name, email) VALUES ('NoMail1', NULL), ('NoMail2', NULL)",
+    "SELECT name FROM emp WHERE salary = 95000 ORDER BY name",
+    "CREATE INDEX emp_salary ON emp(name)",
+    "DROP INDEX emp_salary",
+    "CREATE INDEX IF NOT EXISTS emp_name ON emp(name)",
+    "SELECT count(*) FROM emp"
+   ],
+   "stdout": "error\nBob\nGus\nerror\n9\n"
+  },
+  {
+   "name": "drop_and_if_exists",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "CREATE TABLE IF NOT EXISTS dept(x)",
+    "SELECT count(*) FROM dept",
+    "DROP TABLE missing",
+    "DROP TABLE IF EXISTS missing",
+    "DROP TABLE dept",
+    "SELECT * FROM dept",
+    "CREATE TABLE dept(x)",
+    "SELECT count(*) FROM dept"
+   ],
+   "stdout": "4\nerror\nerror\n0\n"
+  },
+  {
+   "name": "transactions",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "BEGIN",
+    "DELETE FROM emp",
+    "SELECT count(*) FROM emp",
+    "ROLLBACK",
+    "SELECT count(*) FROM emp",
+    "BEGIN",
+    "UPDATE emp SET salary = 1",
+    "COMMIT",
+    "SELECT sum(salary) FROM emp",
+    "COMMIT",
+    "ROLLBACK"
+   ],
+   "stdout": "0\n7\n7.0\nerror\nerror\n"
+  },
+  {
+   "name": "savepoints",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "BEGIN",
+    "INSERT INTO dept VALUES (10, 'a', 1)",
+    "SAVEPOINT s1",
+    "INSERT INTO dept VALUES (11, 'b', 1)",
+    "ROLLBACK TO s1",
+    "INSERT INTO dept VALUES (12, 'c', 1)",
+    "RELEASE s1",
+    "COMMIT",
+    "SELECT id FROM dept WHERE id >= 10 ORDER BY id"
+   ],
+   "stdout": "10\n12\n"
+  },
+  {
+   "name": "statement_atomicity",
+   "statements": [
+    "CREATE TABLE dept(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, budget REAL)",
+    "CREATE TABLE emp(id INTEGER PRIMARY KEY, name TEXT NOT NULL, dept_id INTEGER, salary REAL, hired TEXT, manager INTEGER, email TEXT)",
+    "INSERT INTO dept VALUES (1, 'eng', 500000), (2, 'ops', 120000.5), (3, 'hr', NULL), (4, 'empty', 10)",
+    "INSERT INTO emp VALUES (1, 'Ann', 1, 120000, '2019-03-01', NULL, 'ann@x.com'), (2, 'Bob', 1, 95000, '2020-07-15', 1, 'bob@x.com'), (3, 'Cid', 2, 70000, '2018-01-20', 1, NULL), (4, 'Dee', 2, 82000.5, '2021-11-30', 3, 'dee@y.org'), (5, 'Eve', NULL, 50000, '2022-02-01', 1, 'eve@x.com'), (6, 'fay', 3, 61000, '2017-06-09', 1, 'FAY@X.COM'), (7, 'Gus', 1, 95000, '2023-01-05', 2, NULL)",
+    "INSERT INTO dept VALUES (20, 'x', 1), (21, 'eng', 1)",
+    "SELECT count(*) FROM dept",
+    "UPDATE dept SET name = 'same' WHERE id IN (1, 2)",
+    "SELECT name FROM dept ORDER BY id"
+   ],
+   "stdout": "error\n4\nerror\neng\nops\nhr\nempty\n"
+  },
+  {
+   "name": "syntax_errors_continue",
+   "statements": [
+    "SELEC 1",
+    "SELECT 1 +",
+    "SELECT * FROM nothere",
+    "SELECT 'still running'"
+   ],
+   "stdout": "error\nerror\nerror\nstill running\n"
+  }
+ ]
+}

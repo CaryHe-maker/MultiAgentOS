@@ -1,5 +1,6 @@
 import { COMPACTION_FAILURES, COMPACTION_TRIGGERS } from '../context/compaction.js';
 import { WrapUpReasonSchema } from '../context/history-entry.js';
+import { COMMAND_MAX_CHARS } from '../executor/command.js';
 import { Type, type Static } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
@@ -62,7 +63,7 @@ export const AuthorizationRequestSchema = Type.Union(
     closed({
       ...question,
       capability: Type.Literal('command.exec'),
-      command: text(8000),
+      command: text(COMMAND_MAX_CHARS),
       workdir: Type.String({ maxLength: 1024 }),
       writableRoots: Type.Array(text(1024), { minItems: 1 }),
       network: Type.Boolean(),
@@ -90,6 +91,42 @@ export const AuthorizationRequestSchema = Type.Union(
       capability: Type.Literal('web.fetch'),
       url: text(2048),
       host: text(253),
+    }),
+    /**
+     * The work of this input is about to run out of its token budget (M2Design 7.3, rule 6):
+     * ALLOW adds `add` tokens to it, DENY lets it wrap up with what it has. The Kernel asks, never
+     * the model. `tasks` is how many tasks are at work below the root.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('budget.extend'),
+      used: count(),
+      limit: count(1),
+      add: count(1),
+      tasks: count(),
+    }),
+    /**
+     * The run has started as many subtasks as it may (D62): ALLOW lets it start `add` more, DENY
+     * refuses the call that asked and every later one. The Kernel asks, never the model.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('tasks.extend'),
+      started: count(),
+      limit: count(1),
+      add: count(1),
+    }),
+    /**
+     * Reading a folder outside the workspace (Kernel/Core 5h): ALLOW or DENY, for this run. `root` is
+     * what an answer allows; `path` is what was asked for.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('external.read'),
+      root: text(4096),
+      path: text(4096),
+      /** Who receives what is read. */
+      provider: text(64),
     }),
     /** An `AGENTS.md`: answered with ONCE or DENY, showing the exact content. */
     closed({
@@ -137,7 +174,8 @@ export const HumanResolvedSchema = closed(
   {
     type: Type.Literal('HumanResolved'),
     humanRequestId: IdSchemas.humanRequestId,
-    resolution: Type.Enum(['ANSWERED', 'CANCELLED']),
+    /** `WITHDRAWN`: open input taken back because the work goes on without the user (4.4). */
+    resolution: Type.Enum(['ANSWERED', 'CANCELLED', 'WITHDRAWN']),
   },
   'kernel.control.HumanResolved.v1',
 );
@@ -169,27 +207,36 @@ export const UndoCancelledSchema = closed(
 );
 export type UndoCancelled = Static<typeof UndoCancelledSchema>;
 
-/** Sent to both UserInteraction and Workflow, which replaces those Turns in its projection. */
-export const WorkspaceRevertedSchema = closed(
+/**
+ * The workspace is back at a checkpoint (Orchestration 7.5): `files` were put back, and what they
+ * held before is in `backupSnapshot`.
+ */
+export const CheckpointRolledBackSchema = closed(
   {
-    type: Type.Literal('WorkspaceReverted'),
-    revertedTurnIds: Type.Array(IdSchemas.turnId, { minItems: 1 }),
-    forced: Type.Boolean(),
-    /** The external changes that were overwritten. */
-    externalFiles: Type.Array(text(4096)),
-    /** Taken before a forced undo. */
+    type: Type.Literal('CheckpointRolledBack'),
+    checkpointId: IdSchemas.checkpointId,
+    label: text(200),
+    files: Type.Array(text(4096)),
     backupSnapshot: Type.Optional(text(64)),
+    /**
+     * An undo (`/undo`): the checkpoint itself is taken back too, so the work from it on, the input
+     * that opened it included, is undone. Absent, a rewind: the work goes on from the checkpoint.
+     */
+    undo: Type.Optional(Type.Boolean()),
+    /** Files changed outside the system that the user chose to overwrite. */
+    forced: Type.Optional(Type.Boolean()),
+    externalFiles: Type.Optional(Type.Array(text(4096))),
   },
-  'kernel.control.WorkspaceReverted.v1',
+  'kernel.control.CheckpointRolledBack.v1',
 );
-export type WorkspaceReverted = Static<typeof WorkspaceRevertedSchema>;
+export type CheckpointRolledBack = Static<typeof CheckpointRolledBackSchema>;
 
 export const MessagePublishedSchema = closed(
   {
     type: Type.Literal('MessagePublished'),
     messageRef: ArtifactRefSchema,
     agentLabel: text(80),
-    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY', 'RUN_RESULT']),
+    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY']),
     wrapUpReason: Type.Optional(WrapUpReasonSchema),
   },
   'kernel.control.MessagePublished.v1',
@@ -203,7 +250,8 @@ export const RunStateChangedSchema = Type.Union(
     closed({
       ...stateChanged,
       state: Type.Enum(['RUNNING', 'CONVERGING', 'PAUSING', 'PAUSED', 'INTERRUPTING']),
-      turnId: Type.Optional(IdSchemas.turnId),
+      /** The checkpoint of the input whose work this is. */
+      checkpointId: Type.Optional(IdSchemas.checkpointId),
     }),
   ],
   { $id: 'kernel.control.RunStateChanged.v1' },
@@ -221,11 +269,18 @@ export const ACTIVITY_PHASES = [
   'WAITING_SUBTASKS',
   /** The AgentRun called `ask_user` and waits for the answer. */
   'AWAITING_ANSWER',
+  /** The AgentRun asked its parent for more rounds and waits for the answer (D91). */
+  'AWAITING_GRANT',
   /** The run is paused: nothing of this AgentRun runs. */
   'PAUSED',
   /** Its context is being compacted: nothing of this AgentRun runs until it is done. */
   'COMPACTING',
   'WRAPPING_UP',
+  /**
+   * The segment ended and its task sleeps until something wakes it (Orchestration 4): the task is
+   * still there, and the activity area keeps its line until the task ends.
+   */
+  'SLEEPING',
   'ENDED',
 ] as const;
 const activity = {
@@ -233,6 +288,12 @@ const activity = {
   agentRunId: IdSchemas.agentRunId,
   /** Of a SubAgent: the AgentRun that started it, so the interface can draw the tree. */
   parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
+  /**
+   * The task the AgentRun is a segment of, and its parent task (Orchestration 3.2): the activity
+   * area draws the tree of tasks, which stays whole while a task sleeps between segments.
+   */
+  missionId: Type.Optional(IdSchemas.missionScopeId),
+  parentMissionId: Type.Optional(IdSchemas.missionScopeId),
   label: text(80),
   unit: Type.Optional(
     closed({
@@ -271,6 +332,23 @@ export const ActivityEventSchema = Type.Union(
 );
 export type ActivityEvent = Static<typeof ActivityEventSchema>;
 
+/**
+ * The background commands a task has running now (Orchestration 6.1), only for the interface: the
+ * activity area shows how long each has run behind the task's line. Sent when they change; an
+ * empty `startedAt` says there are none any more.
+ */
+export const BackgroundJobsSchema = closed(
+  {
+    type: Type.Literal('BackgroundJobs'),
+    agentRunId: IdSchemas.agentRunId,
+    missionId: Type.Optional(IdSchemas.missionScopeId),
+    /** When each of them started; one moved to the background started when the command did. */
+    startedAt: Type.Array(TimestampSchema, { maxItems: 16 }),
+  },
+  'kernel.control.BackgroundJobs.v1',
+);
+export type BackgroundJobs = Static<typeof BackgroundJobsSchema>;
+
 export const RunFinishedSchema = Type.Union([...runEnd('RunFinished')], {
   $id: 'kernel.control.RunFinished.v1',
 });
@@ -282,24 +360,43 @@ export const ContextCompactedSchema = closed(
     type: Type.Literal('ContextCompacted'),
     trigger: Type.Enum(COMPACTION_TRIGGERS),
     summaryRef: Type.Optional(ArtifactRefSchema),
-    /** Turns the summary replaced, partly replaced ones included; 0 when only results were cut. */
-    compactedTurns: count(),
+    /** Inputs of the user whose work the summary replaced, in part or whole; 0 when only results were cut. */
+    compactedInputs: count(),
     prunedResults: count(),
   },
   'kernel.control.ContextCompacted.v1',
 );
 export type ContextCompacted = Static<typeof ContextCompactedSchema>;
 
-/** A compaction the user or the run asked for did not happen; an idle one is never reported. */
+/** A compaction the user or the run asked for did not happen. */
 export const CompactionFailedSchema = closed(
   {
     type: Type.Literal('CompactionFailed'),
-    trigger: Type.Enum(COMPACTION_TRIGGERS.filter((trigger) => trigger !== 'IDLE')),
+    trigger: Type.Enum(COMPACTION_TRIGGERS),
     reason: Type.Enum(COMPACTION_FAILURES),
   },
   'kernel.control.CompactionFailed.v1',
 );
 export type CompactionFailed = Static<typeof CompactionFailedSchema>;
+
+/**
+ * Two calls in a row to read outside the workspace failed, and the run is paused (Kernel/Core 5h).
+ * The paths are what the Agent tried; the user continues with the right one, or stops the run.
+ */
+export const ExternalReadPausedSchema = closed(
+  {
+    type: Type.Literal('ExternalReadPaused'),
+    attempts: Type.Array(
+      closed({
+        path: text(4096),
+        reason: Type.Enum(['UNAVAILABLE', 'DECLINED', 'FAILED']),
+      }),
+      { minItems: 1, maxItems: 8 },
+    ),
+  },
+  'kernel.control.ExternalReadPaused.v1',
+);
+export type ExternalReadPaused = Static<typeof ExternalReadPausedSchema>;
 
 export const KernelToInteractionEventSchema = Type.Union([
   AuthorizationRequestSchema,
@@ -309,12 +406,14 @@ export const KernelToInteractionEventSchema = Type.Union([
   MessagePublishedSchema,
   RunStateChangedSchema,
   ActivityEventSchema,
+  BackgroundJobsSchema,
   RunFinishedSchema,
   UndoConfirmationRequestedSchema,
   UndoCancelledSchema,
-  WorkspaceRevertedSchema,
+  CheckpointRolledBackSchema,
   ContextCompactedSchema,
   CompactionFailedSchema,
+  ExternalReadPausedSchema,
 ]);
 export type KernelToInteractionEvent = Static<typeof KernelToInteractionEventSchema>;
 

@@ -30,7 +30,7 @@ import {
   type SearchHit,
   type SearchProvider,
 } from './providers.js';
-import { containsSecret, environmentSecrets } from './secret-scan.js';
+import { carriesData, containsSecret, environmentSecrets } from './secret-scan.js';
 
 /** What the web tools are set up with (`KernelConfig.web`, Kernel/Core 5f). */
 export interface WebConfig {
@@ -205,10 +205,18 @@ export function createWebFetchExecutor(options: WebOptions = {}): Executor<'WEB_
         const checked = checkUrlLiteral(input.url);
         if (!checked.ok)
           return rejected(checked.reason === 'INVALID_URL' ? 'INVALID_QUERY' : 'ADDRESS_FORBIDDEN');
-        if (containsSecret(input.url, secrets)) return rejected('SECRET_IN_REQUEST');
-        // Every address the name has must be a public one, whoever fetches the page.
-        if ((await allowedAddresses(checked.url.hostname, resolve, policy)) === undefined)
-          return rejected('ADDRESS_FORBIDDEN');
+        if (containsSecret(input.url, secrets) || carriesData(input.url))
+          return rejected('SECRET_IN_REQUEST');
+        // Every address the name has must be a public one, whoever fetches the page. A lookup that
+        // cannot be made is the model's to hear about, not a failure of this executor.
+        let addresses;
+        try {
+          addresses = await allowedAddresses(checked.url.hostname, resolve, policy);
+        } catch (error) {
+          if (environment.signal.aborted) throw error;
+          return failure(error);
+        }
+        if (addresses === undefined) return rejected('ADDRESS_FORBIDDEN');
         const local = createLocalFetch({
           resolve,
           policy,
