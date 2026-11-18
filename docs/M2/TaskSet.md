@@ -113,3 +113,5 @@ tb2/tune-mjcf、tb2/configure-git-webserver、tb2/gcode-to-text、tb2/raman-fitt
 | `dsh` | — | 126.6 | 0.931 | 1.074 | — |
 
 最终集的两次运行已经用完，之后不再运行。
+
+第二次运行里 pylua 慢、pyarchive 低分，之后用同一版本各重复运行一次（不算最终集的运行）：pylua 0.795 / 20.6 分钟、pyarchive 1.000 / 12.8 分钟，都比 `dsh` 快，说明是单次运行的随机性（[experiments](experiments.md)）。

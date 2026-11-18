@@ -39,9 +39,9 @@ describe('the inventory of frozen tests', () => {
     expect(empty.map((entry) => entry.id)).toEqual([]);
   });
 
-  it('gives every deferred entry a reason that names where it will be done', () => {
+  it('gives every deferred entry a reason that names the known limitation it waits on', () => {
     for (const entry of manifest.filter((each) => each.deferred !== undefined))
-      expect(entry.deferred).toMatch(/phase \d/u);
+      expect(entry.deferred).toMatch(/M2Limitations \d+/u);
   });
 
   for (const entry of manifest)

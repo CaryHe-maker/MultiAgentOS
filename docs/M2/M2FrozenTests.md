@@ -1,12 +1,12 @@
 # MultiAgentOS 冻结的系统测试
 
-> 状态：已实现。清点在 `apps/control-plane/test/system/frozen.json`，由 `frozen-manifest.test.ts` 检查；phase 发布检查是 `pnpm run gate:phase`。
+> 状态：已实现。清点在 `apps/control-plane/test/system/frozen.json`，由 `frozen-manifest.test.ts` 检查；发布检查是 `pnpm run gate:phase`。
 > 它回答"系统在**任何**模型行为下是否守住底线"；模型与提示词表现得好不好由[评测体系](Evaluation.md)回答，两者分开。
 
 ## 1. 目的
 
-后面几个 phase 会大量修改提示词、模板、工具和工作流。这些改动不能弄坏系统的底线：授权与沙盒、写入与回退、额度与收尾、恢复与停机、凭据不泄露、日志可重建。
-冻结的系统测试就是这条底线，每个 phase 发布时都要完整重跑一遍。
+对提示词、模板、工具和工作流的修改不能弄坏系统的底线：授权与沙盒、写入与回退、额度与收尾、恢复与停机、凭据不泄露、日志可重建。
+冻结的系统测试就是这条底线，每次发布前都要完整重跑一遍。
 
 ## 2. 什么被冻结
 
@@ -142,7 +142,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 
 **换载体（2026-11-14，M2Design v1.38）**：`system/analyze-template/` 随 `analyze` 删除。冻结文件中原来经 `analyze` 运行的用例改用 `mission` 作为载体，断言不放宽：`acceptance/write-undo-exit.test.ts` 的 "can be undone from the Session it leaves behind"、`acceptance/chat-exit.test.ts` 的 S5 与 `process-entry.test.ts` 的退出路径（子进程入口 `process-entry.ts` 改为 `mas run "<目标>"`，模型读一个文件后回复）。F1–F5 与安全陷阱由评测体系的任务覆盖。
 
-## 8. phase 发布检查
+## 8. 发布检查
 
 ```bash
 pnpm run gate:phase
@@ -152,7 +152,7 @@ pnpm run gate:phase
 
 非 Ubuntu 24.04 的平台默认拒绝运行（`MAS_GATE_ANY_PLATFORM=1` 可以试跑，结果不是证据）。
 
-每个 phase 发布前运行一次，结果必须是全部通过、没有跳过；M2 发布前在实体机上（不是虚拟机）再运行一次，核对沙盒。
+每次发布前运行一次，结果必须是全部通过、没有跳过；M2 发布前在实体机上（不是虚拟机）再运行一次，核对沙盒。
 
 ## 9. 偶发失败
 
@@ -173,7 +173,7 @@ node scripts/repeat-under-load.mjs --times 5 --load 4 apps/control-plane/test/ac
 | 脚本 | 做什么 |
 |---|---|
 | `pnpm run gate:phase` | 构建并运行 phase 发布检查（第 7 节） |
-| `bash scripts/gate.sh` | 这个 checkout 上的完整检查：安装、构建、格式、lint、类型、全部测试，再加 phase 发布检查 |
+| `bash scripts/gate.sh` | 这个 checkout 上的完整检查：安装、构建、格式、lint、类型、全部测试，再加发布检查 |
 | `bash scripts/wsl-gate.sh <提交> [补丁]` | 在 WSL 的克隆里检出某个提交（或加上未提交的补丁）并运行完整检查，用于代码在 Windows 上的开发者；用法见脚本头 |
 | `node scripts/repeat-under-load.mjs` | 满载下重复运行测试（第 8 节） |
 
@@ -181,4 +181,4 @@ CI 的 `quality-gate` 有一个单独的 `phase-gate` 任务：装好 bubblewrap
 
 ## 11. 与日常测试的关系
 
-`pnpm run test` 跑全部测试（含冻结的这些），在 CI 的质量门里运行。phase 发布检查是它的子集加上"不得跳过"与平台要求，用来出证据；日常提交只要质量门通过。
+`pnpm run test` 跑全部测试（含冻结的这些），在 CI 的质量门里运行。发布检查是它的子集加上"不得跳过"与平台要求，用来出证据；日常提交只要质量门通过。
