@@ -124,6 +124,18 @@ describe('the repository catalog', () => {
   });
 });
 
+const CHAT = 'agents/chat/v0.1.0.yaml';
+
+/** Chat with its `mission` entry as `change` leaves it. */
+function withMissionEntry(content: Content, change: (entry: Content) => void): Content {
+  const actions = content['actions'] as { delegate: Content[] };
+  const delegate = actions.delegate.map((each) => ({ ...each }));
+  const entry = delegate.find((each) => each['template'] !== undefined);
+  if (entry === undefined) throw new Error('chat has no mission entry');
+  change(entry);
+  return { ...content, actions: { ...actions, delegate } };
+}
+
 describe('the rules of a v1 catalog', () => {
   it.each([
     [
@@ -218,6 +230,34 @@ describe('the rules of a v1 catalog', () => {
       (c: Content) => {
         const actions = c['actions'] as Content;
         return { ...c, actions: { ...actions, onDegraded: 'PUBLISH_NOTICE' } };
+      },
+    ],
+    [
+      'a Mission started from chat without a share (Orchestration D113)',
+      CHAT,
+      (c: Content) =>
+        withMissionEntry(c, (entry) => {
+          delete entry['share'];
+        }),
+    ],
+    [
+      'a Mission started from chat with a share below what main works with',
+      CHAT,
+      (c: Content) =>
+        withMissionEntry(c, (entry) => {
+          entry['share'] = 1000;
+        }),
+    ],
+    [
+      'a share on a subtask whose Agent has its own',
+      CHAT,
+      (c: Content) => {
+        const actions = c['actions'] as { delegate: Content[] };
+        const [first, ...rest] = actions.delegate;
+        return {
+          ...c,
+          actions: { ...actions, delegate: [{ ...first, share: 2_000_000 }, ...rest] },
+        };
       },
     ],
     [

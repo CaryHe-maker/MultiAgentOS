@@ -1304,13 +1304,16 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
           };
     },
   };
-  const open = async (over: { budgetTurns?: number } = {}) => {
+  const open = async (over: { budgetTurns?: number; maxMissionDepth?: number } = {}) => {
     const kernel = await setup(mainAgent, {
       pin: (request) => agents[request.agentRef.id] ?? mainAgent,
       runWork:
         over.budgetTurns === undefined
           ? {
               ...runWork,
+              ...(over.maxMissionDepth === undefined
+                ? {}
+                : { maxMissionDepth: over.maxMissionDepth }),
               ledgers: new RunLedgers(
                 {
                   runTokenLimit: minShare(testAgentBudget) * 40,
@@ -1319,7 +1322,12 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
                 testAgentBudget,
               ),
             }
-          : runWork,
+          : {
+              ...runWork,
+              ...(over.maxMissionDepth === undefined
+                ? {}
+                : { maxMissionDepth: over.maxMissionDepth }),
+            },
     });
     await kernel.register(kernel.agentRunId, ['repo.read', 'workspace.write', 'agent.spawn']);
     return kernel;
@@ -1861,7 +1869,8 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     });
 
     it('lets a task below the root spawn, and none at the deepest level (Orchestration 3.6)', async () => {
-      const kernel = await open();
+      // Two levels here, so the second is the deepest; the default is three (D113).
+      const kernel = await open({ maxMissionDepth: 2 });
       const lead = newId('agr');
       const leadMission = mission();
       const dlg = delegationIdOf(

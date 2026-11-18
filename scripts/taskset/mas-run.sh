@@ -3,6 +3,7 @@
 # from the checkout at MAO_DIR, in the mode MAS_MODE (chat or mission). A task with a marker for the same
 # label is never run again, also after a crash. Results go under $OUT (default ~/bench/p3mas).
 #   MAS_MODE=mission LABEL=dev-mission-1 mas-run.sh designed/pyawk ...
+#   MAS_MODE=chat CAP=900 LABEL=t11 mas-run.sh tb2/gcode-to-text ...
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 META=${META:-$HOME/benchmeta}
@@ -34,7 +35,8 @@ for id in "$@"; do
     *) echo "not an agentrun task: $id"; continue ;;
   esac
   echo "$(date -Iseconds) mas $commit $MAS_MODE" > "$marker"
-  cap=$(awk '/^\[agent\]/{a=1;next} /^\[/{a=0} a && /timeout_sec/{gsub(/[^0-9.]/,"",$0); print int($0); exit}' "$dir/task.toml")
+  # CAP sets the agent's time limit, as the small tasks were run (900 s); otherwise the task's own.
+  cap=${CAP:-$(awk '/^\[agent\]/{a=1;next} /^\[/{a=0} a && /timeout_sec/{gsub(/[^0-9.]/,"",$0); print int($0); exit}' "$dir/task.toml")}
   echo "start $id $(date +%H:%M:%S) ($MAS_MODE, mas $commit)"
   if [ "${MAS_UI:-}" = 1 ]; then
     # The console of the run takes this terminal: the result line goes to the record by --record.

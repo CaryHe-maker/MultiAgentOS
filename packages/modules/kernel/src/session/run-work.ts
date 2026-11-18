@@ -167,6 +167,7 @@ export interface RunWorkDeps {
   readonly agentShare?: (
     ref: ReserveDelegationRequest['tasks'][number]['agentRef'],
     context: { readonly sessionId: string; readonly workflowRunId: string },
+    caller: RegisterAgentRunRequest['agentRef'],
   ) => AgentShare;
   readonly newDelegationId?: () => string;
   readonly inputIsValid: (unit: UnitDefinition, input: unknown) => boolean;
@@ -924,7 +925,7 @@ export class RunWork {
       clamped?: 'MIN' | 'MAX';
     }[] = [];
     for (const task of request.tasks) {
-      const share = this.#deps.agentShare(task.agentRef, context);
+      const share = this.#deps.agentShare(task.agentRef, context, parent.agentRef);
       if (!share.ok) return refuse(share.reasonCode);
       if (share.defaultShare === undefined) return refuse('FORBIDDEN');
       const roots = task.writeRoots.flatMap((root) => normalizeRequestPath(root) ?? []);

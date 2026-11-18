@@ -1434,7 +1434,8 @@ real('the round limit', () => {
       reply('stopping; prompt to continue: "carry on from round 78"'),
     );
     // One question for the prefix `echo`, then the allowance covers every later round.
-    const chat = await chatOn(place, provider, { answer: () => 'p' });
+    // main's 80 rounds; chat has 200 (D112).
+    const chat = await chatOn(place, provider, { answer: () => 'p', chatAgent: 'main' });
     await chat.say('many rounds').catch(() => undefined);
     const statuses = provider.requests.map((request) => textOf(request.messages.at(-1)));
     expect(statuses.some((text) => text.includes('the round limit is near'))).toBe(true);

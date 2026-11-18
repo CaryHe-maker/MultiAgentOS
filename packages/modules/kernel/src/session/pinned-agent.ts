@@ -132,28 +132,37 @@ export type AgentShare =
   | { readonly ok: true; readonly defaultShare: number | undefined; readonly budget: AgentBudget }
   | { readonly ok: false; readonly reasonCode: 'DEFINITION_UNAVAILABLE' | 'DEFINITION_MISMATCH' };
 
-/** The default share and the per-call budget of an Agent, from the catalog. */
+/**
+ * The default share and the per-call budget of an Agent, from the catalog. An Agent not started
+ * as a task has a share only where the caller's own definition starts it as a template's step,
+ * with the share it names there (Orchestration D113).
+ */
 export function agentShareFrom(
   catalog: AgentCatalog,
 ): (
   ref: { readonly id: string; readonly version: string; readonly digest: string },
   context: Pick<BoundaryContext, 'sessionId' | 'workflowRunId'>,
+  caller: { readonly id: string; readonly version: string },
 ) => AgentShare {
-  return (ref, context) => {
-    const set = catalog.pinAgent(ref, {
+  return (ref, context, caller) => {
+    const boundary = {
       correlationId: newId('cor'),
       tenantId: 'local',
       projectId: 'local',
       ...context,
-    });
+    };
+    const set = catalog.pinAgent(ref, boundary);
     if (!set.ok) return { ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' };
     if (set.value.agent.digest !== ref.digest)
       return { ok: false, reasonCode: 'DEFINITION_MISMATCH' };
-    return {
-      ok: true,
-      defaultShare: set.value.agent.spawnable?.defaultShare,
-      budget: set.value.agent.budget,
-    };
+    const own = set.value.agent.spawnable?.defaultShare;
+    const parent = own === undefined ? catalog.pinAgent(caller, boundary) : undefined;
+    const step = parent?.ok
+      ? parent.value.agent.actions.delegate?.find(
+          (each) => each.agent === ref.id && each.template !== undefined,
+        )?.share
+      : undefined;
+    return { ok: true, defaultShare: own ?? step, budget: set.value.agent.budget };
   };
 }
 

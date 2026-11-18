@@ -113,6 +113,8 @@ actions:
       template:
         id: mission
         version: v0.1.0
+      # What the Mission may use, up to twice this: a run of `mas run` (kernel.budget.runTokenLimit).
+      share: 12000000
 capabilities:
   - repo.read
   - workspace.write

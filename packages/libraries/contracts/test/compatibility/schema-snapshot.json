@@ -193,6 +193,9 @@
                   },
                   "allowedInFinal": {
                     "type": "boolean"
+                  },
+                  "byText": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -291,6 +294,76 @@
                 }
               },
               "additionalProperties": false
+            },
+            "delegate": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "toolRef",
+                  "agent",
+                  "context"
+                ],
+                "properties": {
+                  "toolRef": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "version"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                        "maxLength": 64
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "catalog.DefinitionRef.v1"
+                  },
+                  "agent": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                  },
+                  "context": {
+                    "enum": [
+                      "fresh",
+                      "inherit"
+                    ]
+                  },
+                  "template": {
+                    "type": "object",
+                    "required": [
+                      "id",
+                      "version"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                        "maxLength": 64
+                      },
+                      "version": {
+                        "type": "string",
+                        "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "$id": "catalog.DefinitionRef.v1"
+                  },
+                  "share": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "minItems": 1,
+              "maxItems": 4
             },
             "sleep": {
               "type": "object",
@@ -507,6 +580,9 @@
             "defaultShare": {
               "type": "integer",
               "minimum": 1
+            },
+            "staggered": {
+              "type": "boolean"
             }
           },
           "additionalProperties": false
@@ -538,7 +614,7 @@
             "maxRounds": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100
+              "maximum": 300
             },
             "maxToolCallsPerRound": {
               "type": "integer",
@@ -1363,6 +1439,9 @@
                       },
                       "allowedInFinal": {
                         "type": "boolean"
+                      },
+                      "byText": {
+                        "type": "boolean"
                       }
                     },
                     "additionalProperties": false
@@ -1461,6 +1540,76 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "delegate": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "toolRef",
+                      "agent",
+                      "context"
+                    ],
+                    "properties": {
+                      "toolRef": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "version"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                            "maxLength": 64
+                          },
+                          "version": {
+                            "type": "string",
+                            "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "$id": "catalog.DefinitionRef.v1"
+                      },
+                      "agent": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                      },
+                      "context": {
+                        "enum": [
+                          "fresh",
+                          "inherit"
+                        ]
+                      },
+                      "template": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "version"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+                            "maxLength": 64
+                          },
+                          "version": {
+                            "type": "string",
+                            "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+                          }
+                        },
+                        "additionalProperties": false,
+                        "$id": "catalog.DefinitionRef.v1"
+                      },
+                      "share": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "minItems": 1,
+                  "maxItems": 4
                 },
                 "sleep": {
                   "type": "object",
@@ -1677,6 +1826,9 @@
                 "defaultShare": {
                   "type": "integer",
                   "minimum": 1
+                },
+                "staggered": {
+                  "type": "boolean"
                 }
               },
               "additionalProperties": false
@@ -1708,7 +1860,7 @@
                 "maxRounds": {
                   "type": "integer",
                   "minimum": 1,
-                  "maximum": 100
+                  "maximum": 300
                 },
                 "maxToolCallsPerRound": {
                   "type": "integer",
@@ -51386,6 +51538,10 @@
             "staggerWorkersMs": {
               "type": "integer",
               "minimum": 0
+            },
+            "chatAgent": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,39}$"
             }
           },
           "additionalProperties": false,
@@ -51462,6 +51618,10 @@
         "staggerWorkersMs": {
           "type": "integer",
           "minimum": 0
+        },
+        "chatAgent": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,39}$"
         }
       },
       "additionalProperties": false,
@@ -57173,6 +57333,35 @@
       "additionalProperties": false,
       "$id": "workflow.AskUserArgs.v1"
     },
+    "workflow.DelegateArgs.v1": {
+      "type": "object",
+      "required": [
+        "description",
+        "prompt"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1
+        },
+        "writeScope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "maxItems": 10
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.DelegateArgs.v1"
+    },
     "workflow.ExplorerResult.v1": {
       "type": "object",
       "required": [
@@ -57249,6 +57438,26 @@
       },
       "additionalProperties": false,
       "$id": "workflow.JobOutputArgs.v1"
+    },
+    "workflow.MissionArgs.v1": {
+      "type": "object",
+      "required": [
+        "description",
+        "goal"
+      ],
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "$id": "workflow.MissionArgs.v1"
     },
     "workflow.ReplyArgs.v1": {
       "type": "object",

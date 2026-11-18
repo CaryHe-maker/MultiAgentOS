@@ -906,7 +906,8 @@ export class SessionRunner {
   #bindingAt(agentId: string, depth: number, commands = true): AgentBinding {
     let binding = this.#binding(agentId);
     const starts =
-      binding.definitions.spawnTool !== undefined || binding.definitions.delegateTools !== undefined;
+      binding.definitions.spawnTool !== undefined ||
+      binding.definitions.delegateTools !== undefined;
     if (depth >= MAX_MISSION_DEPTH && starts) {
       const definitions: AgentDefinitions = { ...binding.definitions };
       delete (definitions as { spawnTool?: unknown }).spawnTool;
@@ -2734,8 +2735,10 @@ export class SessionRunner {
     unfinished?: Extract<AgentEnding, { kind: 'DEGRADED' }>['unfinished'],
   ): Promise<void> {
     if (OVER_BUDGET.includes(reason)) this.#overBudget = true;
+    // A task reports to its caller, a Mission started by chat's `mission` too (D113): its own
+    // definition publishes a notice, as Mission's root of a run.
     const { onDegraded } = active.state.definitions;
-    if (onDegraded === 'RETURN_PARTIAL') {
+    if (onDegraded === 'RETURN_PARTIAL' || active.task !== undefined) {
       // What the last round wrote is not thrown away for its form: the caller gets it as written,
       // marked as not following the form, and judges it itself.
       const handed =
@@ -2923,7 +2926,8 @@ export class SessionRunner {
         ? splitAsLead(ending.arguments as RunSubagentsArgs)
         : this.#delegated(workflowRunId, active, delegate, ending.arguments);
     // A template's step started as a subtask (D113) is told its step as the template tells it.
-    const step = delegate?.template === undefined ? undefined : this.#ownerStep(delegate.template.id);
+    const step =
+      delegate?.template === undefined ? undefined : this.#ownerStep(delegate.template.id);
     const first = requested.tasks[0];
     const steps = new Map<string, { readonly guide?: string; readonly inputLimit?: number }>(
       step === undefined || first === undefined
@@ -3022,15 +3026,18 @@ export class SessionRunner {
     const readable = readableArtifacts(this.#records, active.state.agentRunId);
     const spawnContext = {
       rules: this.#deps.config,
+      // A delegated task writes only where its call names (D112): without a writeScope it reads,
+      // and the Kernel lends it nothing to write. A template's step started as a task writes the
+      // caller's roots (D113).
       agents:
-        delegate?.template === undefined
+        delegate === undefined
           ? this.#spawnable
           : new Map([
               ...this.#spawnable,
               [
                 delegate.agent,
                 {
-                  writes: true,
+                  writes: (requested.tasks[0]?.writeScope ?? []).length > 0,
                   allowedEfforts: this.#binding(delegate.agent).allowedEfforts,
                 },
               ],
@@ -3234,7 +3241,8 @@ export class SessionRunner {
     let number = 1;
     while (taken.has(`${prefix}-${String(number)}`)) number += 1;
     const text = args.prompt ?? args.goal ?? '';
-    const step = delegate.template === undefined ? undefined : this.#ownerStep(delegate.template.id);
+    const step =
+      delegate.template === undefined ? undefined : this.#ownerStep(delegate.template.id);
     return {
       tasks: [
         {
@@ -3341,7 +3349,10 @@ export class SessionRunner {
       cut: [],
     },
     /** A template's step started as a task (D113): its guide and input limit, by task name. */
-    steps: ReadonlyMap<string, { readonly guide?: string; readonly inputLimit?: number }> = new Map(),
+    steps: ReadonlyMap<
+      string,
+      { readonly guide?: string; readonly inputLimit?: number }
+    > = new Map(),
   ): Promise<void> {
     const call = { toolCallId, delegationId: reserved.delegationId };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));

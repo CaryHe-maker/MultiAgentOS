@@ -58,7 +58,10 @@ describe('subagent and subagent_fork (Orchestration D112)', () => {
     async () => {
       const provider = scriptedAgents({
         main: [
-          tool('subagent', { description: 'read the notes', prompt: 'Read notes.txt and say what it says.' }),
+          tool('subagent', {
+            description: 'read the notes',
+            prompt: 'Read notes.txt and say what it says.',
+          }),
           waitForTasks(),
           reply('the notes say 42'),
         ],
@@ -73,7 +76,9 @@ describe('subagent and subagent_fork (Orchestration D112)', () => {
       expect(chat.printed('REPLY')).toEqual(['the notes say 42']);
       const [chatFirst] = requestsOf(provider, 'main');
       // chat offers the harness's delegation tools and not Mission's run_subagents.
-      expect(toolNames(chatFirst)).toEqual(expect.arrayContaining(['subagent', 'subagent_fork', 'mission']));
+      expect(toolNames(chatFirst)).toEqual(
+        expect.arrayContaining(['subagent', 'subagent_fork', 'mission']),
+      );
       expect(toolNames(chatFirst)).not.toContain('run_subagents');
       const [subFirst] = requestsOf(provider, 'chat-sub');
       // A fresh child starts from its prompt alone: the user's message is not in its context.
@@ -118,7 +123,10 @@ describe('mission (Orchestration D113)', () => {
     async () => {
       const provider = scriptedAgents({
         main: [
-          tool('mission', { description: 'deliver the parser', goal: 'Write parser.txt with one line: done.' }),
+          tool('mission', {
+            description: 'deliver the parser',
+            goal: 'Write parser.txt with one line: done.',
+          }),
           waitForTasks(),
           reply('the mission delivered'),
         ],

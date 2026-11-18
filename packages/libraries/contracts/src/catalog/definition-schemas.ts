@@ -228,7 +228,8 @@ export const AgentDefinitionSchema = Type.Object(
          * Tools that each start one subtask (Orchestration D112): the subtask runs as `agent`, and
          * starts from a new context (`fresh`, only its prompt) or from the caller's (`inherit`).
          * With `template`, it runs that template's step instead, told as the template tells it
-         * (its goal, guide and input limit), and the tool takes `workflow.MissionArgs` (D113).
+         * (its goal, guide and input limit), and the tool takes `workflow.MissionArgs` (D113);
+         * its Agent is not one started as a task, so the entry gives the share its task is lent.
          * They need `agent.spawn`, like `spawn`.
          */
         delegate: Type.Optional(
@@ -239,6 +240,7 @@ export const AgentDefinitionSchema = Type.Object(
                 agent: Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$' }),
                 context: Type.Enum(['fresh', 'inherit']),
                 template: Type.Optional(DefinitionRefSchema),
+                share: Type.Optional(Type.Integer({ minimum: 1 })),
               },
               { additionalProperties: false },
             ),

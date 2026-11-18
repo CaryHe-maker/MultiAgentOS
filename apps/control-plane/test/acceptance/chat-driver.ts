@@ -246,8 +246,7 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
 export function agentOfRequest(request: ChatRequest): ScriptedAgent {
   return agentOfTools(
     new Set((request.tools ?? []).map((each) => each.function.name)),
-    request.messages.map((message) => textOf(message)).join('
-'),
+    request.messages.map((message) => textOf(message)).join('\n'),
   );
 }
 
