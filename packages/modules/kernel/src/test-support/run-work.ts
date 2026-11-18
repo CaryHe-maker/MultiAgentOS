@@ -43,11 +43,9 @@ export const testPinnedAgent = (overrides: Partial<PinnedAgent> = {}): PinnedAge
 export class TestExecution {
   readonly started: { readonly spec: AttemptSpec; readonly unitAttemptId: string }[] = [];
   cancels = 0;
-  attempts: RunAttempts | undefined;
   #next = 0;
 
   readonly createAttempt = (spec: AttemptSpec, attempts: RunAttempts): Promise<string> => {
-    this.attempts = attempts;
     this.#next += 1;
     const unitAttemptId = `una_exec${String(this.#next).padStart(4, '0')}`;
     attempts.registerAttempt(unitAttemptId, spec.requestId);

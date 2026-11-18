@@ -14,8 +14,8 @@ const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<string, readonly string[]>>
   'packages/infrastructure/persistence': ['contracts'],
   'packages/infrastructure/artifacts': ['contracts'],
   'packages/modules/kernel': ['contracts', 'fabric'],
-  'packages/modules/workflow': ['contracts', 'fabric'],
-  'packages/modules/user-interaction': ['contracts', 'fabric'],
+  'packages/modules/workflow': ['contracts'],
+  'packages/modules/user-interaction': ['contracts'],
   'apps/cli': ['contracts', 'user-interaction'],
   'apps/control-plane': [
     'agent-tool-pool',

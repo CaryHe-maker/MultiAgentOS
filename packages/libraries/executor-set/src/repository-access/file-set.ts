@@ -33,10 +33,6 @@ export class FileDigestCache {
   /** Digests being computed: a second build that needs the same file waits for it. */
   private readonly computing = new Map<string, Promise<FileDigest>>();
 
-  public get(key: string): FileDigest | undefined {
-    return this.entries.get(key);
-  }
-
   public set(key: string, value: FileDigest): void {
     if (this.entries.size >= 200_000) this.entries.clear();
     this.entries.set(key, value);

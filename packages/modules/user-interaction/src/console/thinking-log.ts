@@ -8,8 +8,8 @@
  * (`mas log` shows it); this is the preview that was there while the call ran.
  */
 
-export const THINKING_MAX_CHARS = 64 * 1024;
-export const THINKING_MAX_BLOCKS = 100;
+const THINKING_MAX_CHARS = 64 * 1024;
+const THINKING_MAX_BLOCKS = 100;
 
 export type ThinkingState = 'OPEN' | 'DONE' | 'ABORTED';
 

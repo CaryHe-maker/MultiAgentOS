@@ -11,9 +11,9 @@ import { isRolledBack, rolledBackRanges } from '../context/rolled-back.js';
  */
 
 /** A round that reads an unanswered message this often is reminded of it. */
-export const REPLY_REMINDER_AT = 1;
+const REPLY_REMINDER_AT = 1;
 /** A reply of a round that reads an unanswered message this often is refused without its answer. */
-export const REPLY_REFUSAL_AT = 2;
+const REPLY_REFUSAL_AT = 2;
 
 export interface OwedReply {
   /** The id of the message, which the answer names in `replyTo`. */

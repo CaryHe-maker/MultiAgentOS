@@ -301,7 +301,7 @@ const commandsCovered = (
   );
 
 /** The key of a refusal of one command: its work directory and its line. */
-export const commandKeyOf = (command: CommandDemand): string =>
+const commandKeyOf = (command: CommandDemand): string =>
   `${command.workdir}\u0000${command.analysis.text}`;
 
 /** The user refused this very command in this AgentRun: other commands are not affected. */

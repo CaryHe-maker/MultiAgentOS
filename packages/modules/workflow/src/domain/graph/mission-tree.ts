@@ -128,17 +128,6 @@ export function siblingsOf(
   return childrenOf(missions, parentId).filter((each) => each.missionId !== missionId);
 }
 
-/** The task a node is a segment of, from the records; undefined for a HUMAN node. */
-export function missionOfNode(
-  records: readonly SessionLogRecord[],
-  nodeId: string,
-): string | undefined {
-  for (const record of records)
-    if (record.type === 'GRAPH_EXTENDED')
-      for (const node of record.nodes) if (node.nodeId === nodeId) return node.mission?.id;
-  return undefined;
-}
-
 /** Lines of the tree a task is shown, at most this many (Orchestration 3.7). */
 const MAX_TREE_LINES = 30;
 

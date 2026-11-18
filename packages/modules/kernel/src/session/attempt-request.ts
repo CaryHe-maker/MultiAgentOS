@@ -119,7 +119,7 @@ function messageTextOf(argumentsText: string): string {
 }
 
 /** Room kept below the model's window besides the output: estimates are not exact (D100). */
-export const CAP_MARGIN_TOKENS = 20_000;
+const CAP_MARGIN_TOKENS = 20_000;
 
 /**
  * The most one request of this AgentRun may hold as a whole (D100): the model's window less the

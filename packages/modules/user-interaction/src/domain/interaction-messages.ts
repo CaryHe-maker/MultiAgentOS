@@ -1,7 +1,7 @@
 import type { ReasonCode } from '@multiagentos/contracts';
 
 /** User text is independent of exception messages and failure.detail. */
-export const InteractionMessages = Object.freeze({
+const InteractionMessages = Object.freeze({
   genericReason: '请求未能完成，请检查运行配置。',
   reason: {
     INVALID_REQUEST: '请求格式不符合系统协议。',

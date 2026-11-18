@@ -12,7 +12,7 @@ import type {
  * A file larger than this enters a snapshot only when the one before already holds it. It is the
  * limit of the file tools, so everything they can write can be undone.
  */
-export const MAX_UNTRACKED_SNAPSHOT_BYTES = MAX_WORKSPACE_FILE_BYTES;
+const MAX_UNTRACKED_SNAPSHOT_BYTES = MAX_WORKSPACE_FILE_BYTES;
 /** The actor holds every message during a capture, so a stuck git must not hold it for ever. */
 const GIT_TIMEOUT_MS = 300_000;
 /** Enough for the snapshots at hand; a tree can always be read again. */
@@ -141,7 +141,7 @@ function changesBetween(
 }
 
 /** The id of the input checkpoint an older index line's Turn stands for. */
-export const inputCheckpointOf = (turnId: string): string =>
+const inputCheckpointOf = (turnId: string): string =>
   `ckp_${turnId.slice(turnId.indexOf('_') + 1)}`;
 
 /**

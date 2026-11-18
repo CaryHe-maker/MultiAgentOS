@@ -33,14 +33,14 @@ export const failed = (reasonCode: ExecutorFailedCode, retryable: boolean): Exec
  * Supervisor reports such an execution as TERMINATED, so the reason code here is never
  * delivered.
  */
-export class ExecutionAborted extends Error {
+class ExecutionAborted extends Error {
   public constructor() {
     super('execution aborted');
     this.name = 'ExecutionAborted';
   }
 }
 
-export const aborted = (): ExecutorOutcome => failed('INTERNAL', false);
+const aborted = (): ExecutorOutcome => failed('INTERNAL', false);
 
 export function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted) throw new ExecutionAborted();

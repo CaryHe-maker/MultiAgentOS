@@ -69,7 +69,7 @@ export class WebFailure extends Error {
 }
 
 /** `Retry-After` as milliseconds: seconds, or a date. */
-export function retryAfterMs(header: string | null, now: number): number | undefined {
+function retryAfterMs(header: string | null, now: number): number | undefined {
   if (header === null) return undefined;
   const seconds = Number(header);
   if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
@@ -110,7 +110,7 @@ export function failureOfStatus(status: number, retryAfter: number | undefined):
   );
 }
 
-export const networkFailure = (): WebFailure =>
+const networkFailure = (): WebFailure =>
   new WebFailure({ kind: 'FAILED', code: 'PROVIDER_UNREACHABLE', retryable: true });
 
 /** What an adapter is built with; the key is looked up under the provider's name. */

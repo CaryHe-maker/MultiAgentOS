@@ -31,7 +31,7 @@ const BEFORE_SENDING = new Set([
   'ERR_TLS_CERT_ALTNAME_INVALID',
 ]);
 
-export function failedBeforeSending(error: unknown): boolean {
+function failedBeforeSending(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; typeof current === 'object' && current !== null && depth < 5; depth += 1) {
     const { code, cause } = current as { code?: unknown; cause?: unknown };

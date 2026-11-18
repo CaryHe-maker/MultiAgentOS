@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@multiagentos/contracts": "workspace:*",
-    "@multiagentos/fabric": "workspace:*"
+    "@multiagentos/contracts": "workspace:*"
   },
   "scripts": {
     "build": "tsc -b tsconfig.json --pretty false",

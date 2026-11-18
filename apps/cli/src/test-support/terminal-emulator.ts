@@ -48,7 +48,7 @@ function controlSequenceAt(
  * lines, and lets what scrolls off the top stay in the scroll-back, where nothing can erase it.
  * The conversation as it is left in that terminal is what the person sees when scrolling up.
  */
-export class Terminal {
+class Terminal {
   readonly scrollback: string[] = [];
   readonly #screen: string[][];
   #row = 0;
@@ -191,7 +191,7 @@ export const block = (
 });
 
 /** A reply of the kind that went wrong: a long list with dashes, quotes and backticks. */
-export const reply = (turn: number) =>
+const reply = (turn: number) =>
   [
     `第${String(turn)}次回答——我当前会话里能调用的工具一共有 13 个，按用途分：`,
     ...Array.from(

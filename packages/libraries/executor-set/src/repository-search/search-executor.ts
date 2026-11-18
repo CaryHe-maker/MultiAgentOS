@@ -43,7 +43,7 @@ import {
 type MatchKind = SearchHit['matchKind'];
 
 /** Lines of context on each side of a matching line. */
-export const CONTEXT_LINES = 2;
+const CONTEXT_LINES = 2;
 /** Matches closer than this merge into one hit; a merged hit never exceeds MAX_HIT_LINES. */
 const MAX_HIT_LINES = 15;
 /** A PATH hit shows the first lines of the file. */

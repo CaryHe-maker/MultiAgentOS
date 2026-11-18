@@ -21,7 +21,7 @@ import { previewLimitsOf } from '../retention/retention.js';
 import { lineRangeText, numberLines, parseText } from '../text/text-document.js';
 
 /** At most this many lines per read. */
-export const MAX_READ_LINES = 400;
+const MAX_READ_LINES = 400;
 
 /** Numbered lines take room the raw text does not: at most 400 lines of 8 bytes, and the header. */
 export const RENDERING_BYTES = 4096;

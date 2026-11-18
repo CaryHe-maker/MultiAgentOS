@@ -30,7 +30,7 @@ export interface RunBudget {
  * An Agent's budget as the ledgers count it: its input limits at `reserveShare` of their size, its
  * output limits whole (output is never cached). Its requests keep the limits as declared.
  */
-export const ledgerBudget = (agent: AgentBudget, reserveShare = 1): AgentBudget =>
+const ledgerBudget = (agent: AgentBudget, reserveShare = 1): AgentBudget =>
   reserveShare >= 1
     ? agent
     : {
