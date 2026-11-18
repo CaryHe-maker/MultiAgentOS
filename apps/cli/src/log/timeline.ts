@@ -1,5 +1,5 @@
 /**
- * The time line of a Session, read from its log (docs/M2/Phase1Console.md 3). The log holds
+ * The time line of a Session, read from its log (docs/M2/Console.md 3). The log holds
  * structured fields and references; the bodies (what the user wrote, what the model thought and
  * said, the arguments and results of tools) are in the artifact store, so the builder asks for
  * them through `readText`. It only reads: nothing here writes, and no model or network is needed.

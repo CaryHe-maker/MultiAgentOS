@@ -1,7 +1,7 @@
 /**
  * The judges of the submission study are checked before any run is spent on them: on every
  * repository as the model gets it the hidden tests fail, and on the reference solution they all
- * pass, and the judge says so (Phase2Plan 7).
+ * pass, and the judge says so (Evaluation 7a).
  */
 import { execFileSync } from 'node:child_process';
 import { cp, mkdtemp, rm } from 'node:fs/promises';

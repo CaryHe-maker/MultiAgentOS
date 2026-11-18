@@ -1,16 +1,16 @@
-# Phase 3 任务集（定稿，2026-11-15）
+# M2 的评测任务集
 
-> phase 3 的开发集与最终集在此定下，之后不再改动题目（Cary 2026-11-15 定）。规则见 [Phase3Plan](Phase3Plan.md) 第 3 节（第 3.4 节记录了设计题的由来）；本文是定稿的清单、存放位置、校验方法与 `dsh` 对照的结果。
+> M2 的开发集与最终集：清单、存放位置、校验方法、运行规则与 `dsh` 对照的结果。题目在 2026-11-15 定稿，之后不再改动。度量与记录的方法见 [Evaluation](Evaluation.md)；每次运行的过程见 [experiments](experiments.md)。
 
 ## 1. 文件
 
 | 文件 | 内容 |
 |---|---|
-| `scripts/taskset/phase3.json` | 定稿的四组题目：每题的 id、来源、角色与内容哈希，`frozen` 记下定稿的时间与题数 |
-| `scripts/taskset/phase3-freeze.mjs` | 重新计算每题内容的哈希并与定稿比较（`node phase3-freeze.mjs`，在 WSL 中运行）；定稿后题目内容有任何改动都会报出 |
-| `scripts/taskset/phase3-dsh-results.json` | `dsh` 对照的全部运行（每题一次）：用时、得分、请求数、token、按价格表折算的费用；原始日志在 WSL 的 `~/bench/p3dsh` |
+| `scripts/taskset/taskset.json` | 定稿的四组题目：每题的 id、来源、角色与内容哈希，`frozen` 记下定稿的时间与题数 |
+| `scripts/taskset/taskset-freeze.mjs` | 重新计算每题内容的哈希并与定稿比较（`node taskset-freeze.mjs`，在 WSL 中运行）；定稿后题目内容有任何改动都会报出 |
+| `scripts/taskset/dsh-results.json` | `dsh` 对照的全部运行（每题一次）：用时、得分、请求数、token、按价格表折算的费用；原始日志在 WSL 的 `~/bench/p3dsh` |
 | `scripts/taskset/designed/<名>/` | 本项目设计的题，Harbor 格式：`instruction.md` 规格、`environment/` 镜像、`tests/` 隐藏测试与判分、`solution/` oracle、`task.toml` |
-| `scripts/taskset/phase3-dsh.sh` | 运行入口：每题开跑前写标记，有标记的题不再运行 |
+| `scripts/taskset/dsh-run.sh` | 运行入口：每题开跑前写标记，有标记的题不再运行 |
 
 题目的来源与位置：`designed/*` 在本仓库；`tb2/*`、`sbp/*`、`lb/*`、`deepswe/*` 在 WSL 的 `~/benchmeta`（Terminal-Bench 2.0、SWE-bench Pro v2、LoopsBench 题包 c47e13a、DeepSWE）；`study.*` 在 `apps/control-plane/test/eval/fixtures/study/`；`parallel/*` 在 `~/taskset`。
 
@@ -58,7 +58,7 @@ sqlengine 与 minidb 都是从零写关系数据库，相似度高，因此一�
 
 ### 4.1 小任务（11 道）
 
-tb2/tune-mjcf、tb2/configure-git-webserver、tb2/gcode-to-text、tb2/raman-fitting、tb2/polyglot-c-py、tb2/chess-best-move、sbp/qutebrowser-36ade4bb、sbp/vuls-7e91f5ef、sbp/NodeBB-da0211b1、parallel/dev/research-then-implement-s1-n6（phase 3 中 `dsh` 没有运行），以及从最终集转来的 sbp/teleport-1b08e7d0（`dsh` 无法运行）。
+tb2/tune-mjcf、tb2/configure-git-webserver、tb2/gcode-to-text、tb2/raman-fitting、tb2/polyglot-c-py、tb2/chess-best-move、sbp/qutebrowser-36ade4bb、sbp/vuls-7e91f5ef、sbp/NodeBB-da0211b1、parallel/dev/research-then-implement-s1-n6（`dsh` 没有运行），以及从最终集转来的 sbp/teleport-1b08e7d0（`dsh` 无法运行）。
 
 ### 4.2 大任务（26 道）
 
@@ -94,11 +94,22 @@ tb2/tune-mjcf、tb2/configure-git-webserver、tb2/gcode-to-text、tb2/raman-fitt
 | lb/task_ligra_graph_evolution（适配器冒烟检查，5 分钟上限） | 5.0 | 未通过 | — |
 | deepswe/anko-default-function-arguments（适配器冒烟检查，5 分钟上限） | 5.0 | 0 | — |
 
-原有的开发题（phase 3 中 `dsh` 没有运行）：lb/task_raylib_shapes2d_medium、deepswe/quill-shared-toolbar-focus、study.findex、study.taskq。
+另有开发题（`dsh` 没有运行）：lb/task_raylib_shapes2d_medium、deepswe/quill-shared-toolbar-focus、study.findex、study.taskq。
 
 ## 5. 运行与对照
 
-- `dsh` 对照（中性提示、`deepseek-flash`）已经对每道题运行一次，共 37 次，合计 **4.11 美元**；之后不再重跑。
-- 本项目在优化完成后才跑最终集，至多两次，与 `dsh` 用同一镜像、同一判分、同一单题上限（大任务 2.5 小时，小任务沿用题目的设置）与同一价格表。
-- **待办（RP3-EV）**：mas 现在直接访问 DeepSeek，离线题需要改为经记录代理访问模型，`agentrun.mjs` 目前对离线题拒绝运行 mas。
-- 结果的读法：`dsh` 在多数题上得分很高（小任务全对，大任务 5 道中 2 道满分），正确率上的差距有限；用时与费用的差距是主要的对比，正确率的差距主要看 pylua、sqlengine 这类没有满分的题。
+- `dsh` 对照（中性提示、`deepseek-flash`）对每道题运行一次，共 37 次，合计 **4.11 美元**；之后不再重跑。
+- 最终集至多运行两次，与 `dsh` 用同一镜像、同一判分、同一单题上限（大任务 2.5 小时，小任务沿用题目的设置）与同一价格表；离线题的模型请求经记录代理，联网题由 mas 自己计数；不在 DeepSeek 的高峰时段（工作日 UTC 01:00–04:00、06:00–10:00）开始运行。
+- 结果的读法：`dsh` 在多数题上得分很高（小任务全对，大任务 5 道中 2 道满分），正确率上的差距有限；用时与费用的差距是主要的对比。
+
+## 6. 最终集大任务的结果（Mission 模式）
+
+两次运行都只跑 5 道大任务，各一次；只看合计，单题明细与有效性核对见 [experiments](experiments.md)。
+
+| 运行 | 版本 | 总用时（分钟） | 平均分 | 费用（美元） | 缓存命中率 |
+|---|---|---|---|---|---|
+| 第一次（2026-11-16） | Mission 基线1.1 | 95.9 | 0.910 | 2.237 | 97.05% |
+| 第二次（2026-11-17） | Mission 基线1.2（M2 V1.0） | 103.8 | 0.917 | 1.791 | 98.51% |
+| `dsh` | — | 126.6 | 0.931 | 1.074 | — |
+
+最终集的两次运行已经用完，之后不再运行。

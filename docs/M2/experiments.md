@@ -542,7 +542,7 @@ adaptive-rejection-sampler 两边都失败，不是 mas 独有。
 
 ### J1：开发集大任务 pyawk，Mission 对 `dsh`（2026-11-15）
 
-**条件**：`designed/pyawk`（POSIX awk 解释器，离线），mas `4d7ccd8`（`MAS_MODE=mission`，经 `benchproxy-oai` 访问模型），各跑一次；`dsh` 的数字取自 [Phase3TaskSet](Phase3TaskSet.md)。原始记录在 WSL 的 `~/bench/p3mas/results/dev-mission-1-mas-pyawk-8493228/`。
+**条件**：`designed/pyawk`（POSIX awk 解释器，离线），mas `4d7ccd8`（`MAS_MODE=mission`，经 `benchproxy-oai` 访问模型），各跑一次；`dsh` 的数字取自 [TaskSet](TaskSet.md)。原始记录在 WSL 的 `~/bench/p3mas/results/dev-mission-1-mas-pyawk-8493228/`。
 
 | | 用时（分钟） | 得分 | 请求 | 费用（美元） | 最多同时 |
 |---|---|---|---|---|---|
@@ -632,7 +632,7 @@ Cary 2026-11-15 定：此后只在一道开发集题上反复实验，切换不�
 
 **K2**（`b5d8c05`，D55）：26.9 分钟，1.000，$0.95。第 3.6 分钟一次派出 8 个任务（readme 也在其中）；三个修补任务都用 `continues` 交回原所有者；构建后的串行段只剩 3 分钟左右，根自己核对与修小问题。worker 有三个碰到 40 轮上限（sed、wc-head-tail、sort，第 20–23 分钟）。
 
-**更正（K1、K2 与 J1–J5）**：`bench.ts` 用 tsx 从源码运行，但它引用的各包解析到各自的 `dist/`，而 `~/orch-exp` 的 `sync.sh` 只装依赖、从不构建。所以记录里的 mas 提交号虽然是新的，各包 TypeScript 代码却还是上一次构建时的。实验里生效的只有运行时从源码读取的 YAML 定义（提示词、模板、Agent 的轮数与思考档位）：D49–D52 的 YAML 部分生效，D51 里 WRITE_SCOPE_OVERLAP 报错文案的改动是 TypeScript，没有生效；D53（继承根的上下文）、D54（交接证据随结果显示）、D55（系统拒绝串写与事后 tester）以及 `1aeca08` 的 web_fetch 修复都没有生效。K1、K2 里根带 `context: "inherit"` 派任务时都被参数校验以 `context schema is false` 拒绝，改为不带它重发。K2 的进步全部来自 YAML 的改动（tester 与构建同派、文档同派、轮数 40、检查放进各部分）。从 K3 起 `phase3-mas.sh` 在运行前先构建 `MAO_DIR`。
+**更正（K1、K2 与 J1–J5）**：`bench.ts` 用 tsx 从源码运行，但它引用的各包解析到各自的 `dist/`，而 `~/orch-exp` 的 `sync.sh` 只装依赖、从不构建。所以记录里的 mas 提交号虽然是新的，各包 TypeScript 代码却还是上一次构建时的。实验里生效的只有运行时从源码读取的 YAML 定义（提示词、模板、Agent 的轮数与思考档位）：D49–D52 的 YAML 部分生效，D51 里 WRITE_SCOPE_OVERLAP 报错文案的改动是 TypeScript，没有生效；D53（继承根的上下文）、D54（交接证据随结果显示）、D55（系统拒绝串写与事后 tester）以及 `1aeca08` 的 web_fetch 修复都没有生效。K1、K2 里根带 `context: "inherit"` 派任务时都被参数校验以 `context schema is false` 拒绝，改为不带它重发。K2 的进步全部来自 YAML 的改动（tester 与构建同派、文档同派、轮数 40、检查放进各部分）。从 K3 起 `mas-run.sh` 在运行前先构建 `MAO_DIR`。
 
 **K3**（`091688c`，D53–D55 的代码第一次真正生效）：没有跑成。第 7 分钟起 DeepSeek 先返回 429，随后一律返回 402（账户余额不足，余额 ¥0.43），继承根上下文的 worker 的请求全部失败，任务以 ERROR 结束（得分 0.015，8.4 分钟，$0.27）。这不是方案的结果，不计入对照；充值后以新的 label 重跑同一方案。到失败时，根在第 4.3 分钟一次派出 6 个部分，图里 6 个都带着 `inherits`，即从根的上下文开始（每次请求的 user 文本约 2 万 token，就是根读过的规格）。
 
@@ -644,7 +644,7 @@ Cary 2026-11-15 定：此后只在一道开发集题上反复实验，切换不�
 
 **K3c**（`c7e671d`，D53–D56 的代码第一次完整生效）：25.5 分钟，0.985（135 项隐藏测试有 2 项未过），$0.59。根只调用一次 `run_subagents`，没有被退回，第 2.4 分钟一次派出 7 个 worker，7 个都从根的上下文开始。各部分在第 5.4–11.0 分钟回来，只有 sort 到第 17.3 分钟；之后根独自收尾 8 分钟，自己跑命令做整体检查与小修（构建后 27 次命令、9 处修改），没有再派任务。任务间没有消息。与 K2 相比：请求 447→316，输出 token 91.2 万→58.7 万（其中思考 58.2 万→37.3 万），费用 $0.95→$0.59，用时 26.9→25.5 分钟；比 `dsh`（22.3 分钟、$0.23）仍慢约 3 分钟。慢在 sort 一个部分与根的收尾。
 
-**怎样运行与查看**（2026-11-15 起）：在 WSL 里由 `bash scripts/taskset/mas-live.sh <题> <label>` 启动一次运行（把 `~/orch-exp` 设到本分支最后一次提交，`phase3-mas.sh` 先构建再运行，未提交的改动不在其中），`python3 scripts/taskset/mas-watch.py <label>` 实时查看（每 5 秒：已用时间、请求数、费用、思考占比、每个任务的角色、是否继承上下文、起止时间、轮数与正在做什么、工具调用错误、被退回的结束、任务间消息）。每次运行的结果目录（`~/bench/p3mas/results/<label>-mas-<题>-<id>/`）保存：会话日志 `session-log.jsonl`（含消息正文）、完整数据目录 `data/`（日志指向的全部 artifact）、交付时的仓库 `delivered.tgz` 与 `delivered-status.txt`、判分输出 `verifier.txt`、请求概况 `request-profile.jsonl`；模型请求另记在 `~/bench/usage/<label>-*.jsonl`，汇总在 `~/bench/p3mas/<label>.jsonl`。K4 由 Cary 用这两条命令启动（mas `f057a75`，D57–D59 与 K3c 的不同：参数名下划线兼容、lead 继承上下文、worker 与 lead 的思考要短）。
+**怎样运行与查看**（2026-11-15 起）：在 WSL 里由 `bash scripts/taskset/mas-live.sh <题> <label>` 启动一次运行（把 `~/orch-exp` 设到本分支最后一次提交，`mas-run.sh` 先构建再运行，未提交的改动不在其中），`python3 scripts/taskset/mas-watch.py <label>` 实时查看（每 5 秒：已用时间、请求数、费用、思考占比、每个任务的角色、是否继承上下文、起止时间、轮数与正在做什么、工具调用错误、被退回的结束、任务间消息）。每次运行的结果目录（`~/bench/p3mas/results/<label>-mas-<题>-<id>/`）保存：会话日志 `session-log.jsonl`（含消息正文）、完整数据目录 `data/`（日志指向的全部 artifact）、交付时的仓库 `delivered.tgz` 与 `delivered-status.txt`、判分输出 `verifier.txt`、请求概况 `request-profile.jsonl`；模型请求另记在 `~/bench/usage/<label>-*.jsonl`，汇总在 `~/bench/p3mas/<label>.jsonl`。K4 由 Cary 用这两条命令启动（mas `f057a75`，D57–D59 与 K3c 的不同：参数名下划线兼容、lead 继承上下文、worker 与 lead 的思考要短）。
 
 **K4**（`2af0b56`，Cary 在 WSL 里启动）：没有跑成，不计入对照。第 2.2 分钟时运行正常：根一次派出 8 个 worker 与 1 个 tester（worker 都继承了上下文，工具调用零错误）；23:50:12 起 Docker Desktop 的守护进程出错（查询 mas 那条 `docker exec` 时返回 500），模型请求停在第 19 次，`docker ps` 也不再响应，测评脚本误以为 mas 已结束。花费 $0.05。Cary 重启 Docker Desktop 后以新 label 重跑。看板 `mas-watch.py` 改为 Docker 不响应时如实显示，默认 15 秒刷新。
 
@@ -738,7 +738,7 @@ Cary 2026-11-16 定：以 L9（`dv-medseg-split`）那次运行的配置为 **Mi
 
 Cary 2026-11-17 定：把至 D97 为止的系统冻结为 **Mission 基线1.1**（Orchestration D98，git 标签 `mission-baseline-1.1`），在最终集的 5 道大任务上用 Mission 各跑一次；小任务这次不跑。最终集至多运行两次，这是第一次；不看单题细节调参，只看合计。
 
-条件与 `dsh` 的对照运行完全一致（`scripts/taskset/phase3-freeze.mjs` 已核对，题目内容的哈希与封存时一致）：
+条件与 `dsh` 的对照运行完全一致（`scripts/taskset/taskset-freeze.mjs` 已核对，题目内容的哈希与封存时一致）：
 
 | 题 | 联网 | 时间上限 | `dsh`（分钟 / 得分 / 美元） |
 |---|---|---|---|
@@ -989,16 +989,16 @@ DeepSeek 在领头请求预填充完成后（这个规模约 1–2 秒）就写�
 Cary 2026-11-18 定：基线1.2 冻结为 Mission 模式的最终版本，在最终集的 5 道大任务上各跑一次；这是最终集允许的两次中的第二次、也是最后一次。不看单题细节调参，只看合计。
 
 条件与 `dsh` 的对照运行、与第一次运行完全一致：
-- 题目内容：`scripts/taskset/phase3-freeze.mjs --verify` 核对，全部与封存时的哈希一致（2026-11-17 UTC 17:12）。
+- 题目内容：`scripts/taskset/taskset-freeze.mjs --verify` 核对，全部与封存时的哈希一致（2026-11-17 UTC 17:12）。
 - 联网与否、时间上限、资源都取自各题 `task.toml`：pylua、sqlengine、pyarchive 离线，survey-av-fusion、minidb 联网；`[agent] timeout_sec` 9000 秒；2 个 CPU、4096 MB。启动都经同一个 `scripts/taskset/agentrun.mjs`，评分是同一个 `tests/test.sh`。离线题的模型请求经用量代理（记录每次请求的命中与未命中），联网题由 mas 自己计数。
-- 流程：`scripts/taskset/phase3-mas.sh`（与第一次一样不带界面），一次一道，顺序与第一次相同（pylua、survey-av-fusion、sqlengine、minidb、pyarchive），标签 `f2-<题>`；不在 DeepSeek 高峰时段开始任何一道（工作日 UTC 01:00–04:00、06:00–10:00）。
+- 流程：`scripts/taskset/mas-run.sh`（与第一次一样不带界面），一次一道，顺序与第一次相同（pylua、survey-av-fusion、sqlengine、minidb、pyarchive），标签 `f2-<题>`；不在 DeepSeek 高峰时段开始任何一道（工作日 UTC 01:00–04:00、06:00–10:00）。
 - 版本：mas 取 `feature/PLphase3/stagger` 的头，代码与标签 `mission-baseline-1.2` 相同。
 - 余额：开始前 $6.21（2026-11-17 UTC 17:11）。
 - 环境检查（开始前）：5 个镜像都在，内网 `benchint` 与 `benchnet` 都在，用量代理由 `agentrun.mjs` 按需启动；WSL 内存可用 6.3 GB、磁盘 E: 剩 41 GB；以前没有 `f2-` 的运行记号。离线路径在同一提交上刚跑过（b12-pyawk，正常结束）；联网路径用一道非最终集的小题 `tb2/fix-git`（标签 `f2check-fix-git`）实跑确认。
 - 综述题的评分要查 arXiv，遇到限流时稍后单独重新评分，不重跑。
 - 联网路径实跑结果：`f2check-fix-git` 得分 1、0.5 分钟、$0.004、`DONE`（UTC 17:13–17:14）；运行在脱离终端的 tmux 会话里进行，启动它的 WSL 调用结束后照常跑完。
 
-**第二次运行的结果**（2026-11-17 UTC 17:14–19:02，周二，不在高峰；`scripts/taskset/phase3-mas.sh`、不带界面，一次一道，标签 `f2-<题>`，提交 `b26d9f8`，代码即标签 `mission-baseline-1.2`）：
+**第二次运行的结果**（2026-11-17 UTC 17:14–19:02，周二，不在高峰；`scripts/taskset/mas-run.sh`、不带界面，一次一道，标签 `f2-<题>`，提交 `b26d9f8`，代码即标签 `mission-baseline-1.2`）：
 
 | 题 | 用时（分钟） | 得分 | 费用（美元） | 请求 | 输入 | 命中率 | 未命中 | 输出 | 其中思考 | `dsh`（分钟 / 得分 / 美元） |
 |---|---|---|---|---|---|---|---|---|---|---|

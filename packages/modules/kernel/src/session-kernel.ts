@@ -217,7 +217,7 @@ export function createSessionKernelCore(deps: SessionKernelDeps): SessionKernelC
   const toWorkflow = createWorkflowEventSender(fabric, correlationOf);
   const toInteraction = createInteractionEventSender(fabric, correlationOf);
   const outbox = new KernelOutbox({ toWorkflow, toInteraction }, fault, now);
-  // The thinking of model calls on its way to the console (docs/M2/Phase1Console.md 4): beside the
+  // The thinking of model calls on its way to the console (docs/M2/Console.md 4): beside the
   // ordered events, never logged, and only for calls this Kernel started.
   const streamToInteraction = createModelStreamSender(fabric, correlationOf);
   const watchedCalls = new Map<

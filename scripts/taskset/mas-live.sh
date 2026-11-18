@@ -8,8 +8,8 @@
 #   bash scripts/taskset/mas-live.sh designed/textutils tu-k4
 #     the run in the background; watch it with python3 scripts/taskset/mas-watch.py tu-k4
 # The checkout at MAO_DIR (default ~/orch-exp) is set to this branch's last commit and built by
-# phase3-mas.sh before the run; changes that are not committed are not in the run. A label runs
-# once (phase3-mas.sh keeps a marker); results go under ~/bench/p3mas.
+# mas-run.sh before the run; changes that are not committed are not in the run. A label runs
+# once (mas-run.sh keeps a marker); results go under ~/bench/p3mas.
 set -eu
 TASK=${1:?give the task, for example designed/textutils}
 LABEL=${2:?give a label, for example tu-k4}
@@ -32,11 +32,11 @@ mkdir -p "$HOME/bench"
 if [ "$UI" = 1 ]; then
   echo "building, then the console of $TASK ($LABEL) opens here; Ctrl+C stops the run"
   MAO_ENV_FILE="$REPO/.env" MAO_DIR="$MAO_DIR" MAS_MODE="$MODE" LABEL="$LABEL" MAS_UI=1 \
-    bash "$HERE/phase3-mas.sh" "$TASK"
+    bash "$HERE/mas-run.sh" "$TASK"
   echo "summary: python3 $HERE/mas-watch.py $LABEL --once"
 else
   setsid nohup env MAO_ENV_FILE="$REPO/.env" MAO_DIR="$MAO_DIR" MAS_MODE="$MODE" LABEL="$LABEL" \
-    bash "$HERE/phase3-mas.sh" "$TASK" >> "$HOME/bench/p3mas-queue.log" 2>&1 < /dev/null &
+    bash "$HERE/mas-run.sh" "$TASK" >> "$HOME/bench/p3mas-queue.log" 2>&1 < /dev/null &
   echo "started $TASK as $LABEL ($MODE); it builds first, then runs"
   echo "watch it:  python3 $HERE/mas-watch.py $LABEL"
 fi

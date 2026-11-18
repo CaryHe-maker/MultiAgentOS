@@ -1,7 +1,7 @@
 # MultiAgentOS M2 设计
 
 > 状态：v1.42 定稿（2026-11-17）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
-> 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收与待决事项（交付计划见 [M2ReleasePlan](M2ReleasePlan.md)）。
+> 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收与待决事项。
 > 字段级接口、Schema 清单与定义实例写在 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
 > 本文只写 M2 的变化。本文未提到的 M1 机制在 M2 中保持不变。
@@ -27,7 +27,7 @@ M2 以工作流为中心：无论是开发者预设的对话（Turn-chat），�
 （`mas run "<目标>"`，负责人自己决定拆不拆、怎么拆、拆成几层），系统只写死安全、写入范围、额度、深度与回退这些底线，
 不写死流程的形状；固定的工作流降为范式（写给负责人参考），预编排模板成为根任务可派的专家 Agent（v1.38，[Orchestration](Orchestration.md) D38、D39），用户不直接运行模板。
 M2 提交时须用真实模型的对照实验证明，至少在一部分大任务上相比 DeepSeek Harness 有原生优势（第 13 节 X 组）。
-任务树、休眠与唤醒、任务间消息、后台命令与 checkpoint 的机制见 [Orchestration](Orchestration.md)，目标与实验设计见 [Phase2Plan](Phase2Plan.md)。
+任务树、休眠与唤醒、任务间消息、后台命令与 checkpoint 的机制见 [Orchestration](Orchestration.md)。
 
 ### 1.2 目标
 
@@ -42,7 +42,7 @@ M2 提交时须用真实模型的对照实验证明，至少在一部分大任�
 | G7 | 分级授权与沙盒：四级能力、能力上限与授权条目两步判定、bubblewrap | 第 5、6 节 |
 | G8 | Session：多轮对话持续，重开 Session 后对话可以继续 | 第 2.3、10 节 |
 | G9 | 终端界面：参照 Claude Code CLI，显示阶段、工具、计时与 SubAgent 树 | 第 11 节 |
-| G10 | 复杂并行任务：一个大目标由负责人自主分解成任务树（可嵌套），各部分并行、休眠等待、互相通信，写入范围由 Kernel 隔离，最终汇成一个交付 | [Orchestration](Orchestration.md)、[Phase2Plan](Phase2Plan.md) |
+| G10 | 复杂并行任务：一个大目标由负责人自主分解成任务树（可嵌套），各部分并行、休眠等待、互相通信，写入范围由 Kernel 隔离，最终汇成一个交付 | [Orchestration](Orchestration.md) |
 
 ### 1.3 非目标
 
@@ -1730,7 +1730,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | A | 授权：三级的询问次数；"本运行内这条命令均允许"不跨 WorkflowRun；询问待答复期间不放行、也不自动拒绝；拒绝后 Agent 收到工具结果并继续，Turn 没有结束，同一 AgentRun 内同类操作不再询问，被拒绝的工具不再提交，下一个 Turn 可以重新询问；未开始任务时不询问 `repo.read`；SubAgent 派生不引起询问；Agent 在 `ask_user` 中请求权限且用户回答同意后，再执行命令仍然触发 Kernel 询问；`git push` 与联网命令每次询问且没有"均允许"选项；暂停 10 分钟后继续，待处理的询问仍待答复；未被信任的 `AGENTS.md` 不进入 system 段，其中的注入指令没有被执行，内容变化后重新询问信任；子目录的 `AGENTS.md`：第一次 `read_file` 触及时询问与加载、追加在末尾而不改变此前的请求前缀、同一 WorkflowRun 内不重复加载、超过数量上限、SubAgent 不继承；命令的拆分：引号中的 `&&`、子 shell、heredoc、变量作命令名、语法错误的命令 | 全部符合第 5 节；命令按语法树拆分，解析失败与不是字面量的命令名只提供单次允许，名单匹配不因解析失败而遗漏 |
 | W | W1 检索加读取后作答并注明来源；W2 网页中的提示注入；W3 访问私网地址、DNS 重绑定、重定向到内网 | W2：注入内容没有被执行。W3：全部以 `ADDRESS_FORBIDDEN` 拒绝 |
 | O | 同一问题分别用 Turn-chat 与 `mission`（自主编排）运行 | 两种方式都完成，比较完成率、耗时与 token |
-| X | 大任务对照实验（[Phase2Plan](Phase2Plan.md) 第 4 节）：本项目自主编排、`dsh`（中性提示与委派优先提示）、本项目单人（关闭派生），同一模型、同一任务文字与预算，隐藏测试判分，每组每题至少 5 次 | 按 Phase2Plan 第 4.5 节判定"原生优势"是否成立，结果（成立或不成立及原因）写入验收证据 |
+| X | 大任务对照实验（[TaskSet](TaskSet.md)）：本项目自主编排、`dsh`（中性提示与委派优先提示）、本项目单人（关闭派生），同一模型、同一任务文字与预算，隐藏测试判分，每组每题至少 5 次 | 按 [TaskSet](TaskSet.md) 第 5、6 节比较，结果（成立或不成立及原因）写入验收证据 |
 | L | L1 长对话超出阈值后自动压缩并继续；L2 provider 报上下文过长后压缩重试；L3 `/compact`；L4 摘要调用失败或额度不足；L5 压缩前后的请求前缀；L6 产物回收：完整输出满 7 天后、ContextPack 在模型调用结束时释放（兜底 7 天；启动时与运行中的定期回收）、删除 Session 后、新建或删除失败后；L7 回退的 Turn 落在压缩范围内；L8 `read_output`：分段与过滤读取、超过 `maxFullOutputBytes` 的输出、读取另一 Session 或范围之外的编号、读取被 `/undo` 回退的 Turn 中的编号、过期后读取、读取已被压缩取代或被修剪的调用；L9 修剪：修剪后已低于阈值、修剪后仍需摘要、额度不足时只修剪；L10 摘要请求本身超出窗口或被 provider 拒绝；L11 空闲时的预先压缩，以及进行中收到新消息与 `/undo`；L12 SubAgent 的压缩与额度不足时的收尾；L13 压缩的估算使用最近一次模型调用的实测值 | L1–L3：压缩后对话继续，日志中有 `CONTEXT_COMPACTED`，重放得到相同的上下文；上限内的旧用户消息逐字出现在压缩后的投影里（`keptSeqs`），超过上限的最旧消息与 `ask_user` 的答复在摘要中；L4：没有写回任何压缩记录，按额度或收尾路径结束并有回复；L5：两次压缩之间每次请求都是下一次的前缀（以 fake provider 记录请求比对），并在验收证据中记录真实运行的缓存命中率；L6：过期的正文被回收，读取时得到 `ARTIFACT_EXPIRED`，上下文重建不受影响，仍被 ACTIVE Session 拥有的长期正文没有被回收；L7：投影恢复为原始条目；L8：读到的内容与完整输出一致并带行号，结果不超过预览上限；范围之外的编号按参数错误反馈，模型的上下文与日志中不出现 `fullRef`；过期时得到 `ARTIFACT_EXPIRED` 的说明，不论正文是否已被删除；重放日志时 `read_output` 的结果不变；被回退 Turn 中的编号按"没有这个编号"反馈；L9：`TOOL_RESULTS_PRUNED` 先于摘要生效，修剪后的结果带 `toolCallId` 并可经 `read_output` 读回原文，`PINNED` 与保留区没有被修剪，只修剪时不调用模型；L10：改用纯文本式并按 `summaryFallbackTargets` 重试，`CONTEXT_COMPACTED` 记录方式与省略的条目数；L11：用户的下一条消息等压缩生效后才组装，`/undo` 取消压缩且没有写回；L12：SubAgent 压缩后继续，额度不足时以 `finish_subagent` 结束，收尾保留没有被动用；L13：fake provider 报告的输入 token 与按字节估算不同时，按实测值决定是否压缩，重开 Session 后结果相同 |
 | S | S1 运行中杀掉进程后重开 Session；S2 日志尾部损坏；S3 `/new` 或 `/fork` 后放弃草稿；S4 Fork 后分别在两个 Session 中继续，再切换回原 Session；S5 同一 `dataDir` 启动第二个实例；S6 实例锁的持有进程已退出后启动；S7 provider 限流并给出 `Retry-After` | S1、S2：对话可以继续；遗留的 Unit 被标为 INTERRUPTED，没有重放；授权被重新询问。S3：不产生任何新的 Session 文件。S4：两个日志互不影响，原日志逐字节不变；切换回原 Session 时文件没有被改动，main 的上下文中注明了在另一个 Session 中被修改的文件，编辑这些文件前要求重新读取。S5：第二个实例报错退出，说明持锁进程。S6：过期的锁被抢占，正常启动。S7：重试等待不短于 `Retry-After`，活动区显示"重试中"与倒计时；超过 `retryAfterMaxMs` 时不再等待 |
 
@@ -1795,7 +1795,7 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 | Library/ExecutorSet | 工具结果的预览在产生时固定，预览上限与执行上限分开（`previewMaxBytes`、`previewMaxLines`），完整输出另存并设上限；新增 `output-read`；`context-assemble` 不再按调用裁剪，只保留收尾调用的保险；修剪的截取、摘要请求的两种组装；命令按语法树拆分与表驱动的 ARITY；`model-call` 交回 `Retry-After` | 5.2、7.4、8.2、9.3、9.6 |
 | M1Interface | 变化的 Schema 发布新 major，写入 M2Interface | 7.5 |
 
-**M2 的配套文档**：M2ReleasePlan（phase 与排期）、M2Interface（字段级）、各组件文档、Library 文档（新的 Agent、Unit、Tool、Prompt、模板定义）、技术栈、使用说明、限制清单（含威胁模型）、验收证据。
+**M2 的配套文档**：M2Interface（字段级）、各组件文档、Library 文档（新的 Agent、Unit、Tool、Prompt、模板定义）、技术栈、使用说明、限制清单（含威胁模型）、验收证据。
 
 
 ### 14.2 待决事项
@@ -1804,15 +1804,15 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 
 | # | 事项 | 建议方向 | 在哪里解决 |
 |---|---|---|---|
-| 1 | `analyze` 回归与 M1"一致"的标准 | `analyze` 已删除（v1.38），F1–F5 改用 Turn-chat 或 Mission 运行 | **已决定**，见 M2ReleasePlan 第 6 节 |
+| 1 | `analyze` 回归与 M1"一致"的标准 | `analyze` 已删除（v1.38），F1–F5 改用 Turn-chat 或 Mission 运行 | **已决定** |
 | 2 | `ask`、`confirm`、`review` 询问 10 分钟超时后自动继续，与"无人值守是非目标"有冲突 | 询问不超时；全部工作都在等用户时 Turn 超时暂停计时；授权询问同样不超时（v1.13） | **已决定**（v1.9，v1.13 修订），见第 4.2、5.3、7.4 节 |
-| 3 | 验收的量化：D 组"正确派生"由谁判定；P3"接近关键路径"的阈值；O 组没有通过标准；缺少成本与延迟上限 | 用固定的判定表与人工复核；P3 以完工时间 ≤ 关键路径的 1.3 倍为准；O 组与成本、延迟按 M1 的基线方式取值后写入 | **已决定**，见 M2ReleasePlan 第 6 节 |
+| 3 | 验收的量化：D 组"正确派生"由谁判定；P3"接近关键路径"的阈值；O 组没有通过标准；缺少成本与延迟上限 | 用固定的判定表与人工复核；P3 以完工时间 ≤ 关键路径的 1.3 倍为准；O 组与成本、延迟按 M1 的基线方式取值后写入 | **已决定** |
 | 4 | 影子仓库、兜底快照与隔离目录的清理与保留 | 随 Session 删除；另设按时间或数量的清理策略，定期压缩影子仓库 | Execution 文档 |
 | 5 | 并行 explorer 访问网页时，每个新域名都询问一次，询问可能过多 | **已做**：`web.fetch` 的询问可以回答"本次运行内所有公开网站"（`ANY_HOST`），私网与禁止的域名仍然拒绝；网址长度与像编码数据的查询值由 Executor 拒绝；`web.search` 可以按文件夹记住（Kernel/Core 5f） | 已实现 |
 | 6 | 长期保存的命令授权：授权条目只在内存中、每个 WorkflowRun 重新询问，同一条命令（如 `npm test`）每次启动都要再批准（OpenCode 把"总是允许"写入数据库，跨会话有效） | M2 暂不考虑；M2 实现之后以实验设计评估询问次数与风险，再决定是否允许用户在 dataDir 的用户配置中预先签发放行规则（不能放在仓库内） | M2 发布后 |
 | 7 | 长时间运行的命令：每条命令在新的 shell 中执行、至多 10 分钟，无法启动开发服务器后再测试（OpenCode 有持久终端与后台 shell，DeepSeek Harness 有 `jobs`） | M2 暂不实现，写入限制清单；M2 实现之后再评估后台任务的设计 | M2 发布后 |
 
-**参照 MAF 与 LangGraph 的预留事项**（2026-10-31 记录）：以下各项只预留扩展空间，不规定字段与语义，在 Turn-chat 达到发布标准（M2ReleasePlan phase 1）之后再评估、决定与实现。预留的含义是：相关的数据结构与纯函数不做排斥这些扩展的假设，并在文中标注"以后可能增加"。
+**参照 MAF 与 LangGraph 的预留事项**（2026-10-31 记录）：以下各项只预留扩展空间，不规定字段与语义，留待之后评估、决定与实现。预留的含义是：相关的数据结构与纯函数不做排斥这些扩展的假设，并在文中标注"以后可能增加"。
 
 | # | 事项 | 参照 | 预留 | 何时决定 |
 |---|---|---|---|---|
@@ -1845,12 +1845,12 @@ M2 中所有 Session 共用同一个仓库目录；每个 Session 或每个 Agen
 
 ## 15. 交付顺序
 
-M2 的交付计划、任务、门与退出条件写在 [M2ReleasePlan](M2ReleasePlan.md)（phase 0–3），已实现部分的现状写在 [M2Baseline](M2Baseline.md)。
+M2 V1.0 的使用方法见 [M2Usage](M2Usage.md)，已知限制见 [M2Limitations](M2Limitations.md)，评测任务集与结果见 [TaskSet](TaskSet.md)。
 本文不再规定交付的划分。M2 第一轮实现使用的"阶段 0–8"已冻结，见 [History/M2](../History/M2/README.md)。
 
 ## 版本记录
 
-> 版本记录是历史：其中的"阶段 N"与任务编号（`S<阶段>-…`）是 M2 第一轮实现的旧编号，见 [History/M2](../History/M2/README.md)，与 [M2ReleasePlan](M2ReleasePlan.md) 的 phase 0–3 没有对应关系。
+> 版本记录是历史：其中的"阶段 N"与任务编号（`S<阶段>-…`）是 M2 第一轮实现的旧编号，见 [History/M2](../History/M2/README.md)，与 M2ReleasePlan 的 phase 0–3 没有对应关系。
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
@@ -1894,10 +1894,10 @@ M2 的交付计划、任务、门与退出条件写在 [M2ReleasePlan](M2Release
 | v1.30 | 2026-11-07 | 阶段 8 实测后：第 8.2 节，每个工具结果末尾写 `[toolCallId: <编号>]`（DeepSeek 看不到工具调用的结构化 id，`read_output` 的编号 4 次有 0 次写对）；第 9.6 节，摘要保留的编号来自这行文字，缓存的结论补充（前面有同样设置的普通请求时与思考开关无关）；ExecutorSet 第 7 节，超限错误的识别与溢出规模；[Evaluation/Stage8Compaction](../History/M2/Evaluation/Stage8Compaction.md) |
 | v1.31 | 2026-11-07 | 第 9.6 节：条目的分级（Cary 决定）——旧的用户消息在 `keepHumanBytes`（16384）内原样保留，由 Kernel 选出并记入 `CONTEXT_COMPACTED.keptSeqs`，`ask_user` 答复、模型输出、工具结果走修剪与摘要；配置 `keepHumanBytes`；L1 增加逐字保留的检查；Workflow 第 8.4 节、Core 第 6a 节、Interface/Persistence 与 WorkflowKernel 相应修改 |
 | v1.32 | 2026-11-07 | 第 9.6 节：`keptSeqs` 含范围内的 `PINNED`；`minReplacedTokens`（取代的内容太少不摘要）；修剪是 Kernel 自己的执行种类 `CONTEXT_PRUNE`；检查点在组装之后；控制台 `/compact` 与压缩的提示 |
-| v1.33（编辑性） | 2026-11-07 | 交付计划改写：第 15 节改为指向 [M2ReleasePlan](M2ReleasePlan.md)（phase 0–3），旧计划 M2Plan、决定记录与实测归档到 History/M2；各节中的旧阶段标记（"阶段 N"、`S<阶段>-…`）改为现在时的描述；设计内容不变 |
+| v1.33（编辑性） | 2026-11-07 | 交付计划改写：第 15 节改为指向 M2ReleasePlan（phase 0–3），旧计划 M2Plan、决定记录与实测归档到 History/M2；各节中的旧阶段标记（"阶段 N"、`S<阶段>-…`）改为现在时的描述；设计内容不变 |
 | v1.34 | 2026-11-07 | 第 13 节 R 组：不再要求与 M1 验收结果一致，F1–F5 作为评测体系中的普通任务运行并记录（Cary 2026-11-07 决定；评测体系见 M2ReleasePlan 第 5.1 节） |
 | v1.35 | 2026-11-11 | 路线调整（Cary 2026-11-11 决定，见 M2ReleasePlan 第 3a 节）：Turn-chat 与 Orchestration 各自优化到"基线 2"，phase 3 整体优化并发布；第 14.2 节增加第 19 条：预置工作流作为子图供 Turn-chat 调用，放在 phase 3，机制届时设计 |
-| v1.36 | 2026-11-12 | phase 2 的最终目标改为"多 Agent 并行执行底座 + 可选的编排范式"（Cary 2026-11-12 决定，[Phase2Plan](Phase2Plan.md)）：第 1.1 节定位；第 1.2 节增加 G10；第 1.3 节嵌套派生、任务间消息移出非目标，跨进程续跑改为从 checkpoint 续跑；第 3.8 节自主编排为缺省、固定图为严格模式、预置工作流降为范式；第 13 节 O 组改用 `mission`，增加 X 组（与 `dsh` 的大任务对照实验） |
+| v1.36 | 2026-11-12 | phase 2 的最终目标改为"多 Agent 并行执行底座 + 可选的编排范式"（Cary 2026-11-12 决定，Phase2Plan）：第 1.1 节定位；第 1.2 节增加 G10；第 1.3 节嵌套派生、任务间消息移出非目标，跨进程续跑改为从 checkpoint 续跑；第 3.8 节自主编排为缺省、固定图为严格模式、预置工作流降为范式；第 13 节 O 组改用 `mission`，增加 X 组（与 `dsh` 的大任务对照实验） |
 | v1.37 | 2026-11-13 | "严格模式"改名为**预编排模式**（Cary 2026-11-13 决定）：两种用法是用户直接调用、自主编排的负责人把一部分交给它，后者是主线；怎样编排与调用放到最后设计，现在预留位置（Orchestration D29）。与 v1.35 第 14.2 节第 19 条（预置工作流作为子图被调用）合并考虑 |
 | v1.38 | 2026-11-14 | 删除 M1 的 `analyze` 路径与只为它存在的机制（Cary 2026-11-14 决定"全删，冻结测试换载体"；[Orchestration](Orchestration.md) D38、D39）：内置模板 `analyze`、Agent planner 与 code-viewer、工具 `finish`（finish-analysis）与 `handoff-to-code-viewer`、仓库概览 `repository-orient`（`REPOSITORY_ORIENT`）、报告发布 `report-publish`（`REPORT_PUBLISH`、`AnalysisReport`）、交接条目 `HANDOFF`、条件边与 `SKIPPED(NOT_TAKEN)`、有界循环与节点迭代号、仓库模板 `.multiagentos/workflows/` 与 `mas run <模板>`、从未实现的 `/run`、未接入运行的统一校验函数 `validateExtension`、执行类别 `TEST`；第 1、2.2、2.3、3.1–3.3、3.5、3.8、3.9、7.5、8.1、10.2、12、13 节相应修改；第 3.9 节补上 lead 与专家；R 组 F1–F5 与两份冻结测试改用 Turn-chat 或 Mission 运行（M2FrozenTests） |
 | v1.39 | 2026-11-16 | **Mission 基线1**（Cary 2026-11-16 决定，[Orchestration](Orchestration.md) D93）：以 L9 那次运行的配置为基线，删除其余配置。任务没有验收条件：删除 `run_subagents` 的 `acceptance`、结果里的 `AcceptanceAnswer` 与"每条都要回应"的检查（第 3.7 节规则 2）、汇合结果里的未满足条目；lead 不再由模型直接选：根任务给 worker 写 `split: true`，系统按 lead 运行；lead 的派生工具只能派 explorer 与 worker（第 3.6 节）；继承上下文不再有开关；对照用的替代定义与环境变量全部删除 |

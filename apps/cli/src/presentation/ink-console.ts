@@ -101,7 +101,7 @@ function seconds(from: string, now: number): number {
 /**
  * `重试中（第 n 次，x 秒后）` counts down; the other phases count up while the system works. A run
  * that waits for the user shows no seconds at all: nothing is taking long, and a counter there
- * only reads as being hurried (docs/M2/Phase1Console.md 2.1, UI-3).
+ * only reads as being hurried (docs/M2/Console.md 2.1, UI-3).
  */
 function activityText(line: ActivityLine, now: number): string {
   const jobs = jobsText(line, now);

@@ -1,6 +1,6 @@
 # MultiAgentOS 冻结的系统测试
 
-> 状态：已实现（phase 0）。清点在 `apps/control-plane/test/system/frozen.json`，由 `frozen-manifest.test.ts` 检查；phase 发布检查是 `pnpm run gate:phase`。
+> 状态：已实现。清点在 `apps/control-plane/test/system/frozen.json`，由 `frozen-manifest.test.ts` 检查；phase 发布检查是 `pnpm run gate:phase`。
 > 它回答"系统在**任何**模型行为下是否守住底线"；模型与提示词表现得好不好由[评测体系](Evaluation.md)回答，两者分开。
 
 ## 1. 目的
@@ -46,7 +46,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 | I14 | A critical operation is asked every time; no approval is reusable | `acceptance/command-sandbox-exit.test.ts`：git push and the like are asked every time, in warning style, with no standing allowance<br>`acceptance/command-sandbox-exit.test.ts`：the network is asked every time, says so, and the command is not told yes by an old answer<br>`executor-set/src/command/command-analyzer.test.ts`：cannot be talked out of a critical command by wrapping it |
 | I15 | The session log is written by Workflow only, the artifact store by Execution only; the log holds references, not bodies | `persistence/src/session-store.test.ts`：offers the Session lock to Workflow only<br>`testing/src/architecture.test.ts`：declares only the allowed internal dependencies |
 | I16 | .git/ and .multiagentos/ cannot be written by any tool or command; AGENTS.md cannot be written by a command; what a command creates there does not stay | `acceptance/command-sandbox-exit.test.ts`：keeps existing .git and AGENTS.md read-only, and moves out what a command creates<br>`contracts/src/platform-common/write-access.test.ts`：never allows anything below a protected directory, in any case<br>`system/compromised-model.test.ts`：cannot write into .git/hooks, and the run goes on<br>`kernel/src/session/run-execution.test.ts`：does not run a command whose protected paths cannot be listed, and says the check failed<br>`system/compromised-model.test.ts`：cannot become project instruction by writing AGENTS.md: the user is asked with the content, and refuses |
-| I17 | A template carries no permission: ceilings come from the Agent definition, grants from the human | `contracts/src/catalog/definition-schemas.test.ts`：forbids duplicate references in closed sets<br>**待做**：No user templates exist yet; the adversarial case for a template that asks for more is written with them (M2ReleasePlan phase 2). |
+| I17 | A template carries no permission: ceilings come from the Agent definition, grants from the human | `contracts/src/catalog/definition-schemas.test.ts`：forbids duplicate references in closed sets<br>**待做**：No user templates exist yet; the adversarial case for a template that asks for more is written with them. |
 | I18 | A Turn is opened and closed by Kernel from open input; at its end no ACTIVE AgentRun and no attempt in flight | `kernel/src/session/session-actor.test.ts`：ends the Turn first, then RunClosed, then RunFinished<br>`kernel/src/session/run-work.test.ts`：interrupts for the user: asks cancelled, work aborted, and the Turn ends ABORTED with the run open |
 | I19 | A sandboxed command cannot read $HOME, the data directory or sensitive repository files; the file tools see the same | `acceptance/command-sandbox-exit.test.ts`：cannot read the system data directory, where the logs and the artifacts are<br>`acceptance/command-sandbox-exit.test.ts`：reads a secret file as empty, so the secret never reaches the model or any log<br>`kernel/src/session/sandbox-scan.test.ts`：finds the secret files at any depth and the protected paths that exist |
 | I20 | Only AGENTS.md of exactly the trusted content is project instruction, appended at the end; the rest is untrusted material; never in the system segment | `acceptance/chat-exit.test.ts`：keeps an untrusted AGENTS.md out of the system segment and marks it as material<br>`acceptance/chat-exit.test.ts`：remembers trust for exact content, and asks again when it changes<br>`executor-set/src/executor-set.test.ts`：keeps AGENTS.md out of the system segments |
@@ -94,7 +94,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 ### 清点中的缺口
 
 - **I17（模板不携带权限）**：v1.38 起没有使用者模板，内置模板也没有权限字段（能力只来自 Agent 定义），这一条由 Schema 保证，没有运行时对象可以测试。
-- 有些条目的测试只有一两个，覆盖的是主路径；它们是底线的最低限度，不是穷尽。phase 1、2 新增的功能按第 2 节第 3 条补充。
+- 有些条目的测试只有一两个，覆盖的是主路径；它们是底线的最低限度，不是穷尽。之后新增的功能按第 2 节第 3 条补充。
 
 ## 4. 被攻陷的模型
 
@@ -127,7 +127,7 @@ M2Design 已经把底线写成了三份清单，这里逐条对应到测试：
 
 ## 6. 思考流
 
-`acceptance/thinking-stream.test.ts`、`kernel/supervisor/model-progress.test.ts` 与执行器的"流式给旁观者"用例（[Phase1Console](Phase1Console.md) 第 4 节）。流式只让使用者看到模型正在想什么，不能成为系统的一部分，所以冻结的是它的边界：
+`acceptance/thinking-stream.test.ts`、`kernel/supervisor/model-progress.test.ts` 与执行器的"流式给旁观者"用例（[Console](Console.md) 第 4 节）。流式只让使用者看到模型正在想什么，不能成为系统的一部分，所以冻结的是它的边界：
 
 - 不进 Session 日志：日志里只有指向完整思考的引用，流式的内容不出现在日志里；
 - 不改变结果：开启流式与不开启，执行器返回的结果（输出、思考、用量、缓存命中）逐字相同；旁观者抛出异常也不改变；

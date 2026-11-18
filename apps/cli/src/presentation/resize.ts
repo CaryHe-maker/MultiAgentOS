@@ -1,5 +1,5 @@
 /**
- * What happens when the window is resized (docs/M2/Phase1Console.md, UI-8).
+ * What happens when the window is resized (docs/M2/Console.md, UI-8).
  *
  * Ink erases the part of the screen that is drawn in place by the number of lines it wrote. When the
  * window gets narrower the terminal wraps those lines again, so they take more rows than were

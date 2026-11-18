@@ -103,7 +103,7 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
     sessionId: fact.sessionId,
     workflowRunId: fact.workflowRunId,
   }));
-  // Streams model calls to whoever watches; best effort, never awaited (Phase1Console 4).
+  // Streams model calls to whoever watches; best effort, never awaited (Console 4).
   const progress = createModelProgressSink(
     deps.fabric,
     (message) => correlations.get(message.workflowRunId) ?? newId('cor'),

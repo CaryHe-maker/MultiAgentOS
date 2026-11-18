@@ -125,7 +125,7 @@ type TemplateNode =
 
 type TemplateDependency =
   | string                                         // 依赖边
-  | { node: string; when: EdgeCondition };         // 条件边；目前只允许内置模板使用，使用者模板的开放见 M2ReleasePlan phase 2
+  | { node: string; when: EdgeCondition };         // 条件边；目前只允许内置模板使用，M2 没有开放使用者模板
 
 interface EdgeCondition {                         // 以后可能增加按前驱结束状态的谓词（失败边，M2Design 第 14.2 节第 8 条）
   field: string;                                   // 前驱结构化结果中的字段路径

@@ -311,7 +311,6 @@ describe('model-call', () => {
       final?: boolean;
       finalMode?: 'AUTO' | 'FORCED';
       finishTools?: string[];
-      replayKeep?: number;
       history?: ResolvedHistoryEntry[];
     } = {},
   ) {
@@ -323,7 +322,6 @@ describe('model-call', () => {
       }),
     );
     const executor = createModelCallExecutor({
-      ...(over.replayKeep === undefined ? {} : { replayKeep: over.replayKeep }),
       fetch: (_url, init) => {
         bodies.push(JSON.parse(init?.body as string) as Record<string, unknown>);
         return Promise.resolve(reply());
@@ -381,18 +379,13 @@ describe('model-call', () => {
       turn(6, 'call_c', 'third thought'),
       result(7, 'call_c'),
     ];
-    const thoughts = async (replayKeep?: number) => {
-      const { body } = await run(() => answer(toolCall('read_file', '{}')), {
-        history,
-        ...(replayKeep === undefined ? {} : { replayKeep }),
-      });
-      return (body['messages'] as { role: string; reasoning_content?: string }[])
+    const { body } = await run(() => answer(toolCall('read_file', '{}')), { history });
+    // Every assistant message replays its own thinking (ExecutorSet 6.3).
+    expect(
+      (body['messages'] as { role: string; reasoning_content?: string }[])
         .filter((message) => message.role === 'assistant')
-        .map((message) => message.reasoning_content);
-    };
-    expect(await thoughts()).toEqual(['first thought', 'second thought', 'third thought']);
-    expect(await thoughts(2)).toEqual(['', 'second thought', 'third thought']);
-    expect(await thoughts(0)).toEqual(['', '', '']);
+        .map((message) => message.reasoning_content),
+    ).toEqual(['first thought', 'second thought', 'third thought']);
   });
 
   it('leaves a final call free first, and forces the tool with thinking off on the retry', async () => {

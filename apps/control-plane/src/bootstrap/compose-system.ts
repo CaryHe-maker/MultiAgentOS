@@ -365,7 +365,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       now,
     });
     serveInteractionInbox(interactionFabric, userInteraction.console);
-    // The thinking of the model calls, beside the ordered events (Phase1Console 4).
+    // The thinking of the model calls, beside the ordered events (Console 4).
     serveModelStream(interactionFabric, (stream) =>
       userInteraction.console.handleModelStream(stream),
     );

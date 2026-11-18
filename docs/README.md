@@ -5,7 +5,7 @@
 | 目录 | 内容 |
 |---|---|
 | [Architecture](Architecture/README.md) | 长期规划：概念、模块职责、协作与安全约束 |
-| [M2](M2/README.md) | 当前里程碑：总体设计 [M2Design](M2/M2Design.md)（v1.34）、发布计划 [M2ReleasePlan](M2/M2ReleasePlan.md)、现状 [M2Baseline](M2/M2Baseline.md) 与各组件文档 |
+| [M2](M2/README.md) | 当前版本 **M2 V1.0**：总体设计 [M2Design](M2/M2Design.md)、编排 [Orchestration](M2/Orchestration.md)、使用说明 [M2Usage](M2/M2Usage.md)、已知限制 [M2Limitations](M2/M2Limitations.md)、评测任务集与结果 [TaskSet](M2/TaskSet.md) 与各组件文档 |
 | [Requirements](Requirements/Dependencies.md) | 仓库实际依赖及迁移边界 |
 | [Meetings](Meetings/) | 历史讨论，不覆盖当前规范 |
 | [History](History/) | 已归档的文档，不作为当前规范；其中 [M1](History/M1/README.md) 是已发布的 M1 的规范、发布计划与验收证据，[M2](History/M2/README.md) 是 M2 第一轮实现的旧计划、决定记录与实测（已冻结，不再是计划标准） |
@@ -13,7 +13,7 @@
 | [Style](Style.md) | 工程与文档协作规范 |
 
 目标平台为 Ubuntu LTS，规范版本为 24.04（M1 起）。Architecture 只描述长期规划，不穷尽实现；各 MVP 的具体机制在对应目录中明确。
-M1 已发布，其文档归档在 [History/M1](History/M1/README.md)；当前开发以 [M2](M2/README.md) 为准。
+M1 已发布，其文档归档在 [History/M1](History/M1/README.md)；当前版本以 [M2](M2/README.md) 为准。
 
 ## 2. 推荐阅读路线
 
@@ -24,7 +24,7 @@ M1 已发布，其文档归档在 [History/M1](History/M1/README.md)；当前开
 5. [Protocol](Architecture/Protocol.md)：请求、事实、结果、事件与恢复的共同语义。
 6. [Instance](Architecture/Instance.md)：运行、控制与恢复示例。
 7. [Architecture 指南](Architecture/README.md)：全部长期文档入口。
-8. [M2 指南](M2/README.md)：M2 的设计、发布计划、现状与组件文档。
+8. [M2 指南](M2/README.md)：M2 V1.0 的设计、使用、限制、评测与组件文档。
 
 ## 3. 模块、静态库与基础设施
 

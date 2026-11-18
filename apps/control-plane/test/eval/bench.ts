@@ -1,6 +1,6 @@
 /**
  * Runs one instruction on the real model in an existing folder, the way a task of a public test
- * set is run (docs/M2/Phase1TaskSet.md): the folder is the workspace, nobody answers for the
+ * set is run (docs/M2/Evaluation.md): the folder is the workspace, nobody answers for the
  * user except the harness, which allows every question of authorization and tells the Agent that
  * nobody is there to answer its own.
  *

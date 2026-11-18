@@ -2,7 +2,7 @@ import stringWidth from 'string-width';
 
 /**
  * What the part of the screen that is drawn in place looks like, kept so that it can be erased
- * exactly when the window changes size (docs/M2/Phase1Console.md, UI-8).
+ * exactly when the window changes size (docs/M2/Console.md, UI-8).
  *
  * Ink erases a frame by moving the cursor up by the number of lines it wrote. When the window gets
  * narrower the terminal wraps those lines again, so the frame takes more rows than lines, and the

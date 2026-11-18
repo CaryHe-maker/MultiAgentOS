@@ -37,7 +37,7 @@ const EMPTY: LiveState = { status: '', activity: [], waiting: 0, queued: [] };
  * authorizations, steps and messages between and after them stay in place and in order. A block is
  * folded by the view (it asks for it with `foldBlocks`) when the part in place gets too tall, and
  * is folded for good: everything before the oldest open block moves into the scroll-back, a folded
- * block as a single line (docs/M2/Phase1Console.md 4.3). A block that was drawn with its
+ * block as a single line (docs/M2/Console.md 4.3). A block that was drawn with its
  * beginning left out (`markElided`) is folded when the next block begins.
  */
 export class ConsoleStore implements ConsoleView {

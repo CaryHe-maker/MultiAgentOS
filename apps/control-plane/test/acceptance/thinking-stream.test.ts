@@ -1,5 +1,5 @@
 /**
- * The thinking of a model call, streamed beside the work (docs/M2/Phase1Console.md 4): it reaches
+ * The thinking of a model call, streamed beside the work (docs/M2/Console.md 4): it reaches
  * the console while the call runs, it is folded after two Turns, and it changes nothing the
  * system decides and writes nothing into the Session log.
  */

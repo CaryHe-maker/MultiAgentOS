@@ -289,7 +289,7 @@ export class StopUnconfirmedError extends Error {
 }
 
 /**
- * What a model call may say while it runs, for the person watching (docs/M2/Phase1Console.md 4).
+ * What a model call may say while it runs, for the person watching (docs/M2/Console.md 4).
  * It is best effort and never part of the result: an Executor calls it without waiting, ignores
  * anything it throws, and works the same when it is absent.
  */
@@ -387,7 +387,7 @@ export const FABRIC_ADDRESSES = [
   'kernel-core.execution-facts',
   // The end of background commands (Orchestration 6.4).
   'kernel-core.job-facts',
-  // The side channel of streaming model calls (docs/M2/Phase1Console.md 4): lossy by design.
+  // The side channel of streaming model calls (docs/M2/Console.md 4): lossy by design.
   'kernel-core.model-progress',
   'inbox.user-interaction-stream',
 ] as const;

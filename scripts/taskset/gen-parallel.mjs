@@ -1,4 +1,4 @@
-// Seeded generator of the parallel-capability tasks (docs/M2/Phase1TaskSet.md 9.7).
+// Seeded generator of the parallel-capability tasks (docs/M2/Evaluation.md).
 //   node gen-parallel.mjs <family> <seed> <n> <outDir> [salt]
 // Each task is a Harbor-format directory: environment/ (Dockerfile + app/), instruction.md, tests/
 // (hidden until the run ends), solution/ (reference), task.toml and label.json (what the answer key

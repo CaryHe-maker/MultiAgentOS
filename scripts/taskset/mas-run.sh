@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Runs MultiAgentOS (mas) once on designed or agentrun-format tasks of phase 3 (docs/M2/Phase3TaskSet.md),
+# Runs MultiAgentOS (mas) once on designed or agentrun-format tasks of the M2 task sets (docs/M2/TaskSet.md),
 # from the checkout at MAO_DIR, in the mode MAS_MODE (chat or mission). A task with a marker for the same
 # label is never run again, also after a crash. Results go under $OUT (default ~/bench/p3mas).
-#   MAS_MODE=mission LABEL=dev-mission-1 phase3-mas.sh designed/pyawk ...
+#   MAS_MODE=mission LABEL=dev-mission-1 mas-run.sh designed/pyawk ...
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 META=${META:-$HOME/benchmeta}

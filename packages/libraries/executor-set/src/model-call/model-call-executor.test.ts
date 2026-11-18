@@ -387,7 +387,7 @@ describe('a summary request (ExecutorSet 7)', () => {
   });
 });
 
-describe('MODEL streamed for a watcher (docs/M2/Phase1Console.md 4)', () => {
+describe('MODEL streamed for a watcher (docs/M2/Console.md 4)', () => {
   /** An answer with thinking and a cache hit, as DeepSeek sends it in one piece. */
   const withThinking = () =>
     new Response(

@@ -1,5 +1,5 @@
 /**
- * Draws a Session time line as text for a terminal (docs/M2/Phase1Console.md 3). Every body that
+ * Draws a Session time line as text for a terminal (docs/M2/Console.md 3). Every body that
  * comes from outside the system (what the model thought and said, tool results, web pages that
  * a result quotes) is cleaned of control characters first: it goes to a terminal, and an escape
  * sequence in it could rewrite the screen.

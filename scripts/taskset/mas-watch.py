@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live view of one mas run started by mas-live.sh (or phase3-mas.sh), refreshed every few seconds.
+"""Live view of one mas run started by mas-live.sh (or mas-run.sh), refreshed every few seconds.
 
     python3 scripts/taskset/mas-watch.py tu-k4 [--every 15]
 
@@ -18,7 +18,7 @@ import time
 
 HOME = os.path.expanduser('~')
 BENCH = os.path.join(HOME, 'bench')
-# DeepSeek, USD per million tokens (the price table of the phase 3 runs).
+# DeepSeek, USD per million tokens (the price table of the M2 runs).
 PRICE = {'hit': 0.003, 'miss': 0.15, 'out': 0.60}
 ERRORS = {
     'INVALID_ARGUMENTS', 'CONTROL_ARGUMENTS_INVALID', 'TOOL_INPUT_REFUSED', 'UNKNOWN_TOOL',

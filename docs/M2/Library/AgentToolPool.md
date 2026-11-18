@@ -62,7 +62,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TEMPLATE | `acceptance`、`integrate` | 预编排模板（Orchestration 第 3.9 节，2026-11-14）：`acceptance` 由不参与开发的任务只依据规格写验收测试并对系统运行，失败按负责部分归类；`integrate` 启动整个系统、跑整体检查、把失败追到所在部分、在那里修复后整体复查。每个模板带多个例子 |
 
 - **main 的提示词**在写入能力完成后定稿（Cary 2026-11-04 决定），`contentStatus` 为 `FINAL`，以 `run-main-write.ts` 在真实模型上验证。之后给 main 增加工具时，只增加对应工具的用法。
-- 草稿（`v0.x`）到 M2 发布时一起封存为 `v1.0.0`：提示词与工具还要按评测迭代（M2ReleasePlan），现在封存只会多出中间版本。
+- 草稿（`v0.x`）到 M2 发布时一起封存为 `v1.0.0`：提示词与工具还要按评测迭代，现在封存只会多出中间版本。
 - main 的额度参数（Interface/Definitions 第 2 节）按模型窗口取值（M2Design 第 9.3 节）：`perCallInputLimit = 880000`、`maxOutputTokens = 64000`、
   `finalInputBudget = 880000`、`finalMaxOutputTokens = 64000`；`limits` 为 `maxRounds = 80`、`maxToolCallsPerRound = 8`、`maxToolUnits = 200`。
 - main 的工具集随能力增加（写入、`read_output`、`update_todos`、命令与 `git_inspect`、`run_subagents`、网页）；每次改动都发布 main 的新版本。

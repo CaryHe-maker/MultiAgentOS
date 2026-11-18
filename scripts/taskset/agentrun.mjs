@@ -1,5 +1,5 @@
 // Runs one Agent system (mas or dsh) on one Harbor-format task inside the task's container, then runs
-// the task's hidden tests, and appends one line of results (docs/M2/Phase1TaskSet.md).
+// the task's hidden tests, and appends one line of results (docs/M2/Evaluation.md).
 //   node agentrun.mjs <mas|dsh> <taskDir> <outDir> [--label x] [--cap 900] [--record file]
 // The key comes from DEEPSEEK_API_KEY or from the file named by MAO_ENV_FILE; it is handed to the
 // container through the environment and never printed or recorded.

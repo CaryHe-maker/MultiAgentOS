@@ -4,7 +4,7 @@ import wrapAnsi from 'wrap-ansi';
 const NEWLINE = '\n';
 
 /**
- * The text of the input box and where the cursor is in it (docs/M2/Phase1Console.md 2.1, UI-2).
+ * The text of the input box and where the cursor is in it (docs/M2/Console.md 2.1, UI-2).
  * Pure functions, so the box can be tested without a terminal: `value` is the text, `cursor` an
  * index into it that always stands between two characters (never inside a surrogate pair), and
  * every function returns the next state.

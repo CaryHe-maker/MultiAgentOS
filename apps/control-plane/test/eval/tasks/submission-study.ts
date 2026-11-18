@@ -1,5 +1,5 @@
 /**
- * The submission study (Phase2Plan 7, Orchestration 3.9): large mission tasks whose work has, in
+ * The submission study (Evaluation 7a, Orchestration 3.9): large mission tasks whose work has, in
  * part, the shape of a pre-orchestrated template (a failure to fix, an unknown codebase to explore
  * before building, changes to review), and one whose work has none. The goals never name
  * specialists, templates, subtasks or splitting: what the root chooses is what is measured. Each

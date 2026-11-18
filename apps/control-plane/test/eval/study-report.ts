@@ -1,5 +1,5 @@
 /**
- * The report of the submission study (Phase2Plan 7):
+ * The report of the submission study (Evaluation 7a):
  *
  *   tsx apps/control-plane/test/eval/study-report.ts <records.jsonl> [--archive <dir>]
  *

@@ -144,7 +144,7 @@ describe('shipped definitions', () => {
     expect(gaps).toEqual([]);
   });
 
-  it('give main and lead the handbook of ways to split work (Phase2Plan 2)', async () => {
+  it('give main and lead the handbook of ways to split work (Orchestration D30)', async () => {
     const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );

@@ -351,7 +351,7 @@ export function createJobFactSink(
 }
 
 /**
- * The side channel of a running model call (docs/M2/Phase1Console.md 4): what the person watching
+ * The side channel of a running model call (docs/M2/Console.md 4): what the person watching
  * may see before the call is over. It is not an event of the ordered sequences: no `eventId`, no
  * `seq`, nothing is awaited and nothing is retried. A message that cannot be delivered, or that
  * finds the receiver busy, is dropped, so watching can never slow or change the work.

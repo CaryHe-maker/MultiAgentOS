@@ -1,6 +1,6 @@
 /**
  * How the part of the conversation that is still drawn in place is laid out in the lines the
- * terminal has to give it (docs/M2/Phase1Console.md 4.3). That part is the tail: the thinking
+ * terminal has to give it (docs/M2/Console.md 4.3). That part is the tail: the thinking
  * blocks that are still open and what happened from the oldest of them on, in the order it
  * happened. The tail may take 90% of the rows there are; when it would take more, the oldest open
  * block is folded (for good), and when the newest alone is still too tall its beginning is left out

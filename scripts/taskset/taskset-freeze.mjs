@@ -1,7 +1,7 @@
-// Freezes the phase-3 task sets (docs/M2/Phase3TaskSet.md): gives every entry of phase3.json a content hash
+// Freezes the M2 task sets (docs/M2/TaskSet.md): gives every entry of taskset.json a content hash
 // and marks the file frozen (`--fill`, run once), or recomputes every hash and reports differences
 // (`--verify`, the default). Run in WSL, where the task data lives.
-//   node phase3-freeze.mjs [--fill | --verify]
+//   node taskset-freeze.mjs [--fill | --verify]
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
@@ -11,7 +11,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repo = join(here, '..', '..');
 const META = process.env.META ?? `${process.env.HOME}/benchmeta`;
 const TASKSET = process.env.TASKSET ?? `${process.env.HOME}/taskset`;
-const OUT = join(here, 'phase3.json');
+const OUT = join(here, 'taskset.json');
 const sealed = JSON.parse(readFileSync(OUT, 'utf8'));
 
 function hashDir(dir) {
@@ -77,7 +77,7 @@ if (mode === 'fill') {
   sealed.frozen = {
     at: new Date().toISOString(),
     by: 'Cary, 2026-11-15',
-    note: 'final and development sets fixed; every task has had one dsh control run; see docs/M2/Phase3TaskSet.md',
+    note: 'final and development sets fixed; every task has had one dsh control run; see docs/M2/TaskSet.md',
     counts: Object.fromEntries(
       lists.map((l) => [
         l,

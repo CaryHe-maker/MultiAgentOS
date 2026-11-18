@@ -1,6 +1,6 @@
 /**
  * The largest message the console sends: 100 KB of UTF-8. A message beyond it is not sent, and the
- * person is told only then (docs/M2/Phase1Console.md, input box). The input box checks the same
+ * person is told only then (docs/M2/Console.md, input box). The input box checks the same
  * rule before it lets go of what was typed, so that nothing typed is lost.
  */
 export const MAX_INPUT_BYTES = 100 * 1024;

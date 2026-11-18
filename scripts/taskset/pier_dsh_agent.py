@@ -1,4 +1,4 @@
-"""DeepSeek Harness (dsh) as a Pier agent for DeepSWE, for the phase 3 control runs (docs/M2/Phase3Plan.md).
+"""DeepSeek Harness (dsh) as a Pier agent for DeepSWE, for the dsh control runs (docs/M2/TaskSet.md).
 
     PYTHONPATH=<this dir> pier run -p <task> --agent-import-path pier_dsh_agent:DshAgent --ak cap_sec=9000
 

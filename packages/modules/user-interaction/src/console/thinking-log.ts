@@ -1,6 +1,6 @@
 /**
  * What the model is thinking, kept for the person watching and nowhere else
- * (docs/M2/Phase1Console.md 4.2). It lives in the memory of the console process: it is not in the
+ * (docs/M2/Console.md 4.2). It lives in the memory of the console process: it is not in the
  * Session log, not on disk, and nothing in the system reads it. Each model call makes one block,
  * numbered in the order they began (`/think <N>`); a block is cut at `THINKING_MAX_CHARS`, and the
  * oldest go when there are more than `THINKING_MAX_BLOCKS`. Switching to another Session or

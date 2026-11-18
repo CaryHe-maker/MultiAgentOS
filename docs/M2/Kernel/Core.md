@@ -201,7 +201,7 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 **`endAgentRun`**：SubAgent 的账本结束，未用的份额还给父，任务不再占用写入根目录。
 
-- 同一时刻至多一个没有父的 ACTIVE 的 AgentRun（并行的模板节点由使用者模板放开，M2ReleasePlan phase 2）。
+- 同一时刻至多一个没有父的 ACTIVE 的 AgentRun（并行的模板节点由使用者模板放开，M2 没有做）。
 - `agent.spawn` 在 `readonly` 预设下保留：派生出的 SubAgent 的能力受父的能力上限限制，写入类 SubAgent 在 `readonly` 下登记不了。
 - 测试：`run-work.test.ts` 的 "SubAgents"、`run-delegations.test.ts`。
 

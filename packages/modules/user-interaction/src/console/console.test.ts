@@ -872,7 +872,7 @@ describe('pause, continue, steer and questions (Module/UserInteraction 5.4)', ()
   });
 });
 
-describe('a long command in a question (Phase1Console 2.1, UI-4)', () => {
+describe('a long command in a question (Console 2.1, UI-4)', () => {
   const askFor = (command: string) =>
     ({
       type: 'AuthorizationRequest',
@@ -934,7 +934,7 @@ describe('a long command in a question (Phase1Console 2.1, UI-4)', () => {
   });
 });
 
-describe('thinking streamed beside the run (Phase1Console 4)', () => {
+describe('thinking streamed beside the run (Console 4)', () => {
   const stream = (kind: 'REASONING' | 'END', callId: string, delta = '') =>
     ({
       sessionId: SESSION,
@@ -1183,7 +1183,7 @@ describe('a compaction in the history', () => {
   });
 });
 
-describe('an answer being written for the user (Phase1Console 4)', () => {
+describe('an answer being written for the user (Console 4)', () => {
   const stream = (
     callId: string,
     kind: 'REASONING' | 'ANSWER' | 'END',

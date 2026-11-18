@@ -2,45 +2,35 @@
 
 ## 1. 目的与范围
 
-本目录定义 M2 的设计、计划、各组件机制、跨模块接口与验收要求。
-M2 的范围与设计以 [M2Design](M2Design.md)（已冻结，当前 v1.35）为准；本目录其余文档在它的基础上展开，
-可以细化，不得与它矛盾。需要改变设计时，先在 M2Design 中发布新版本，再修改组件文档。
+本目录定义 M2 的设计、各组件机制、跨模块接口、评测与验收要求，描述的是 **M2 V1.0** 的实现。
+M2 的范围与设计以 [M2Design](M2Design.md) 为准，编排（Mission）的机制以 [Orchestration](Orchestration.md) 为准；本目录其余文档在它们的基础上展开，可以细化，不得与它们矛盾。
 
-当前的计划是 [M2ReleasePlan](M2ReleasePlan.md)（phase 0–3，从现在到发布）；已实现部分的现状是 [M2Baseline](M2Baseline.md)。
-M2 第一轮实现期间的旧计划、决定记录与实测已冻结在 [History/M2](../History/M2/README.md)，不再是计划标准。
-
-长期概念与安全边界见 [Architecture 指南](../Architecture/README.md)。
-M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作为 M1 行为与回归基线的依据；
-当前代码以本目录为准。
+怎么用见 [M2Usage](M2Usage.md)，已知限制见 [M2Limitations](M2Limitations.md)，评测任务集与结果见 [TaskSet](TaskSet.md)。
+M2 开发过程中的旧计划、决定记录与实测已冻结在 [History/M2](../History/M2/README.md)，不是现行规范。
+长期概念与安全边界见 [Architecture 指南](../Architecture/README.md)；M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)。
 
 ## 2. 目录组织
 
 | 目录或文档 | 内容 |
 |---|---|
 | [M2Design](M2Design.md) | 总体设计：能力、机制与 Owner、不变量、验收 |
-| [M2ReleasePlan](M2ReleasePlan.md) | 当前计划：发布标准、侧重点、phase 0–3 的任务与退出条件、待负责人决定的问题 |
-| [M2Baseline](M2Baseline.md) | 现状基线：每项能力做到哪里、证据、已知缺口 |
+| [Orchestration](Orchestration.md) | 编排架构：MissionTree、后台命令、休眠与唤醒、跨任务消息、checkpoint；第 1 节是全部机制的决定记录（D1–D111） |
+| [M2Usage](M2Usage.md) | 使用说明：平台、两种模式（Turn-chat、Mission）、指令、配置、检查与评测 |
+| [M2Limitations](M2Limitations.md) | 已知限制 |
 | [M2Decisions](M2Decisions.md) | 仍然约束设计与实现的已定决定 |
-| [Phase1Console](Phase1Console.md) | phase 1 控制台与流式输出：问题记录、流式的记录与删除规则、任务顺序 |
-| [WorkspaceSessionReference](WorkspaceSessionReference.md) | 开源项目（OpenCode、DeepSeek Harness）的 Workspace 与 Session 绑定做法，供 phase 1 的授权与工作区使用；只是参考，没有决定 |
-| [M2FrozenTests](M2FrozenTests.md) | 冻结的系统测试：不变量与阻断项的清点、被攻陷模型的对抗用例、phase 发布检查 |
-| [Phase1TaskSet](Phase1TaskSet.md) | phase 1 的任务集设计：测什么、三层划分、对照 harness、筛选流程、调研进展 |
-| [Evaluation](Evaluation.md) | 评测体系：任务规格、度量、记录、对比，面向任何模式的任何测试集 |
-| [Orchestration](Orchestration.md) | phase 2 编排架构草案：MissionTree、后台命令、休眠与唤醒、跨任务消息、checkpoint 取代 Turn；待评审，评审后由 M2Design 新版本吸收 |
-| [Phase2Plan](Phase2Plan.md) | phase 2 总纲：多 Agent 并行执行底座 + 可选的编排范式；与 DeepSeek Super-agent 的比较；证明相比 DeepSeek Harness 有原生优势的对照实验设计 |
-| [Phase3Plan](Phase3Plan.md) | phase 3 总纲：保留 Turn-chat 与 Mission、新增 general 模式；开发集与最终集各 10 小 4 大，最终集至多两次、实验不重复、不设阈值；任务列表与顺序 |
-| [Phase3TaskSet](Phase3TaskSet.md) | phase 3 任务集定稿：最终集 10 小 5 大、开发集 11 小 26 大的清单、存放位置、哈希校验与 `dsh` 对照结果 |
+| [Console](Console.md) | 控制台与流式输出：界面、日志查看器 `mas log`、思考的流式显示 |
+| [Evaluation](Evaluation.md) | 评测体系：任务规格、度量、记录、对比 |
+| [TaskSet](TaskSet.md) | M2 的评测任务集（开发集、最终集）、运行规则、`dsh` 对照与最终集的结果 |
+| [experiments](experiments.md) | 每次真实模型运行的目的、参数、结果与随后的改动 |
+| [M2FrozenTests](M2FrozenTests.md) | 冻结的系统测试：不变量与阻断项的清点、被攻陷模型的对抗用例、发布检查 |
 | [M2TechStack](M2TechStack.md) | 实测结果、运行环境、依赖与版本 |
 | [M2Security](M2Security.md) | 威胁模型、沙盒与授权的分层防护、C5 拦截矩阵 |
-| `Interface/` | 字段级接口，按通讯边界拆分；发布版只有 major 1 一套 Schema |
+| [SystemFaultHandling](SystemFaultHandling.md) | 异常语义、停机与退出码 |
+| `Interface/` | 字段级接口，按通讯边界拆分；只有 major 1 一套 Schema |
 | `Module/` | 三个 Module 的 M2 机制；Kernel 文档从外部视角描述 syscall 与事件 |
 | `Kernel/` | Kernel 各组件的 M2 职责，以及 Session actor 中的内部交互 |
 | `Library/` | 三个静态库：Agent、Unit、Tool、Prompt、模板定义，Executor，Schema |
 | `Infrastructure/` | 四类基础设施的 M2 职责与边界 |
-| [SystemFaultHandling](SystemFaultHandling.md) | 异常语义、停机与退出码 |
-| `M2Usage.md`、`M2Limitations.md` | 发布前编写（phase 3）：运行说明与已知限制 |
-
-验收证据在发布时编写，放在 `docs/` 根目录，与 M1 的做法相同。
 
 ## 3. 组件文档的写法
 
@@ -55,26 +45,8 @@ M1 已发布，其规范归档在 [History/M1](../History/M1/README.md)，只作
 6. **不变量与测试**：对应 M2Design 第 12 节的编号，写明由哪类测试保证；
 7. **配置**：配置项、读取者、缺省值。
 
-文档描述的是当前的设计与实现，不记录"哪个阶段引入"。需要查某项机制的来由时，看 M2Design 的版本记录与 [History/M2](../History/M2/README.md)。
+文档描述的是当前的设计与实现，不记录"哪个阶段引入"。需要查某项机制的来由时，看 M2Design 的版本记录、Orchestration 的决定记录与 [History/M2](../History/M2/README.md)。
 
-## 4. 文档状态
+## 4. 版本
 
-状态取值：草稿、已评审、已实现。实现合入集成分支后，对应文档改为"已实现"；以 M2ReleasePlan 为准，发布前全部应为"已实现"。
-
-| 文档 | 状态 |
-|---|---|
-| [M2Design](M2Design.md) | v1.35 定稿 |
-| [M2ReleasePlan](M2ReleasePlan.md)、[M2Baseline](M2Baseline.md)、[M2Decisions](M2Decisions.md)、[M2FrozenTests](M2FrozenTests.md)、[Evaluation](Evaluation.md) | 新（phase 0），待评审 |
-| [M2TechStack](M2TechStack.md) | 实测已填 |
-| [Orchestration](Orchestration.md) | 草稿（phase 2 文档门），待评审 |
-| [Phase2Plan](Phase2Plan.md) | 已定（2026-11-12，Cary 决定）；对照实验的阈值与预算待定 |
-| [Phase3Plan](Phase3Plan.md) | 已定（2026-11-15，Cary 决定）；大任务改为本项目设计（第 3.4 节） |
-| [Phase3TaskSet](Phase3TaskSet.md) | 定稿（2026-11-15）；`dsh` 对照已全部运行 |
-| [M2Security](M2Security.md) | 已实现部分已评审；phase 1–3 的对抗用例与审计后更新 |
-| [Interface](Interface/README.md)：[WorkflowKernel](Interface/WorkflowKernel.md)、[InteractionKernel](Interface/InteractionKernel.md)、[Persistence](Interface/Persistence.md)、[Definitions](Interface/Definitions.md)、[KernelSupervisor](Interface/KernelSupervisor.md) | 已实现 |
-| Module：[Kernel](Module/Kernel.md)、[Workflow](Module/Workflow.md)、[UserInteraction](Module/UserInteraction.md) | 已实现；使用者模板与 `analyze` 已删除，预编排模板作为专家 Agent（Orchestration D39、D46） |
-| Kernel：[Interaction](Kernel/Interaction.md)、[Core](Kernel/Core.md)、[Gateway](Kernel/Gateway.md)、[Execution](Kernel/Execution.md)、[Monitor](Kernel/Monitor.md)、[Supervisor](Kernel/Supervisor.md) | 已实现 |
-| Library：[AgentToolPool](Library/AgentToolPool.md)、[ExecutorSet](Library/ExecutorSet.md)、[SharedContracts](Library/SharedContracts.md) | 已实现；Agent 与 Prompt 模板库部分为设计（phase 2） |
-| Infrastructure：[Persistence](Infrastructure/Persistence.md)、[ArtifactStore](Infrastructure/ArtifactStore.md)、[ModuleHost](Infrastructure/ModuleHost.md)、[Fabric](Infrastructure/Fabric.md) | 已实现 |
-| [SystemFaultHandling](SystemFaultHandling.md) | 已实现 |
-| M2Usage、M2Limitations | 未开始（phase 3） |
+**M2 V1.0**（2026-11-18）：Turn-chat 与 Mission 两种模式；Mission 即 Mission 基线1.2（Orchestration D110、D111，git 标签 `mission-baseline-1.2`），在最终集的 5 道大任务上与 `dsh` 对照：总用时 103.8 对 126.6 分钟，平均分 0.917 对 0.931，费用 $1.79 对 $1.07（[TaskSet](TaskSet.md) 第 6 节）。本目录全部文档描述的机制都已实现。

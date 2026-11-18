@@ -1,4 +1,4 @@
-"""DeepSeek Harness (dsh) as a LoopsBench agent, for the phase 3 control runs (docs/M2/Phase3Plan.md).
+"""DeepSeek Harness (dsh) as a LoopsBench agent, for the dsh control runs (docs/M2/TaskSet.md).
 
     PYTHONPATH=<this dir> loopsbench run -p tasks -t <task> --agent-import-path lb_dsh_agent:DshAgent
 

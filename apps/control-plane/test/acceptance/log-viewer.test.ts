@@ -1,5 +1,5 @@
 /**
- * `mas log` on a Session the real product wrote (docs/M2/Phase1Console.md 3): the viewer reads
+ * `mas log` on a Session the real product wrote (docs/M2/Console.md 3): the viewer reads
  * the log and the artifacts of a scripted conversation, also while that conversation is still
  * open, and says what it cannot show instead of failing.
  */

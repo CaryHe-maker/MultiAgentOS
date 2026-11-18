@@ -93,7 +93,7 @@ interface BoundaryContext {
 | 地址 `kernel-core.model-progress`：`kernel.execution.ModelProgress.v1`（流式模型调用正在想什么、写什么，以及流的结束） | send | supervisor | kernel-core |
 | 地址 `inbox.user-interaction-stream`：`kernel.control.ModelStream.v1`（同上，加上 `agentRunId` 与 `callId`） | send | kernel-core | user-interaction |
 
-后两条是**旁路**，不是有序事件：没有 `eventId` 与 `seq`，发送方不等待、不重试、积压超过 64 条就丢弃，不进日志，不经过 Workflow，没有任何决定可以依赖它们（[Phase1Console](../Phase1Console.md) 第 4 节）。
+后两条是**旁路**，不是有序事件：没有 `eventId` 与 `seq`，发送方不等待、不重试、积压超过 64 条就丢弃，不进日志，不经过 Workflow，没有任何决定可以依赖它们（[Console](../Console.md) 第 4 节）。
 
 **事件的三个序列**（[M2Design](../M2Design.md) 第 2.6 节）：
 

@@ -1,7 +1,7 @@
-"""Collects the dsh control runs of phase 3 (~/bench/p3dsh) into phase3-dsh-results.json: per task the set it
+"""Collects the dsh control runs of phase 3 (~/bench/p3dsh) into dsh-results.json: per task the set it
 belongs to, the agent time, the score, requests, tokens and the cost by the project's price table (USD per
 million tokens: cache hit 0.003, miss 0.15, output 0.60). Raw logs stay in ~/bench/p3dsh.
-Usage (in WSL): python3 phase3-dsh-results.py
+Usage (in WSL): python3 dsh-results.py
 """
 
 import glob
@@ -10,7 +10,7 @@ import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNS = os.path.expanduser("~/bench/p3dsh")
-sealed = json.load(open(os.path.join(HERE, "phase3.json")))
+sealed = json.load(open(os.path.join(HERE, "taskset.json")))
 where = {}
 for lst in ("finalSmall", "finalLarge", "devSmall", "devLarge"):
     for t in sealed[lst]:
@@ -70,7 +70,7 @@ replacements = [l.strip() for l in open(os.path.join(RUNS, "replacements.log"))]
 out = {"note": "one dsh run per task (deepseek-flash, neutral prompt); agentSeconds is the agent's own time",
        "totalUsd": round(sum(r["usd"] for r in runs), 3), "runs": runs, "voided": voided,
        "replacements": replacements}
-json.dump(out, open(os.path.join(HERE, "phase3-dsh-results.json"), "w"), indent=1, ensure_ascii=False)
+json.dump(out, open(os.path.join(HERE, "dsh-results.json"), "w"), indent=1, ensure_ascii=False)
 print(len(runs), "runs, total", out["totalUsd"], "USD")
 for r in runs:
     if r["set"] is None:

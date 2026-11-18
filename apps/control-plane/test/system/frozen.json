@@ -317,7 +317,7 @@
         "title": "forbids duplicate references in closed sets"
       }
     ],
-    "deferred": "No user templates exist yet; the adversarial case for a template that asks for more is written with them (M2ReleasePlan phase 2)."
+    "deferred": "No user templates exist yet; the adversarial case for a template that asks for more is written with them."
   },
   {
     "id": "I18",

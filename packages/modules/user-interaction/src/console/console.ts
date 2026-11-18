@@ -247,7 +247,7 @@ export class Console {
   /** Full outputs of truncated tool results, numbered for `/output` in arrival order. */
   readonly #fullOutputs: ArtifactRef[] = [];
   #sessionId: string | undefined;
-  /** What the model thinks while it runs, for the eye only (docs/M2/Phase1Console.md 4). */
+  /** What the model thinks while it runs, for the eye only (docs/M2/Console.md 4). */
   readonly #thinking = new ThinkingLog();
   /** The answers agents are writing for the user, by the call that writes them; only that they are. */
   readonly #answering = new Map<string, { agentRunId: string; startedAt: string }>();
@@ -339,7 +339,7 @@ export class Console {
   }
 
   /**
-   * The thinking of a model call, as it comes (docs/M2/Phase1Console.md 4). It is not an event of
+   * The thinking of a model call, as it comes (docs/M2/Console.md 4). It is not an event of
    * the run: it changes nothing but what is drawn, and a piece that does not fit a Session in
    * view is dropped.
    */

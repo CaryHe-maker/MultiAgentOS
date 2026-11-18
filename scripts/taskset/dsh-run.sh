@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# The dsh control of the phase-3 final set (docs/M2/Phase3Plan.md section 3.3): every task id given
+# The dsh control runs of the M2 task sets (docs/M2/TaskSet.md): every task id given
 # runs once with dsh in its official harness. A task with a `started` marker is never run again, also
 # after a crash; a crash is reported, not retried.
-#   phase3-dsh.sh <id>...        e.g. tb2/mailman lb/task_x deepswe/y sbp/instance_z
+#   dsh-run.sh <id>...        e.g. tb2/mailman lb/task_x deepswe/y sbp/instance_z
 # Small tasks (tb2, sbp) and the designed large tasks use agentrun.mjs with the task's own agent
 # timeout (2.5 hours for the designed ones); LoopsBench and DeepSWE tasks use their harness with a
 # 2.5-hour cap. Results go under $OUT (default ~/bench/p3dsh).

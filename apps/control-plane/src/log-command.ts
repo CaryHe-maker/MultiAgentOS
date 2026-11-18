@@ -1,5 +1,5 @@
 /**
- * `mas log` (docs/M2/Phase1Console.md 3): prints the time line of a Session from its log. It only
+ * `mas log` (docs/M2/Console.md 3): prints the time line of a Session from its log. It only
  * reads. It starts no module, takes neither the instance lock nor the Session lock, and calls no
  * model, so it works while another `mas` runs: a half-written last line of a live log is left out.
  */

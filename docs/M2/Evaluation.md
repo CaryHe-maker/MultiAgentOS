@@ -1,6 +1,6 @@
 # MultiAgentOS 评测体系
 
-> 状态：已实现（phase 0）。代码在 `apps/control-plane/test/eval/`，命令 `pnpm run eval`。
+> 状态：已实现。代码在 `apps/control-plane/test/eval/`，命令 `pnpm run eval`。
 > 它回答"模型、提示词、模板、工具表现得好不好"；"系统在任何模型行为下是否守住底线"由冻结的系统测试回答（[M2FrozenTests](M2FrozenTests.md)），两者分开。
 
 ## 1. 目的与范围
@@ -99,13 +99,13 @@ M2 之后的工作大多是调提示词、加工具、设计工作流。每次�
 - 需要的 fixture 在 `fixture` 里生成，不依赖外部状态；
 - 先用脚本化 provider 证明判分能判出通过与失败，再换真实模型运行。
 
-Turn-chat 的任务集在 phase 1 开头建立，并在改动任何提示词之前录下基线 1，优化达标后录基线 2；预置工作流的任务集在 phase 2 同样处理（M2ReleasePlan 第 3a 节）。
+M2 的开发集与最终集、运行规则与结果见 [TaskSet](TaskSet.md)；改动提示词或机制前后，在开发集上对比。
 
 ## 7a. 编排任务集与对照实验
 
 - `tasks/orchestration.ts`、`tasks/orchestration-hard.ts`（`tag:orchestration`，难任务另有 `tag:hard`）：后台命令、超时转后台、读取与停止作业、子任务里的后台命令、并行子任务与休眠汇合、兄弟消息、停止与中断子任务，以及 `mission` 模式的大任务（小项目、键值存储、技术报告、分章综述、跨模块修复）。判分只看文件、模型没见过的验收命令（隐藏测试）与会话日志。
 - 设置 `EVAL_ARCHIVE=<目录>` 时，每次运行的 Session（含日志）与结束时的仓库留档，供复查失败。
-- 与 DeepSeek Harness 的大任务对照实验（M2Design 第 13 节 X 组）的设计见 [Phase2Plan](Phase2Plan.md) 第 4 节；`dsh` 与关闭派生的本项目作为对照组的驱动待加入（RP2-EV-2）。
+- 与 DeepSeek Harness 的大任务对照实验（M2Design 第 13 节 X 组）的任务集与结果见 [TaskSet](TaskSet.md)；`dsh` 的对照由 `scripts/taskset/dsh-run.sh` 运行，mas 由 `scripts/taskset/mas-run.sh` 运行，都经 `scripts/taskset/agentrun.mjs`。
 
 ## 8. 命令
 

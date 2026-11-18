@@ -1,7 +1,7 @@
 /**
  * How a mission run organised its work, read from the Session log alone (Orchestration 3.9, D39):
  * what root started (tasks, specialists), what it did itself, and for every specialist whether it
- * kept to its playbook. The submission study (Phase2Plan 7) records it for every run, and
+ * kept to its playbook. The submission study (Evaluation 7a) records it for every run, and
  * reads it again from the archived logs, so a change of a measure needs no new run.
  *
  * What a playbook allows its root, beyond what the runner already enforces (the Agents, numbers
@@ -67,7 +67,7 @@ export interface TaskStats {
   readonly feedback: Readonly<Record<string, number>>;
   readonly changedFiles: number;
   /**
-   * Its context compactions (Phase2Plan 4.7): tool results pruned and histories summarised, and the
+   * Its context compactions (Evaluation 7a): tool results pruned and histories summarised, and the
    * largest input of one of its model calls, so a run shows whether the trigger fits the limits.
    */
   readonly compactions: { readonly pruned: number; readonly summarised: number };
