@@ -42,7 +42,21 @@ node apps/control-plane/dist/bin.js log --repo /home/me/projects/my-app
 | **Mission（M2 V1.0）** | **87.8** | 0.917 | 1.76 | 98.6% |
 | `dsh` | 126.6 | 0.931 | 1.07 | — |
 
-5 道都比 `dsh` 快（4 道快 7–12 分钟，总用时少约 31%），2 道分数高于 `dsh`、1 道同为满分；费用约为 1.6 倍，主要来自多个 Agent 各自的思考与检查。pylua 取同一版本的重复运行：正式运行那一次 DeepSeek 两次断流，用时受环境影响（[experiments](docs/M2/experiments.md)）。开发集上的大任务（awk、Python 子集、GNU 文本工具）Mission 都不低于 `dsh` 的分数，用时少 20%–49%。任务集、规则与逐次结果见 [TaskSet](docs/M2/TaskSet.md) 与 [experiments](docs/M2/experiments.md)，已知限制见 [M2Limitations](docs/M2/M2Limitations.md)。
+5 道都比 `dsh` 快（4 道快 7–12 分钟，总用时少约 31%），2 道分数高于 `dsh`、1 道同为满分；费用约为 1.6 倍，主要来自多个 Agent 各自的思考与检查。pylua 取同一版本的重复运行：正式运行那一次 DeepSeek 两次断流，用时受环境影响（[experiments](docs/M2/experiments.md)）。
+
+平均分低于 `dsh` 几乎全部来自 pyarchive 一道（0.903 对 1.000）。把它单独拿出来看：
+
+| | 总用时（分钟） | 平均分 | 费用（美元） |
+|---|---|---|---|
+| 除 pyarchive 外的 4 道：Mission | **69.1** | **0.921** | 1.50 |
+| 除 pyarchive 外的 4 道：`dsh` | 105.7 | 0.913 | 0.84 |
+| 5 道，pyarchive 取同一版本的重复运行（1.000 / 12.8 分钟）：Mission | **81.9** | **0.936** | 1.85 |
+| 5 道：`dsh` | 126.6 | 0.931 | 1.07 |
+
+- 除 pyarchive 外的 4 道，Mission 总用时少 36.6 分钟（约 35%），平均分高 0.008。
+- pyarchive 用同一版本重跑一次得满分、12.8 分钟（比 `dsh` 快 8.1 分钟）；换上这一次，5 道的平均分也高于 `dsh`（0.936 对 0.931），总用时少约 35%。
+
+这说明系统存在偶然的低效：同一版本在同一道题上会拆出不同的方案，单次运行可能慢一倍或低一些分（[M2Limitations](docs/M2/M2Limitations.md) 第 7 条）。但在绝大部分任务上，Mission 相对 `dsh` 的优势是稳定的：用时都更少，分数持平或更高。上面第一张表是正式口径，这张表只用来说明这种偶然性，不替换正式成绩。开发集上的大任务（awk、Python 子集、GNU 文本工具）Mission 都不低于 `dsh` 的分数，用时少 20%–49%。任务集、规则与逐次结果见 [TaskSet](docs/M2/TaskSet.md) 与 [experiments](docs/M2/experiments.md)，已知限制见 [M2Limitations](docs/M2/M2Limitations.md)。
 
 ## 架构
 
