@@ -295,6 +295,11 @@ const activity = {
   missionId: Type.Optional(IdSchemas.missionScopeId),
   parentMissionId: Type.Optional(IdSchemas.missionScopeId),
   label: text(80),
+  /**
+   * A task that works in its caller's place until it delivers (Orchestration D115): the activity
+   * area shows it where its caller was, and a message of the user goes to it.
+   */
+  standsIn: Type.Optional(Type.Literal(true)),
   unit: Type.Optional(
     closed({
       unitAttemptId: IdSchemas.unitAttemptId,

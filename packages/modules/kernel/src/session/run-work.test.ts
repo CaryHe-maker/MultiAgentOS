@@ -1272,10 +1272,18 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     units: [fileRead, publish],
     budget: childBudget,
   });
+  /** The owner of a template's step, started by a caller's delegate tool (D113, D115). */
+  const ownerAgent = testPinnedAgent({
+    id: 'owner',
+    capabilities: ['repo.read', 'workspace.write'],
+    units: [fileRead, fileWrite, publish],
+    budget: childBudget,
+  });
   const agents: Record<string, PinnedAgent> = {
     main: mainAgent,
     worker: workerAgent,
     explorer: explorerAgent,
+    owner: ownerAgent,
   };
   const ref = (id: string) => ({
     kind: 'AGENT' as const,
@@ -1299,7 +1307,8 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
         ? { ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' }
         : {
             ok: true,
-            defaultShare: agent.id === 'main' ? undefined : defaultShare,
+            defaultShare:
+              agent.id === 'main' ? undefined : agent.id === 'owner' ? 'ALL' : defaultShare,
             budget: agent.budget,
           };
     },
@@ -1386,6 +1395,26 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
   const reasonOf = (response: unknown) =>
     (response as { reasonCode?: string }).reasonCode ?? (response as { outcome: string }).outcome;
   const delegationIdOf = (response: unknown) => (response as { delegationId: string }).delegationId;
+
+  it('lends a template step all its caller can lend (Orchestration D115)', async () => {
+    const ledgers = new RunLedgers(
+      {
+        runTokenLimit: minShare(testAgentBudget) * 40,
+        inputTokenLimit: minShare(testAgentBudget) * 20,
+      },
+      testAgentBudget,
+    );
+    const kernel = await setup(mainAgent, {
+      pin: (request) => agents[request.agentRef.id] ?? mainAgent,
+      runWork: { ...runWork, ledgers },
+    });
+    await kernel.register(kernel.agentRunId, ['repo.read', 'workspace.write', 'agent.spawn']);
+    const before = ledgers.delegable(kernel.agentRunId);
+    expect(
+      await reserve(kernel, [{ name: 'mission-1', agent: 'owner', roots: ['src'] }]),
+    ).toMatchObject({ outcome: 'ACCEPTED', shares: [{ name: 'mission-1', tokens: before }] });
+    expect(ledgers.delegable(kernel.agentRunId)).toBe(0);
+  });
 
   it('opens every task with the least its Agent can work with, whatever was asked (B2 in part)', async () => {
     const kernel = await open();

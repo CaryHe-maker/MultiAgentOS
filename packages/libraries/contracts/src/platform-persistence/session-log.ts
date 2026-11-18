@@ -52,6 +52,12 @@ export const SpawnNodeSchema = closed({
   /** The ended task it takes up again, with that task's history (`continues`, Orchestration 5.3). */
   continues: Type.Optional(closed({ missionId: IdSchemas.missionScopeId })),
   /**
+   * A Mission a Turn-chat's main handed a goal to (D113, D115): until it delivers it works in
+   * main's place, so the user sees it in place of main and talks to it, and its reply is the
+   * answer of the turn; main reads it as the result of its call when the user writes next.
+   */
+  standsIn: Type.Optional(Type.Literal(true)),
+  /**
    * Its goal was longer than the graph holds (D56): the node holds the beginning,
    * the call that started it holds the whole, and the task is shown the whole from there.
    */

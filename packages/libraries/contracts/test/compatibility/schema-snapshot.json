@@ -354,10 +354,6 @@
                     },
                     "additionalProperties": false,
                     "$id": "catalog.DefinitionRef.v1"
-                  },
-                  "share": {
-                    "type": "integer",
-                    "minimum": 1
                   }
                 },
                 "additionalProperties": false
@@ -1600,10 +1596,6 @@
                         },
                         "additionalProperties": false,
                         "$id": "catalog.DefinitionRef.v1"
-                      },
-                      "share": {
-                        "type": "integer",
-                        "minimum": 1
                       }
                     },
                     "additionalProperties": false
@@ -4542,6 +4534,7 @@
                       "MISSION_NOT_FOUND",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
+                      "BUDGET_ASKED",
                       "TASK_QUOTA_ASKED",
                       "TASK_QUOTA_REACHED",
                       "DELEGATION_NOT_FOUND",
@@ -5939,6 +5932,7 @@
                 "MISSION_NOT_FOUND",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
+                "BUDGET_ASKED",
                 "TASK_QUOTA_ASKED",
                 "TASK_QUOTA_REACHED",
                 "DELEGATION_NOT_FOUND",
@@ -8991,6 +8985,10 @@
               "minLength": 1,
               "maxLength": 80
             },
+            "standsIn": {
+              "type": "boolean",
+              "const": true
+            },
             "unit": {
               "type": "object",
               "required": [
@@ -9142,6 +9140,10 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 80
+            },
+            "standsIn": {
+              "type": "boolean",
+              "const": true
             },
             "unit": {
               "type": "object",
@@ -9417,29 +9419,13 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 100000
+            },
+            "delegateTo": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
             }
           },
           "additionalProperties": false
-        },
-        "template": {
-          "type": "object",
-          "required": [
-            "id",
-            "version"
-          ],
-          "properties": {
-            "id": {
-              "type": "string",
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-              "maxLength": 64
-            },
-            "version": {
-              "type": "string",
-              "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-            }
-          },
-          "additionalProperties": false,
-          "$id": "catalog.DefinitionRef.v1"
         }
       },
       "additionalProperties": false,
@@ -10624,6 +10610,10 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 80
+                    },
+                    "standsIn": {
+                      "type": "boolean",
+                      "const": true
                     }
                   },
                   "additionalProperties": false
@@ -11758,6 +11748,7 @@
                               "MISSION_NOT_FOUND",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
+                              "BUDGET_ASKED",
                               "TASK_QUOTA_ASKED",
                               "TASK_QUOTA_REACHED",
                               "DELEGATION_NOT_FOUND",
@@ -13162,6 +13153,7 @@
                                       "MISSION_NOT_FOUND",
                                       "WRITE_SCOPE_DELEGATED",
                                       "BUDGET_INSUFFICIENT",
+                                      "BUDGET_ASKED",
                                       "TASK_QUOTA_ASKED",
                                       "TASK_QUOTA_REACHED",
                                       "DELEGATION_NOT_FOUND",
@@ -14879,6 +14871,7 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "BUDGET_ASKED",
                             "TASK_QUOTA_ASKED",
                             "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
@@ -15747,6 +15740,10 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 100000
+                        },
+                        "delegateTo": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,39}$"
                         }
                       },
                       "additionalProperties": false
@@ -15786,6 +15783,10 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 100000
+                        },
+                        "delegateTo": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,39}$"
                         }
                       },
                       "additionalProperties": false
@@ -15875,6 +15876,10 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 100000
+                    },
+                    "delegateTo": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
                     }
                   },
                   "additionalProperties": false
@@ -16128,29 +16133,13 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 100000
+                    },
+                    "delegateTo": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
                     }
                   },
                   "additionalProperties": false
-                },
-                "template": {
-                  "type": "object",
-                  "required": [
-                    "id",
-                    "version"
-                  ],
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                      "maxLength": 64
-                    },
-                    "version": {
-                      "type": "string",
-                      "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "$id": "catalog.DefinitionRef.v1"
                 }
               },
               "additionalProperties": false,
@@ -16259,6 +16248,10 @@
                           "type": "string",
                           "minLength": 1,
                           "maxLength": 100000
+                        },
+                        "delegateTo": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,39}$"
                         }
                       },
                       "additionalProperties": false
@@ -16372,6 +16365,10 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 100000
+                    },
+                    "delegateTo": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
                     }
                   },
                   "additionalProperties": false
@@ -17899,6 +17896,10 @@
                       "minLength": 1,
                       "maxLength": 80
                     },
+                    "standsIn": {
+                      "type": "boolean",
+                      "const": true
+                    },
                     "unit": {
                       "type": "object",
                       "required": [
@@ -18050,6 +18051,10 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 80
+                    },
+                    "standsIn": {
+                      "type": "boolean",
+                      "const": true
                     },
                     "unit": {
                       "type": "object",
@@ -18741,6 +18746,7 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "BUDGET_ASKED",
                             "TASK_QUOTA_ASKED",
                             "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
@@ -19010,6 +19016,7 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "BUDGET_ASKED",
                             "TASK_QUOTA_ASKED",
                             "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
@@ -20203,6 +20210,10 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 100000
+                },
+                "delegateTo": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,39}$"
                 }
               },
               "additionalProperties": false
@@ -20335,6 +20346,7 @@
             "MISSION_NOT_FOUND",
             "WRITE_SCOPE_DELEGATED",
             "BUDGET_INSUFFICIENT",
+            "BUDGET_ASKED",
             "TASK_QUOTA_ASKED",
             "TASK_QUOTA_REACHED",
             "DELEGATION_NOT_FOUND",
@@ -20927,6 +20939,7 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "BUDGET_ASKED",
                     "TASK_QUOTA_ASKED",
                     "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
@@ -21196,6 +21209,7 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "BUDGET_ASKED",
                     "TASK_QUOTA_ASKED",
                     "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
@@ -22368,6 +22382,7 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "BUDGET_ASKED",
                     "TASK_QUOTA_ASKED",
                     "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
@@ -22881,6 +22896,10 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 100000
+            },
+            "delegateTo": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
             }
           },
           "additionalProperties": false
@@ -22918,6 +22937,10 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 100000
+                },
+                "delegateTo": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,39}$"
                 }
               },
               "additionalProperties": false
@@ -22957,6 +22980,10 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 100000
+                },
+                "delegateTo": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,39}$"
                 }
               },
               "additionalProperties": false
@@ -23011,6 +23038,10 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 100000
+            },
+            "delegateTo": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
             }
           },
           "additionalProperties": false
@@ -23135,6 +23166,7 @@
                 "MISSION_NOT_FOUND",
                 "DELEGATION_NOT_FOUND",
                 "COMPACTION_UNKNOWN",
+                "BUDGET_ASKED",
                 "TASK_QUOTA_ASKED",
                 "TASK_QUOTA_REACHED"
               ]
@@ -23754,6 +23786,7 @@
                       "MISSION_NOT_FOUND",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
+                      "BUDGET_ASKED",
                       "TASK_QUOTA_ASKED",
                       "TASK_QUOTA_REACHED",
                       "DELEGATION_NOT_FOUND",
@@ -27978,6 +28011,7 @@
                               "MISSION_NOT_FOUND",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
+                              "BUDGET_ASKED",
                               "TASK_QUOTA_ASKED",
                               "TASK_QUOTA_REACHED",
                               "DELEGATION_NOT_FOUND",
@@ -33666,6 +33700,7 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "BUDGET_ASKED",
                     "TASK_QUOTA_ASKED",
                     "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
@@ -33971,6 +34006,24 @@
       "additionalProperties": false,
       "$id": "kernel.unit.ControlJobRequest.v1"
     },
+    "kernel.unit.DelegationDecided.v1": {
+      "type": "object",
+      "required": [
+        "type",
+        "granted"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "DelegationDecided"
+        },
+        "granted": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "$id": "kernel.unit.DelegationDecided.v1"
+    },
     "kernel.unit.DelegationReserved.v1": {
       "type": "object",
       "required": [
@@ -34143,25 +34196,9 @@
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
             },
-            "template": {
-              "type": "object",
-              "required": [
-                "id",
-                "version"
-              ],
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                  "maxLength": 64
-                },
-                "version": {
-                  "type": "string",
-                  "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-                }
-              },
-              "additionalProperties": false,
-              "$id": "catalog.DefinitionRef.v1"
+            "delegateTo": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
             },
             "checkpointId": {
               "type": "string",
@@ -34228,25 +34265,9 @@
               "additionalProperties": false,
               "$id": "platform.common.ArtifactRef.v1"
             },
-            "template": {
-              "type": "object",
-              "required": [
-                "id",
-                "version"
-              ],
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                  "maxLength": 64
-                },
-                "version": {
-                  "type": "string",
-                  "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-                }
-              },
-              "additionalProperties": false,
-              "$id": "catalog.DefinitionRef.v1"
+            "delegateTo": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
             },
             "checkpointId": {
               "type": "string",
@@ -35087,6 +35108,10 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 80
+            },
+            "standsIn": {
+              "type": "boolean",
+              "const": true
             }
           },
           "additionalProperties": false
@@ -35558,6 +35583,7 @@
                       "MISSION_NOT_FOUND",
                       "WRITE_SCOPE_DELEGATED",
                       "BUDGET_INSUFFICIENT",
+                      "BUDGET_ASKED",
                       "TASK_QUOTA_ASKED",
                       "TASK_QUOTA_REACHED",
                       "DELEGATION_NOT_FOUND",
@@ -37702,6 +37728,7 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "BUDGET_ASKED",
                     "TASK_QUOTA_ASKED",
                     "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
@@ -37971,6 +37998,7 @@
                     "MISSION_NOT_FOUND",
                     "WRITE_SCOPE_DELEGATED",
                     "BUDGET_INSUFFICIENT",
+                    "BUDGET_ASKED",
                     "TASK_QUOTA_ASKED",
                     "TASK_QUOTA_REACHED",
                     "DELEGATION_NOT_FOUND",
@@ -39102,6 +39130,7 @@
                               "MISSION_NOT_FOUND",
                               "WRITE_SCOPE_DELEGATED",
                               "BUDGET_INSUFFICIENT",
+                              "BUDGET_ASKED",
                               "TASK_QUOTA_ASKED",
                               "TASK_QUOTA_REACHED",
                               "DELEGATION_NOT_FOUND",
@@ -40610,24 +40639,6 @@
       "additionalProperties": false,
       "$id": "kernel.unit.TakeCheckpointRequest.v1"
     },
-    "kernel.unit.TaskQuotaDecided.v1": {
-      "type": "object",
-      "required": [
-        "type",
-        "granted"
-      ],
-      "properties": {
-        "type": {
-          "type": "string",
-          "const": "TaskQuotaDecided"
-        },
-        "granted": {
-          "type": "boolean"
-        }
-      },
-      "additionalProperties": false,
-      "$id": "kernel.unit.TaskQuotaDecided.v1"
-    },
     "kernel.unit.ToolResultsPruned.v1": {
       "type": "object",
       "required": [
@@ -41179,6 +41190,7 @@
                           "MISSION_NOT_FOUND",
                           "WRITE_SCOPE_DELEGATED",
                           "BUDGET_INSUFFICIENT",
+                          "BUDGET_ASKED",
                           "TASK_QUOTA_ASKED",
                           "TASK_QUOTA_REACHED",
                           "DELEGATION_NOT_FOUND",
@@ -45254,14 +45266,14 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "const": "TaskQuotaDecided"
+                  "const": "DelegationDecided"
                 },
                 "granted": {
                   "type": "boolean"
                 }
               },
               "additionalProperties": false,
-              "$id": "kernel.unit.TaskQuotaDecided.v1"
+              "$id": "kernel.unit.DelegationDecided.v1"
             },
             {
               "type": "object",
@@ -47028,25 +47040,9 @@
                       "additionalProperties": false,
                       "$id": "platform.common.ArtifactRef.v1"
                     },
-                    "template": {
-                      "type": "object",
-                      "required": [
-                        "id",
-                        "version"
-                      ],
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                          "maxLength": 64
-                        },
-                        "version": {
-                          "type": "string",
-                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-                        }
-                      },
-                      "additionalProperties": false,
-                      "$id": "catalog.DefinitionRef.v1"
+                    "delegateTo": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
                     },
                     "checkpointId": {
                       "type": "string",
@@ -47113,25 +47109,9 @@
                       "additionalProperties": false,
                       "$id": "platform.common.ArtifactRef.v1"
                     },
-                    "template": {
-                      "type": "object",
-                      "required": [
-                        "id",
-                        "version"
-                      ],
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
-                          "maxLength": 64
-                        },
-                        "version": {
-                          "type": "string",
-                          "pattern": "^v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
-                        }
-                      },
-                      "additionalProperties": false,
-                      "$id": "catalog.DefinitionRef.v1"
+                    "delegateTo": {
+                      "type": "string",
+                      "pattern": "^[a-z][a-z0-9_]{0,39}$"
                     },
                     "checkpointId": {
                       "type": "string",
@@ -47897,6 +47877,7 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "BUDGET_ASKED",
                             "TASK_QUOTA_ASKED",
                             "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
@@ -48166,6 +48147,7 @@
                             "MISSION_NOT_FOUND",
                             "WRITE_SCOPE_DELEGATED",
                             "BUDGET_INSUFFICIENT",
+                            "BUDGET_ASKED",
                             "TASK_QUOTA_ASKED",
                             "TASK_QUOTA_REACHED",
                             "DELEGATION_NOT_FOUND",
@@ -49630,6 +49612,7 @@
         "MISSION_NOT_FOUND",
         "WRITE_SCOPE_DELEGATED",
         "BUDGET_INSUFFICIENT",
+        "BUDGET_ASKED",
         "TASK_QUOTA_ASKED",
         "TASK_QUOTA_REACHED",
         "DELEGATION_NOT_FOUND",
@@ -52636,6 +52619,10 @@
                         },
                         "additionalProperties": false
                       },
+                      "standsIn": {
+                        "type": "boolean",
+                        "const": true
+                      },
                       "cut": {
                         "type": "boolean"
                       },
@@ -53392,6 +53379,10 @@
             "checkpointId": {
               "type": "string",
               "pattern": "^ckp_[A-Za-z0-9][A-Za-z0-9_-]{5,127}$"
+            },
+            "delegateTo": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,39}$"
             }
           },
           "additionalProperties": false
@@ -54926,6 +54917,7 @@
                 "MISSION_NOT_FOUND",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
+                "BUDGET_ASKED",
                 "TASK_QUOTA_ASKED",
                 "TASK_QUOTA_REACHED",
                 "DELEGATION_NOT_FOUND",
@@ -55367,6 +55359,7 @@
                 "MISSION_NOT_FOUND",
                 "WRITE_SCOPE_DELEGATED",
                 "BUDGET_INSUFFICIENT",
+                "BUDGET_ASKED",
                 "TASK_QUOTA_ASKED",
                 "TASK_QUOTA_REACHED",
                 "DELEGATION_NOT_FOUND",

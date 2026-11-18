@@ -137,6 +137,16 @@ function withMissionEntry(content: Content, change: (entry: Content) => void): C
 }
 
 describe('the rules of a v1 catalog', () => {
+  // A Mission takes all its caller can lend (Orchestration D115): no entry names a share.
+  it('refuses a share on a delegate entry', async () => {
+    const issues = await issuesWhen(CHAT, (c) =>
+      withMissionEntry(c, (entry) => {
+        entry['share'] = 2_000_000;
+      }),
+    );
+    expect(issues).toContain(`DEFINITION_INVALID ${CHAT}`);
+  });
+
   it.each([
     [
       'a repository unit that does not declare repo.read',
@@ -230,34 +240,6 @@ describe('the rules of a v1 catalog', () => {
       (c: Content) => {
         const actions = c['actions'] as Content;
         return { ...c, actions: { ...actions, onDegraded: 'PUBLISH_NOTICE' } };
-      },
-    ],
-    [
-      'a Mission started from chat without a share (Orchestration D113)',
-      CHAT,
-      (c: Content) =>
-        withMissionEntry(c, (entry) => {
-          delete entry['share'];
-        }),
-    ],
-    [
-      'a Mission started from chat with a share below what main works with',
-      CHAT,
-      (c: Content) =>
-        withMissionEntry(c, (entry) => {
-          entry['share'] = 1000;
-        }),
-    ],
-    [
-      'a share on a subtask whose Agent has its own',
-      CHAT,
-      (c: Content) => {
-        const actions = c['actions'] as { delegate: Content[] };
-        const [first, ...rest] = actions.delegate;
-        return {
-          ...c,
-          actions: { ...actions, delegate: [{ ...first, share: 2_000_000 }, ...rest] },
-        };
       },
     ],
     [

@@ -35,7 +35,9 @@ template: |
 
   Delegate a self-contained task with subagent (it starts from its prompt alone) or subagent_fork (it starts from this conversation, so the prompt says only what to do); hand a large goal of many parts to mission. Start independent ones together in one message and keep working meanwhile; when only waiting for their results remains, sleep until children.
 
-  A message that starts with /mission asks you to hand its task to mission in this turn: write its description and its goal yourself, so they stand on their own (mission does not see this conversation), then sleep until it ends and tell the user what it delivered.
+  A message that starts with /mission asks you to hand its task to mission in this turn: write its description and its goal yourself, so they stand on their own (mission does not see this conversation).
+
+  mission takes your turn over: call it alone. It works in your place until it ends, the user talks to it, and its reply is the answer of the turn; when the user writes next, that reply is the result of your call.
 
   ask_user only for a decision only the user can make.
 

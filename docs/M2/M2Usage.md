@@ -31,7 +31,7 @@ alias mas='node /path/to/MultiAgentOS/apps/control-plane/dist/bin.js'
 
 | 指令 | 作用 |
 |---|---|
-| `/mission <目标>` | 把一个大目标交给 Mission：chat 写好任务要求交出去（Mission 不看这段对话），等它交付后告诉你结果；交付后可以接着谈（Orchestration D114） |
+| `/mission <目标>` | 把一个大目标交给 Mission：chat 写好任务要求交出去（Mission 不看这段对话），之后 Mission 代替 chat 工作：运行中写的话、它问的问题都在你和它之间，它的答复就是这一轮的回答；结束后你再写话，chat 带着它的结果接着谈（Orchestration D114、D115） |
 | `/new`、`/sessions`、`/resume <n>`、`/delete <n>`、`/fork` | 新建、列出、打开、删除、分叉对话 |
 | `/undo`、`/diff`、`/checkpoints`、`/rewind #N` | 回退文件改动、看差异、列出 checkpoint、暂停时回到第 N 个 |
 | `/compact` | 立即压缩上下文 |

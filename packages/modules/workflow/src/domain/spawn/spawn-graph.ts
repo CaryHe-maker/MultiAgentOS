@@ -341,6 +341,7 @@ export function spawnNodeOf(
     ...(task.effort === undefined ? {} : { effort: task.effort }),
     tokens: share?.tokens ?? 1,
     ...(share?.clamped === undefined ? {} : { clamped: share.clamped }),
+    ...(task.standsIn === true ? { standsIn: true as const } : {}),
   };
 }
 

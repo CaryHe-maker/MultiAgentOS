@@ -191,7 +191,7 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 设计以 M2Design 第 3.6、6.4、7.3 节为准。实现在 `session/run-work.ts` 与纯函数部分 `session/run-delegations.ts`。
 
-**`reserveDelegation`**（Workflow → Core）：请求带父 AgentRun 与各任务的名称、Agent 引用、写入根目录和（可选的）份额。依次判定：运行可接受工作；没有内存压力；父 AgentRun 存在且未结束；父的能力上限含 `agent.spawn`（否则 `FORBIDDEN`）；任务名不重复；每个 Agent 存在、摘要一致、可被派生（有缺省份额，否则 `FORBIDDEN`）；写入根目录合法且落在父的可写范围内（否则 `CAPABILITY_NOT_SUBSET`）。份额取请求的值，限制在 `[minShare(Agent), 缺省份额的 2 倍]` 内，被限制的在回复里标出 `MIN` 或 `MAX`。然后向 Monitor 一次性划出全部份额，不足时整次不执行，回复 `BUDGET_INSUFFICIENT` 并带可委派余额。成功时回复 `delegationId`（前缀 `dlg`，Core 生成）与各任务的份额。
+**`reserveDelegation`**（Workflow → Core）：请求带父 AgentRun 与各任务的名称、Agent 引用、写入根目录和（可选的）份额。依次判定：运行可接受工作；没有内存压力；父 AgentRun 存在且未结束；父的能力上限含 `agent.spawn`（否则 `FORBIDDEN`）；任务名不重复；每个 Agent 存在、摘要一致、可被派生（有缺省份额，或是调用方定义里模板的一步，否则 `FORBIDDEN`）；写入根目录合法且落在父的可写范围内（否则 `CAPABILITY_NOT_SUBSET`）。份额取请求的值，限制在 `[minShare(Agent), 缺省份额的 2 倍]` 内，被限制的在回复里标出 `MIN` 或 `MAX`。模板的一步拿调用方可委派的全部（减去同一次调用里其他任务的最小份额），没有上限（Orchestration D115）。然后向 Monitor 一次性划出全部份额；不足时按 `kernel.budget.extension` 追加：`ask` 时问用户（`budget.extend`，与模型调用之前的是同一个问题），回复 `BUDGET_ASKED`，回答之后发 `DelegationDecided` 给 Workflow；`extend` 时直接加了再划一次；加不了才整次不执行，回复 `BUDGET_INSUFFICIENT` 并带可委派余额。成功时回复 `delegationId`（前缀 `dlg`，Core 生成）与各任务的份额。
 
 **`registerAgentRun` 带 `parentAgentRunId`、`delegationId`、`taskName`**（三项同有同无，否则 `INVALID_INPUT`）：父存在且未结束；任务在该委派中且没有被登记过、没有被放弃（否则 `DELEGATION_NOT_FOUND`）。SubAgent 的能力上限不得超过父的能力上限，不得含 `agent.spawn`，写入根目录须落在它的任务范围内（否则 `CAPABILITY_NOT_SUBSET`）。运行中的 AgentRun 写入占用两两不相交：与任何一个运行中的、不是它祖先的、没有把占用委派出去的 AgentRun 相交，登记被拒（`WRITE_SCOPE_CONFLICT`）。登记成功时任务的份额成为它的账本，Monitor 为它计时（墙钟）与计工具次数。
 

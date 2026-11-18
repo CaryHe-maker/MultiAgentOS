@@ -79,6 +79,8 @@ interface DelegationReserved {            // outcome: 'ACCEPTED'
   shares: { name: string; tokens: number; clamped?: 'MIN' | 'MAX' }[];
 }
 // 额度不足：SyscallRejected { issuer: 'CORE', reasonCode: 'BUDGET_INSUFFICIENT', delegable: number }
+// 正在问用户追加额度或任务数：reasonCode 'BUDGET_ASKED' | 'TASK_QUOTA_ASKED'；回答后 Kernel 发 { type: 'DelegationDecided', granted }，
+// Workflow 重做这次调用（Orchestration D62、D115）
 interface ReleaseDelegationRequest { requestId: string; sessionId: string; workflowRunId: string; delegationId: string }
 
 // 交接登记之前，请 Kernel 把它带的引用改为随 Session 保留（M2Design 第 3.7 节 0a；Kernel/Core 第 5g 节）

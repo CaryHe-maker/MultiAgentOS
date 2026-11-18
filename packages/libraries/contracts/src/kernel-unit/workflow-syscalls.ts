@@ -28,7 +28,8 @@ export const RegisterAgentRunRequestSchema = closed(
     agentRef: pinnedRefOf('AGENT'),
     effort: ThinkingEffortSchema,
     workspaceViewId: Type.Literal('main'),
-    display: closed({ label: text(80) }),
+    /** `standsIn`: a task that works in its caller's place until it delivers (D115). */
+    display: closed({ label: text(80), standsIn: Type.Optional(Type.Literal(true)) }),
     /** May only narrow the ceiling, or registration is CAPABILITY_NOT_SUBSET (Kernel/Core 5a.1). */
     requestedCapabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
     /**

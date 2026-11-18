@@ -344,8 +344,14 @@ describe('B2: more than the caller can lend', () => {
           ...config,
           kernel: {
             ...config.kernel,
-            // Counted at whole input limits (rule 10), so four workers do not fit even at least.
-            budget: { ...config.kernel.budget, inputTokenLimit: 3_000_000, reserveShare: 1 },
+            // Counted at whole input limits (rule 10), so four workers do not fit even at least,
+            // and no more is added to the input (D115 would ask the user).
+            budget: {
+              ...config.kernel.budget,
+              inputTokenLimit: 3_000_000,
+              reserveShare: 1,
+              extension: { mode: 'stop', max: 4 },
+            },
           },
         }),
       });

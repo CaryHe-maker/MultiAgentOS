@@ -691,7 +691,10 @@ export function answerRounds(
 }
 
 export function startAgent(
-  input: Pick<AgentState, 'workflowRunId' | 'sessionId' | 'agentRunId' | 'definitions' | 'required'>,
+  input: Pick<
+    AgentState,
+    'workflowRunId' | 'sessionId' | 'agentRunId' | 'definitions' | 'required'
+  >,
   context: AgentContext,
 ): AgentTransition {
   const state: AgentState = {
@@ -1013,7 +1016,10 @@ function handleModel(
   if (required !== undefined) {
     const todo = state.definitions.todoTool?.toolName;
     const acting = calls.filter((call) => call.toolName !== todo);
-    if (required.retries === 0 || (acting.length === 1 && acting[0]?.toolName === required.toolName)) {
+    if (
+      required.retries === 0 ||
+      (acting.length === 1 && acting[0]?.toolName === required.toolName)
+    ) {
       return handleModel({ ...state, required: undefined }, report, context, config);
     }
     return refuseForDelegation(state, required, calls, context, records);
@@ -1152,7 +1158,8 @@ function soleControlOf(
   const spawn = state.spawnWithdrawn ? undefined : state.definitions.spawnTool;
   const delegates = state.spawnWithdrawn ? [] : (state.definitions.delegateTools ?? []);
   for (const call of calls) {
-    // A tool that starts one subtask goes with ordinary calls as run_subagents does (D112).
+    // A tool that starts one subtask goes with ordinary calls as run_subagents does (D112); one
+    // that hands the work to a template's run takes the turn over, so it comes alone (D115).
     const delegate = delegates.find((each) => each.toolName === call.toolName);
     if (delegate !== undefined) {
       const { parameters, ...named } = delegate;
@@ -1161,7 +1168,7 @@ function soleControlOf(
         parameters,
         allowedInFinal: false,
         ending: (source) => ({ kind: 'SPAWN', arguments: call.arguments, source, delegate: named }),
-        inline: true,
+        ...(delegate.template === undefined ? { inline: true } : {}),
       };
     }
     const tool = state.definitions.endTools.find((each) => each.toolName === call.toolName);

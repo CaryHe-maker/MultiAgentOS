@@ -458,23 +458,33 @@ export class Console {
       [...this.#generating.values()].map((call) => [call.agentRunId, call]),
     );
     const jobsByLine = this.#jobsByLine();
+    // A Mission in chat's place takes chat's line (D115): chat's turn is over, the Mission is the
+    // root of what runs.
+    const lines = [...this.#activity.values()];
+    const replaced = new Set(
+      lines.flatMap((each) =>
+        each.standsIn === true ? [each.parentMissionId ?? each.parentAgentRunId] : [],
+      ),
+    );
     return inTree(
-      [...this.#activity.values()].map((each) => {
-        const jobs = jobsByLine.get(each.missionId ?? each.agentRunId);
-        const line = jobs === undefined ? each : { ...each, jobs };
-        if (line.waitsForUser === true) return line;
-        const startedAt = answering.get(line.agentRunId);
-        if (startedAt !== undefined)
-          return { ...line, phase: text.answeringPhase, since: startedAt };
-        const call = generating.get(line.agentRunId);
-        return call === undefined
-          ? line
-          : {
-              ...line,
-              phase: text.generating(call.name, call.target),
-              since: call.startedAt,
-            };
-      }),
+      lines
+        .filter((each) => !replaced.has(each.missionId ?? each.agentRunId))
+        .map((each) => {
+          const jobs = jobsByLine.get(each.missionId ?? each.agentRunId);
+          const line = jobs === undefined ? each : { ...each, jobs };
+          if (line.waitsForUser === true) return line;
+          const startedAt = answering.get(line.agentRunId);
+          if (startedAt !== undefined)
+            return { ...line, phase: text.answeringPhase, since: startedAt };
+          const call = generating.get(line.agentRunId);
+          return call === undefined
+            ? line
+            : {
+                ...line,
+                phase: text.generating(call.name, call.target),
+                since: call.startedAt,
+              };
+        }),
     ).map(({ item, branch }) => ({ ...item, branch }));
   }
 
@@ -623,6 +633,14 @@ export class Console {
     // A paused run goes on with what the user writes: the message is the note that comes with it.
     if (this.#runState === 'PAUSED') {
       await this.#resume(input);
+      return;
+    }
+    // While a Mission works in chat's place, what the user writes goes to it at once (D115).
+    if (
+      this.#runState === 'RUNNING' &&
+      [...this.#activity.values()].some((each) => each.standsIn)
+    ) {
+      await this.steer(input);
       return;
     }
     // Nothing waits for input: the message waits in the console, Kernel never sees it (5.2).
@@ -1540,6 +1558,7 @@ export class Console {
               ? {}
               : { parentMissionId: event.parentMissionId }),
             label: terminalText(event.label),
+            ...(event.standsIn === true ? { standsIn: true as const } : {}),
             phase: text.phase[event.phase],
             // Waiting for the user is not work that is taking long: no seconds are counted for it.
             ...(WAITS_FOR_USER.has(event.phase) ? { waitsForUser: true } : {}),

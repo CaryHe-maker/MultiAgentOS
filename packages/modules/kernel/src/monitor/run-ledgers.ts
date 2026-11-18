@@ -329,9 +329,9 @@ export class RunLedgers {
     const above = this.#ledgerOfKey(agent.parent);
     if (above.delegable() < amount && agent.parent !== undefined)
       this.#topUp(agent.parent, above.lendShort(amount), 'LEND');
-    // Not enough above, up to the input's ledger: the task is short for want of the input's
-    // tokens, which only the user can add to (rule 6).
-    if (above.delegable() < amount) this.#starved.add(key);
+    // Not enough above for what it needs, up to the input's ledger: the task is short for want of
+    // the input's tokens, which only the user can add to (rule 6).
+    if (above.delegable() < need) this.#starved.add(key);
     amount = Math.min(amount, above.delegable());
     if (amount <= 0) return false;
     above.lend(amount);
@@ -416,15 +416,37 @@ export class RunLedgers {
         ? input.ledger.shortBy(wrapUpMargin(this.#main)) > 0
         : this.#starved.has(key);
     if (!wanted) return undefined;
+    return {
+      used: this.#inputUsed(input),
+      limit: input.limit,
+      add: Math.min(this.#remaining, Math.ceil(this.#budget.inputTokenLimit / 2)),
+    };
+  }
+
+  /**
+   * What could be added for a call to start tasks that the input cannot lend `need` more for
+   * (D115): as much as `inputWants` offers, or the need when that is more. Undefined when the run
+   * has not that much left, or no input is open.
+   */
+  delegationWants(
+    need: number,
+  ): { readonly used: number; readonly limit: number; readonly add: number } | undefined {
+    const input = this.#input;
+    if (input === undefined || need <= 0 || this.#remaining < need) return undefined;
+    return {
+      used: this.#inputUsed(input),
+      limit: input.limit,
+      add: Math.min(this.#remaining, Math.max(need, Math.ceil(this.#budget.inputTokenLimit / 2))),
+    };
+  }
+
+  /** What the input's work spent so far: what its ledger and its tasks' no longer hold. */
+  #inputUsed(input: InputLedger): number {
     const held = [...this.#agents.values()].reduce(
       (sum, agent) => sum + Math.max(0, agent.ledger.remaining()),
       0,
     );
-    return {
-      used: Math.max(0, input.limit - Math.max(0, input.ledger.remaining()) - held),
-      limit: input.limit,
-      add: Math.min(this.#remaining, Math.ceil(this.#budget.inputTokenLimit / 2)),
-    };
+    return Math.max(0, input.limit - Math.max(0, input.ledger.remaining()) - held);
   }
 
   /** The user (or the configuration) adds to the input's ledger out of what the run has left. */

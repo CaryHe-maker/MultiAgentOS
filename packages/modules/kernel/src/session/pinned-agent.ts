@@ -127,15 +127,22 @@ export function pinnedAgentOf(
   };
 }
 
-/** What `reserveDelegation` needs of an Agent (M2Design 7.3). */
+/**
+ * What `reserveDelegation` needs of an Agent (M2Design 7.3): its default share, or `ALL` for a
+ * template's step, which takes everything its caller can lend (Orchestration D115).
+ */
 export type AgentShare =
-  | { readonly ok: true; readonly defaultShare: number | undefined; readonly budget: AgentBudget }
+  | {
+      readonly ok: true;
+      readonly defaultShare: number | 'ALL' | undefined;
+      readonly budget: AgentBudget;
+    }
   | { readonly ok: false; readonly reasonCode: 'DEFINITION_UNAVAILABLE' | 'DEFINITION_MISMATCH' };
 
 /**
  * The default share and the per-call budget of an Agent, from the catalog. An Agent not started
- * as a task has a share only where the caller's own definition starts it as a template's step,
- * with the share it names there (Orchestration D113).
+ * as a task has a share only where the caller's own definition starts it as a template's step
+ * (Orchestration D113): all the caller can lend, since the step takes the turn over (D115).
  */
 export function agentShareFrom(
   catalog: AgentCatalog,
@@ -157,11 +164,13 @@ export function agentShareFrom(
       return { ok: false, reasonCode: 'DEFINITION_MISMATCH' };
     const own = set.value.agent.spawnable?.defaultShare;
     const parent = own === undefined ? catalog.pinAgent(caller, boundary) : undefined;
-    const step = parent?.ok
-      ? parent.value.agent.actions.delegate?.find(
-          (each) => each.agent === ref.id && each.template !== undefined,
-        )?.share
-      : undefined;
+    const step =
+      parent?.ok === true &&
+      parent.value.agent.actions.delegate?.some(
+        (each) => each.agent === ref.id && each.template !== undefined,
+      ) === true
+        ? ('ALL' as const)
+        : undefined;
     return { ok: true, defaultShare: own ?? step, budget: set.value.agent.budget };
   };
 }

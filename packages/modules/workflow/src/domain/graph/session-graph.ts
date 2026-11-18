@@ -174,13 +174,14 @@ export function spawnRevision(
       return from === undefined || to === undefined ? [] : [depends(from, to)];
     }),
   );
-  // The caller does not wait on an edge: it goes on, or sleeps until its tasks end (D14).
-  const calls = nodes.map((node): GraphEdgeRecord => ({
-    from: caller.nodeId,
-    to: node.nodeId,
-    kind: 'DELEGATE',
-    call: caller.call,
-  }));
+  // The caller does not wait on an edge: it goes on, or sleeps until its tasks end (D14). A task
+  // that takes its caller's turn over is waited for: the call comes back with its result (D115).
+  const calls = nodes.flatMap((node): GraphEdgeRecord[] => [
+    { from: caller.nodeId, to: node.nodeId, kind: 'DELEGATE', call: caller.call },
+    ...(node.spawn?.standsIn === true
+      ? [{ from: node.nodeId, to: caller.nodeId, kind: 'RESUME' as const, call: caller.call }]
+      : []),
+  ]);
   return { nodes, edges: [...dependencies, ...calls] };
 }
 

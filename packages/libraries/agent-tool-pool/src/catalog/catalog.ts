@@ -689,19 +689,8 @@ function checkSpawn(
           'AGENT_INVALID',
           `delegate template ${each.template.id} is not owned by ${each.agent}`,
         );
-      const owner = get('AGENT', { id: each.agent, version: body.version });
-      if (each.share === undefined)
-        report(origin, 'AGENT_INVALID', `delegate template ${each.template.id} needs a share`);
-      else if (owner !== undefined && each.share < agentMinShare(owner.budget))
-        report(
-          origin,
-          'AGENT_INVALID',
-          `the share of delegate template ${each.template.id} is below the least ${each.agent} works with`,
-        );
       continue;
     }
-    if (each.share !== undefined)
-      report(origin, 'AGENT_INVALID', `delegate agent ${each.agent} has its own share`);
     const started = get('AGENT', { id: each.agent, version: body.version });
     if (started !== undefined && started.spawnable === undefined)
       report(origin, 'AGENT_INVALID', `delegate agent ${each.agent} is not spawnable`);

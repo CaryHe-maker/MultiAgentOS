@@ -246,6 +246,11 @@ interface NodeEnding {
   readonly status: 'SUCCEEDED' | 'FAILED';
   /** The run's result when this node is its output. */
   readonly runOutput: boolean;
+  /**
+   * What its caller reads, of a Mission that told the user itself in main's place (D115): its
+   * result, and the model output it is read from (in place of the message it published).
+   */
+  readonly result?: { readonly value: ReturnType<typeof resultOf>; readonly ref?: ArtifactRef };
 }
 
 const OVER_BUDGET: readonly string[] = ['BUDGET_WRAP_UP', 'BUDGET_EXHAUSTED'];
@@ -634,8 +639,8 @@ export class SessionRunner {
       case 'HumanAnswered':
         await this.#onHumanAnswered(workflowRunId, event);
         break;
-      case 'TaskQuotaDecided':
-        await this.#onTaskQuotaDecided(workflowRunId);
+      case 'DelegationDecided':
+        await this.#onDelegationDecided(workflowRunId);
         break;
       case 'RunPaused':
         await this.#append([
@@ -1454,6 +1459,8 @@ export class SessionRunner {
     requested: string | undefined,
   ): { readonly agentRunId: string; readonly redirectedFrom?: string } | undefined {
     if (requested === undefined) {
+      const standIn = this.#standInRun();
+      if (standIn !== undefined) return { agentRunId: standIn };
       const main = [...this.#agents.values()].find((each) => each.task === undefined);
       return main === undefined ? undefined : { agentRunId: main.state.agentRunId };
     }
@@ -1992,7 +1999,10 @@ export class SessionRunner {
         agentRef: binding.ref,
         effort: effort,
         workspaceViewId: 'main',
-        display: { label: place.label },
+        display: {
+          label: place.label,
+          ...(taskNode?.spawn?.standsIn === true ? { standsIn: true as const } : {}),
+        },
         requestedCapabilities: [...binding.requestedCapabilities],
         ...(from === undefined ? {} : { offeredCapabilities: [...lent.requestedCapabilities] }),
         writeRoots: [...place.writeRoots],
@@ -2496,8 +2506,10 @@ export class SessionRunner {
     switch (action) {
       // The root of a template run as a subtask (D113) replies to its caller: the reply is its result.
       case 'PUBLISH_REPLY':
-        return active.task === undefined
-          ? this.#publishReply(workflowRunId, active, ending.source)
+        if (active.task === undefined)
+          return this.#publishReply(workflowRunId, active, ending.source);
+        return this.#standsIn(workflowRunId, active)
+          ? this.#deliverInPlace(workflowRunId, active, ending)
           : this.#finishSubagent(workflowRunId, active, ending);
       case 'FINISH_SUBAGENT':
         return this.#finishSubagent(workflowRunId, active, ending);
@@ -2603,6 +2615,89 @@ export class SessionRunner {
     return this.#advance(workflowRunId);
   }
 
+  /** Whether this task is a Mission working in a chat main's place (D115). */
+  #standsIn(workflowRunId: string, active: ActiveAgent): boolean {
+    const node = projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId);
+    return node !== undefined && this.#taskNodeOf(workflowRunId, node)?.spawn?.standsIn === true;
+  }
+
+  /**
+   * A Mission in main's place delivered (D115): its reply goes to the user as the answer of the
+   * turn, and is the result of main's call, which main reads when the user writes next.
+   */
+  async #deliverInPlace(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ENDED' }>,
+  ): Promise<void> {
+    const seenCheck =
+      active.lastCheck === undefined ? undefined : commandOfCall(this.#records, active.lastCheck);
+    const args = ending.arguments as Parameters<typeof finishedOutcome>[0];
+    const outcome = finishedOutcome(args, active.changed, seenCheck);
+    const { label } = active.state.definitions;
+    const { wrapUpReason } = active.state;
+    return this.#closeWith(
+      workflowRunId,
+      active,
+      {
+        kind: 'REPLY',
+        agentLabel: label,
+        source: {
+          modelOutputRef: ending.source.modelOutputRef,
+          toolCallId: ending.source.toolCallId,
+        },
+        ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
+      },
+      ending.source,
+      {
+        status: 'SUCCEEDED',
+        runOutput: false,
+        result: {
+          value: resultOf({ ...outcome, toolCallId: ending.source.toolCallId }),
+          ref: ending.source.modelOutputRef,
+        },
+      },
+    );
+  }
+
+  /** Whether a call of this node handed the turn to a Mission in main's place (D115). */
+  #handedOver(workflowRunId: string, nodeId: string, toolCallId: string): boolean {
+    const { graph, nodes } = projectGraph(this.#records, workflowRunId);
+    return graph.edges.some(
+      (edge) =>
+        edge.kind === 'RESUME' &&
+        edge.to === nodeId &&
+        edge.call?.toolCallId === toolCallId &&
+        nodes.get(edge.from)?.spawn?.standsIn === true,
+    );
+  }
+
+  /** The AgentRun of a Mission in main's place that has not ended: running, or its last. */
+  #standInRun(): string | undefined {
+    for (const active of this.#agents.values())
+      if (active.task !== undefined && this.#standsIn(active.state.workflowRunId, active))
+        return active.state.agentRunId;
+    const missions = projectMissions(this.#records);
+    for (const record of [...this.#records].reverse())
+      if (
+        record.type === 'GRAPH_EXTENDED' &&
+        record.nodes.some((each) => each.spawn?.standsIn === true)
+      ) {
+        const node = record.nodes.find((each) => each.spawn?.standsIn === true);
+        const missionId = node?.mission?.id;
+        if (missionId === undefined || missions.get(missionId)?.ended !== undefined)
+          return undefined;
+        const last = [...this.#records]
+          .reverse()
+          .find(
+            (each): each is Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }> =>
+              each.type === 'AGENT_RUN_REGISTERED' && each.missionId === missionId,
+          );
+        return last?.agentRunId;
+      }
+    return undefined;
+  }
+
   /**
    * A subtask that answered in text (D112): its text is its result, read from its model output
    * (the caller is shown it whole up to the length of a report). Nothing runs below it and nothing
@@ -2687,7 +2782,21 @@ export class SessionRunner {
     kind: AgentEnding['kind'],
     outcome: TaskOutcome,
     resultRef?: ArtifactRef,
+    /** Why it ended without a result of its own; a Mission in main's place tells the user. */
+    reason?: string,
   ): Promise<void> {
+    // The user hears of it as of main's turn that ended so (D115); the notice ends the Mission.
+    if (reason !== undefined && this.#standsIn(workflowRunId, active)) {
+      const input = { kind: 'DEGRADED_REPLY', agentLabel: active.state.definitions.label, reason };
+      return this.#closeWith(workflowRunId, active, input as UnitInput, undefined, {
+        status: outcome.status === 'PARTIAL' ? 'SUCCEEDED' : 'FAILED',
+        runOutput: false,
+        result: {
+          value: resultOf(outcome),
+          ...(resultRef === undefined ? {} : { ref: resultRef }),
+        },
+      });
+    }
     await this.#endAgentRun(workflowRunId, active, kind);
     await this.#endNode(
       workflowRunId,
@@ -2722,10 +2831,14 @@ export class SessionRunner {
       await this.#closeSleeping(workflowRunId, node, 'INTERRUPTED');
     await this.#settleMissions(workflowRunId);
     for (const active of all.filter((each) => each.task !== undefined))
-      await this.#endTask(workflowRunId, active, 'FAILED', {
-        status: 'FAILED',
-        notes: ['stopped: the run was interrupted'],
-      });
+      await this.#endTask(
+        workflowRunId,
+        active,
+        'FAILED',
+        { status: 'FAILED', notes: ['stopped: the run was interrupted'] },
+        undefined,
+        reason,
+      );
     // Every task has ended now: the calls came back, though nobody will read what they came to.
     const projected = projectGraph(this.#records, workflowRunId);
     await this.#wake(workflowRunId, wakeableNodes(projected.graph, projected.view));
@@ -2793,6 +2906,7 @@ export class SessionRunner {
           ...(handed?.referenceId === undefined ? {} : { referenceId: handed.referenceId }),
         },
         unfinished?.source.modelOutputRef,
+        reason,
       );
       return this.#advance(workflowRunId);
     }
@@ -2850,8 +2964,8 @@ export class SessionRunner {
           workflowRunId,
           active.nodeId,
           this.#interrupted ? 'INTERRUPTED' : plan.status,
-          undefined,
-          ending.outputRef,
+          plan.result?.value,
+          plan.result === undefined ? ending.outputRef : plan.result.ref,
         );
         if (plan.runOutput) this.#runResult = ending.outputRef;
         if (this.#interrupted)
@@ -2862,10 +2976,14 @@ export class SessionRunner {
       }
       case 'FAILED':
         if (active.task !== undefined) {
-          await this.#endTask(workflowRunId, active, ending.kind, {
-            status: 'FAILED',
-            notes: [`failed: ${ending.code}`],
-          });
+          await this.#endTask(
+            workflowRunId,
+            active,
+            ending.kind,
+            { status: 'FAILED', notes: [`failed: ${ending.code}`] },
+            undefined,
+            ending.code,
+          );
           return this.#advance(workflowRunId);
         }
         if (this.#interrupted) {
@@ -2902,10 +3020,10 @@ export class SessionRunner {
   }
 
   /**
-   * The user answered about more subtasks (D62): every call that waited is made again; the Kernel
-   * lets it start, or refuses it now that the answer was no.
+   * The user answered about more subtasks (D62) or more tokens (D115): every call that waited is
+   * made again; the Kernel lets it start, or refuses it now that the answer was no.
    */
-  async #onTaskQuotaDecided(workflowRunId: string): Promise<void> {
+  async #onDelegationDecided(workflowRunId: string): Promise<void> {
     const waiting = this.#awaitingQuota.filter((each) => each.workflowRunId === workflowRunId);
     this.#awaitingQuota.splice(
       0,
@@ -3273,6 +3391,8 @@ export class SessionRunner {
         {
           name: `${prefix}-${String(number)}`,
           agent: delegate.agent,
+          // A Mission works in chat's place until it delivers (D115).
+          ...(step !== undefined && this.#mode === 'CHAT' ? { standsIn: true as const } : {}),
           role: (args.description ?? text.split('\n')[0] ?? prefix).slice(0, 80),
           goal: step === undefined ? text : `${step.goal}\n\nThe goal you own:\n${text}`,
           writeScope:
@@ -3329,8 +3449,10 @@ export class SessionRunner {
     if (reserved.outcome === 'ACCEPTED') return { kind: 'GRANTED', reserved };
     // The run is closing: whoever asked is told by the run, not by this answer.
     if (reserved.reasonCode === 'RUN_BLOCKED') return { kind: 'BLOCKED' };
-    // The user is asked whether the run may start more (D62): the call waits for the answer.
-    if (reserved.reasonCode === 'TASK_QUOTA_ASKED') return { kind: 'ASKED' };
+    // The user is asked whether the run may start more (D62), or lend more (D115): the call
+    // waits for the answer.
+    if (reserved.reasonCode === 'TASK_QUOTA_ASKED' || reserved.reasonCode === 'BUDGET_ASKED')
+      return { kind: 'ASKED' };
     if (reserved.reasonCode === 'TASK_QUOTA_REACHED')
       return {
         kind: 'REFUSED',
@@ -3423,6 +3545,16 @@ export class SessionRunner {
     );
     await this.#extend(workflowRunId, revisionNumber, 'SPAWN', revision);
     this.#staggerWorkers(workflowRunId, tasks, inherit, revision.nodes);
+    // A Mission in chat's place takes the turn over (D115): main's call stays open until the
+    // Mission has ended, and main's AgentRun ends here, with nothing more to do in this turn.
+    if (revision.nodes.some((node) => node.spawn?.standsIn === true)) {
+      await this.#endAgentRun(
+        workflowRunId,
+        this.#agents.get(active.state.agentRunId) ?? active,
+        'SPAWN',
+      );
+      return this.#advance(workflowRunId);
+    }
     // The call comes back at once (D14): the tasks run while the caller goes on or sleeps.
     const current = this.#agents.get(active.state.agentRunId) ?? active;
     await this.#apply(
@@ -3511,6 +3643,13 @@ export class SessionRunner {
           call,
         },
       ]);
+      // A main that handed its turn to a Mission (D115) has no AgentRun to go on: the call that
+      // came back ends its step, and chat reads the result when the user writes next.
+      if (caller === undefined && this.#handedOver(workflowRunId, node.nodeId, call.toolCallId)) {
+        await this.#endNode(workflowRunId, node.nodeId, 'SUCCEEDED');
+        this.#advanceAgain = true;
+        continue;
+      }
       // A run that is closing hears no answer; an AgentRun whose call is not out has nothing to go on with.
       if (this.#interrupted || caller === undefined || !caller.state.pending.has(call.toolCallId))
         continue;

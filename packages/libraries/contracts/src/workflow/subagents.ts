@@ -121,7 +121,11 @@ export interface SpawnRequest {
  * A task of a spawn request: the task a model wrote, run by any Agent that may be started; a tool
  * that starts one subtask names its Agent in its definition (Orchestration D112).
  */
-export type SpawnTask = Omit<SubagentTask, 'agent'> & { readonly agent: string };
+export type SpawnTask = Omit<SubagentTask, 'agent'> & {
+  readonly agent: string;
+  /** A Mission a chat's main handed a goal to, working in its place (Orchestration D115). */
+  readonly standsIn?: true;
+};
 
 /**
  * Parameters of `run_subagents` of a lead: explorers and workers only. Only the root starts a lead
