@@ -1,0 +1,17 @@
+schemaVersion: v1
+kind: TOOL
+id: ask-user
+version: v0.2.0
+description: Control tool that asks the user a question and returns the answer. Turn-chat text.
+purpose: CONTROL
+modelName: ask_user
+modelDescription: >-
+  Ask the user and wait for the answer; only for a decision you cannot make yourself. Call it alone.
+parametersContract:
+  kind: contract
+  id: workflow.AskUserArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL

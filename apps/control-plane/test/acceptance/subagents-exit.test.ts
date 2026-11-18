@@ -66,9 +66,11 @@ async function chatOn(
   options: Partial<ChatOptions> = {},
 ): Promise<Chat> {
   const own = options.configure ?? ((each: SystemConfig) => each);
+  // The task machinery, through a Turn-chat of Mission's root (D112).
   const chat = await openChat({
     ...place,
     provider,
+    chatAgent: 'main',
     ...options,
     configure: (config) => asking(own(config)),
   });
@@ -342,8 +344,14 @@ describe('B2: more than the caller can lend', () => {
           ...config,
           kernel: {
             ...config.kernel,
-            // Counted at whole input limits (rule 10), so four workers do not fit even at least.
-            budget: { ...config.kernel.budget, inputTokenLimit: 3_000_000, reserveShare: 1 },
+            // Counted at whole input limits (rule 10), so four workers do not fit even at least,
+            // and no more is added to the input (D115 would ask the user).
+            budget: {
+              ...config.kernel.budget,
+              inputTokenLimit: 3_000_000,
+              reserveShare: 1,
+              extension: { mode: 'stop', max: 4 },
+            },
           },
         }),
       });
@@ -484,7 +492,7 @@ describe('what the user sees', () => {
       await doneReplies(chat, 1);
       await chat.console.submit('/timeline');
       const timeline = chat.printed('NOTICE').at(-1) ?? '';
-      expect(timeline).toContain('chat');
+      expect(timeline).toContain('main');
       expect(timeline).toContain('  explorer survey');
     },
     TIMEOUT,

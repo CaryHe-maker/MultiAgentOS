@@ -4,6 +4,7 @@ import {
   messageShownText,
   parseReferenceName,
   referenceName,
+  SUBAGENT_REPORT_CHARS,
   subagentAsWrittenText,
   subagentFullText,
   subagentShownText,
@@ -600,7 +601,15 @@ ${shown}`,
           `Result of task ${entry.name} (${entry.agent}): ${entry.status}`,
           ...entry.notes,
         ];
-        if (entry.outputRef !== undefined) {
+        if (entry.outputRef !== undefined && entry.toolCallId === undefined) {
+          // An answer written as text (D112): the text is the result, shown up to a report's length.
+          const text = (await this.#rawOutput(entry.outputRef)).text ?? '';
+          lines.push(
+            text.length <= SUBAGENT_REPORT_CHARS
+              ? text
+              : `${text.slice(0, SUBAGENT_REPORT_CHARS)}\n[the answer is ${String(text.length)} characters; the rest is not shown]`,
+          );
+        } else if (entry.outputRef !== undefined) {
           const raw = await this.#rawOutput(entry.outputRef);
           const call = raw.toolCalls.find((each) => each.toolCallId === entry.toolCallId);
           if (call === undefined) throw new RequestBuildError('INVALID_INPUT');

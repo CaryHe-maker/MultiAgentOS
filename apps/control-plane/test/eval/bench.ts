@@ -246,6 +246,9 @@ async function main(): Promise<void> {
   };
   const previewBytes = numberEnv('MAS_COMMAND_PREVIEW_BYTES');
   const previewLines = numberEnv('MAS_COMMAND_PREVIEW_LINES');
+  // `MAS_UNISOLATED_WRITES=any`: commands may write anywhere in the container, as dsh's
+  // `danger-full-access` does (kernel.sandbox.unisolatedWrites); unset, the default `task`.
+  const unisolatedWrites = process.env['MAS_UNISOLATED_WRITES'] === 'any' ? 'any' : undefined;
   const overrides = Object.fromEntries(
     Object.entries(process.env).filter(([name]) => name.startsWith('MAS_')),
   );
@@ -282,7 +285,11 @@ async function main(): Promise<void> {
     ...config,
     kernel: {
       ...config.kernel,
-      sandbox: { ...config.kernel.sandbox, unavailable: 'ask-unisolated' },
+      sandbox: {
+        ...config.kernel.sandbox,
+        unavailable: 'ask-unisolated',
+        ...(unisolatedWrites === undefined ? {} : { unisolatedWrites }),
+      },
       ...(previewBytes === undefined && previewLines === undefined
         ? {}
         : {

@@ -1272,10 +1272,18 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     units: [fileRead, publish],
     budget: childBudget,
   });
+  /** The owner of a template's step, started by a caller's delegate tool (D113, D115). */
+  const ownerAgent = testPinnedAgent({
+    id: 'owner',
+    capabilities: ['repo.read', 'workspace.write'],
+    units: [fileRead, fileWrite, publish],
+    budget: childBudget,
+  });
   const agents: Record<string, PinnedAgent> = {
     main: mainAgent,
     worker: workerAgent,
     explorer: explorerAgent,
+    owner: ownerAgent,
   };
   const ref = (id: string) => ({
     kind: 'AGENT' as const,
@@ -1299,18 +1307,22 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
         ? { ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' }
         : {
             ok: true,
-            defaultShare: agent.id === 'main' ? undefined : defaultShare,
+            defaultShare:
+              agent.id === 'main' ? undefined : agent.id === 'owner' ? 'ALL' : defaultShare,
             budget: agent.budget,
           };
     },
   };
-  const open = async (over: { budgetTurns?: number } = {}) => {
+  const open = async (over: { budgetTurns?: number; maxMissionDepth?: number } = {}) => {
     const kernel = await setup(mainAgent, {
       pin: (request) => agents[request.agentRef.id] ?? mainAgent,
       runWork:
         over.budgetTurns === undefined
           ? {
               ...runWork,
+              ...(over.maxMissionDepth === undefined
+                ? {}
+                : { maxMissionDepth: over.maxMissionDepth }),
               ledgers: new RunLedgers(
                 {
                   runTokenLimit: minShare(testAgentBudget) * 40,
@@ -1319,7 +1331,12 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
                 testAgentBudget,
               ),
             }
-          : runWork,
+          : {
+              ...runWork,
+              ...(over.maxMissionDepth === undefined
+                ? {}
+                : { maxMissionDepth: over.maxMissionDepth }),
+            },
     });
     await kernel.register(kernel.agentRunId, ['repo.read', 'workspace.write', 'agent.spawn']);
     return kernel;
@@ -1378,6 +1395,26 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
   const reasonOf = (response: unknown) =>
     (response as { reasonCode?: string }).reasonCode ?? (response as { outcome: string }).outcome;
   const delegationIdOf = (response: unknown) => (response as { delegationId: string }).delegationId;
+
+  it('lends a template step all its caller can lend (Orchestration D115)', async () => {
+    const ledgers = new RunLedgers(
+      {
+        runTokenLimit: minShare(testAgentBudget) * 40,
+        inputTokenLimit: minShare(testAgentBudget) * 20,
+      },
+      testAgentBudget,
+    );
+    const kernel = await setup(mainAgent, {
+      pin: (request) => agents[request.agentRef.id] ?? mainAgent,
+      runWork: { ...runWork, ledgers },
+    });
+    await kernel.register(kernel.agentRunId, ['repo.read', 'workspace.write', 'agent.spawn']);
+    const before = ledgers.delegable(kernel.agentRunId);
+    expect(
+      await reserve(kernel, [{ name: 'mission-1', agent: 'owner', roots: ['src'] }]),
+    ).toMatchObject({ outcome: 'ACCEPTED', shares: [{ name: 'mission-1', tokens: before }] });
+    expect(ledgers.delegable(kernel.agentRunId)).toBe(0);
+  });
 
   it('opens every task with the least its Agent can work with, whatever was asked (B2 in part)', async () => {
     const kernel = await open();
@@ -1861,7 +1898,8 @@ describe('SubAgents (M2Design 3.6, 6.4, 7.3)', () => {
     });
 
     it('lets a task below the root spawn, and none at the deepest level (Orchestration 3.6)', async () => {
-      const kernel = await open();
+      // Two levels here, so the second is the deepest; the default is three (D113).
+      const kernel = await open({ maxMissionDepth: 2 });
       const lead = newId('agr');
       const leadMission = mission();
       const dlg = delegationIdOf(

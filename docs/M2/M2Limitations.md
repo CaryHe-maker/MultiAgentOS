@@ -1,6 +1,6 @@
 # MultiAgentOS M2 已知限制
 
-> 适用于 M2 V1.0。已经决定"不做"的设计取舍见 [M2Design](M2Design.md) 第 14.2 节；实测数据见 [experiments](experiments.md) 与 [TaskSet](TaskSet.md)。
+> 适用于 M2 V1.1。已经决定"不做"的设计取舍见 [M2Design](M2Design.md) 第 14.2 节；实测数据见 [experiments](experiments.md) 与 [TaskSet](TaskSet.md)。
 
 ## 1. 平台
 
@@ -10,7 +10,7 @@
 ## 2. 模型与成本
 
 3. 只接入了 DeepSeek（`deepseek-flash`）。对照与评测都只用这一个模型，数字不是跨模型的结论。
-4. **Mission 比 DeepSeek Harness（`dsh`）快，但更贵**：最终集大任务上总用时少 18%、费用约 1.7 倍（[TaskSet](TaskSet.md) 第 6 节）。差距主要在输出：多个部分各自了解代码、各自写检查与对照脚本，思考与写出的内容都比单 Agent 多。
+4. **Mission 比 DeepSeek Harness（`dsh`）快，但更贵**：最终集大任务上总用时少约 31%、费用约 1.6 倍（[TaskSet](TaskSet.md) 第 6 节）。差距主要在输出：多个部分各自了解代码、各自写检查与对照脚本，思考与写出的内容都比单 Agent 多。
 5. 在 `deepseek-flash` 上，思考档位 `low` 与 `high` 每次请求的思考量几乎一样，降档省不了思考；DeepSeek 的前缀缓存不跨档位（[experiments](experiments.md)）。
 6. 子任务继承调用者的上下文时用自己的系统提示与工具，第一次请求要重新计算继承来的整段（晚派出的任务一次可达十几万 token 未命中）。
 
@@ -31,7 +31,11 @@
 
 ## 5. 功能
 
-16. Turn-chat 的派生沿用 `run_subagents`（与 Mission 的根任务相同的工具），没有按单 Agent 的写法优化；Turn-chat 不能把一个目标交给 Mission 去做（只能用 `mas run`）。
+16. Turn-chat 的结果文字（命令的退出码、截断、错误）仍是本系统自己的写法，只有系统提示与工具说明按单 Agent 的写法改写（Orchestration D112）。
 17. 使用者自己写的工作流模板、条件边、有界循环、`/run` 没有做；仓库里的 `.multiagentos/workflows/` 不读取。
 18. 控制台：授权与工作区的部分改进（[Console](Console.md) 第 2.2 节）、并行等待的记录与收益度量、抓取缓存、白底终端的配色没有做。
 19. 协议注册表里有一批只登记、从不使用的"暂不支持"引用族（检查点、恢复、人工审阅等，SharedContracts 3.9 为长期架构预留），不进入任何产品路径。
+20. 没有图片输入：Agent 读不到图片的内容（`dsh` 的 `read_image` 把图片本身交给模型）；要看图的题只能用像素分析或把图转成文字，评测里这类题不计分（[TaskSet](TaskSet.md) 第 7 节）。
+21. Turn-chat 在优化类的题上过了阈值还会继续改进方案（如 llm-inference-batching-scheduler 多花一倍时间，结果与 `dsh` 持平），提示里没有"达到要求就交付"的说法。
+22. Mission 代替 chat 工作（Orchestration D115）只用脚本化的模型测过（交付、插话、提问、中止、额度追加），还没有用真实模型在对话里跑过 `/mission`。被中止的 Mission 由中止回答 chat 的调用，chat 读到的是"用户中止了"，读不到 Mission 停下时做到了哪里。
+23. 进程重启时还在工作的 Mission，恢复后可能按它当时的份额设上限、不再像第一次那样没有上限（没有测试）；对额度追加答过一次"不"之后，这次运行（整段对话）不再问。

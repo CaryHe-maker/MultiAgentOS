@@ -70,6 +70,10 @@ export function pinnedAgentOf(
     agent.actions.spawn === undefined || !requested.includes('agent.spawn')
       ? undefined
       : toolOf(agent.actions.spawn.toolRef);
+  // The tools that each start one subtask go with `agent.spawn` as `run_subagents` does (D112).
+  const delegates = !requested.includes('agent.spawn')
+    ? []
+    : (agent.actions.delegate ?? []).flatMap((each) => toolOf(each.toolRef) ?? []);
   // `ask_user` needs no capability: any Agent that declares it offers it (M2Design 3.4).
   const ask =
     agent.actions.askUser === undefined ? undefined : toolOf(agent.actions.askUser.toolRef);
@@ -97,6 +101,7 @@ export function pinnedAgentOf(
     ...unitTools,
     ...(todos === undefined ? [] : [todos]),
     ...(spawn === undefined ? [] : [spawn]),
+    ...delegates,
     ...(ask === undefined ? [] : [ask]),
     ...taskTools,
     ...ends.map((end) => end.tool),
@@ -122,33 +127,51 @@ export function pinnedAgentOf(
   };
 }
 
-/** What `reserveDelegation` needs of an Agent (M2Design 7.3). */
+/**
+ * What `reserveDelegation` needs of an Agent (M2Design 7.3): its default share, or `ALL` for a
+ * template's step, which takes everything its caller can lend (Orchestration D115).
+ */
 export type AgentShare =
-  | { readonly ok: true; readonly defaultShare: number | undefined; readonly budget: AgentBudget }
+  | {
+      readonly ok: true;
+      readonly defaultShare: number | 'ALL' | undefined;
+      readonly budget: AgentBudget;
+    }
   | { readonly ok: false; readonly reasonCode: 'DEFINITION_UNAVAILABLE' | 'DEFINITION_MISMATCH' };
 
-/** The default share and the per-call budget of an Agent, from the catalog. */
+/**
+ * The default share and the per-call budget of an Agent, from the catalog. An Agent not started
+ * as a task has a share only where the caller's own definition starts it as a template's step
+ * (Orchestration D113): all the caller can lend, since the step takes the turn over (D115).
+ */
 export function agentShareFrom(
   catalog: AgentCatalog,
 ): (
   ref: { readonly id: string; readonly version: string; readonly digest: string },
   context: Pick<BoundaryContext, 'sessionId' | 'workflowRunId'>,
+  caller: { readonly id: string; readonly version: string },
 ) => AgentShare {
-  return (ref, context) => {
-    const set = catalog.pinAgent(ref, {
+  return (ref, context, caller) => {
+    const boundary = {
       correlationId: newId('cor'),
       tenantId: 'local',
       projectId: 'local',
       ...context,
-    });
+    };
+    const set = catalog.pinAgent(ref, boundary);
     if (!set.ok) return { ok: false, reasonCode: 'DEFINITION_UNAVAILABLE' };
     if (set.value.agent.digest !== ref.digest)
       return { ok: false, reasonCode: 'DEFINITION_MISMATCH' };
-    return {
-      ok: true,
-      defaultShare: set.value.agent.spawnable?.defaultShare,
-      budget: set.value.agent.budget,
-    };
+    const own = set.value.agent.spawnable?.defaultShare;
+    const parent = own === undefined ? catalog.pinAgent(caller, boundary) : undefined;
+    const step =
+      parent?.ok === true &&
+      parent.value.agent.actions.delegate?.some(
+        (each) => each.agent === ref.id && each.template !== undefined,
+      ) === true
+        ? ('ALL' as const)
+        : undefined;
+    return { ok: true, defaultShare: own ?? step, budget: set.value.agent.budget };
   };
 }
 

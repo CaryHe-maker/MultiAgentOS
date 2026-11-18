@@ -44,7 +44,13 @@ export class FileDefinitionSource implements SealableDefinitionSource {
     const documents: SourceDocument[] = [];
     const issues: CatalogIssue[] = [];
     let statusDocument: SourceDocument | undefined;
-    const files = await this.#listFiles(this.rootDirectory, issues);
+    // In the order of their origins, the whole path: `agents/chat/` and `agents/chat-sub/` sort the
+    // same way whatever the directories they are in.
+    const files = (await this.#listFiles(this.rootDirectory, issues)).sort((left, right) => {
+      const a = toOrigin(this.rootDirectory, left);
+      const b = toOrigin(this.rootDirectory, right);
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
     for (const file of files) {
       const origin = toOrigin(this.rootDirectory, file);
       const document = await this.#readDocument(file, origin, issues);

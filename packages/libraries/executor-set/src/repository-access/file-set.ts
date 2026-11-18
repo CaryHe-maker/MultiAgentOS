@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
-import { open, opendir, realpath, type FileHandle } from 'node:fs/promises';
+import { constants, type BigIntStats } from 'node:fs';
+import { lstat, open, readdir, realpath, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import { canonicalJson, excludesDirectory, isExcluded, sha256Hex } from '@multiagentos/contracts';
 import { throwIfAborted } from '../outcome/outcomes.js';
@@ -29,16 +29,50 @@ export interface FileSet {
  * timestamps restored, which the read-only analysis does not do.
  */
 export class FileDigestCache {
-  private readonly entries = new Map<string, { sha256: string; text: boolean }>();
+  private readonly entries = new Map<string, FileDigest>();
+  /** Digests being computed: a second build that needs the same file waits for it. */
+  private readonly computing = new Map<string, Promise<FileDigest>>();
 
-  public get(key: string): { sha256: string; text: boolean } | undefined {
+  public get(key: string): FileDigest | undefined {
     return this.entries.get(key);
   }
 
-  public set(key: string, value: { sha256: string; text: boolean }): void {
+  public set(key: string, value: FileDigest): void {
     if (this.entries.size >= 200_000) this.entries.clear();
     this.entries.set(key, value);
   }
+
+  /**
+   * The digest of the file with this key, known or being computed by another build. The key is
+   * the file's identity and both times, so it is the digest this build would compute itself; one
+   * that failed is not shared, and the caller computes it.
+   */
+  public async known(key: string): Promise<FileDigest | undefined> {
+    const known = this.entries.get(key);
+    if (known !== undefined) return known;
+    const computing = this.computing.get(key);
+    if (computing === undefined) return undefined;
+    return computing.catch(() => undefined);
+  }
+
+  /** Shares a digest while it is computed, and keeps it once it is. */
+  public computed(key: string, digest: Promise<FileDigest>): void {
+    this.computing.set(key, digest);
+    digest.then(
+      (value) => {
+        this.set(key, value);
+        this.computing.delete(key);
+      },
+      () => this.computing.delete(key),
+    );
+  }
+}
+
+/** A file's content as the file set records it. */
+export interface FileDigest {
+  readonly sha256: string;
+  readonly text: boolean;
+  readonly size: number;
 }
 
 const HASH_CHUNK_BYTES = 1024 * 1024;
@@ -84,13 +118,16 @@ async function listCandidates(scope: RepositoryScope, signal: AbortSignal): Prom
   while (pending.length > 0) {
     throwIfAborted(signal);
     const directory = pending.pop() as string;
-    let handle;
+    // One read per directory: iterating an open directory entry by entry costs about twice as much.
+    let entries;
     try {
-      handle = await opendir(directory === '' ? scope.root : join(scope.root, directory));
+      entries = await readdir(directory === '' ? scope.root : join(scope.root, directory), {
+        withFileTypes: true,
+      });
     } catch {
       continue; // unreadable directory: nothing in it can be read either
     }
-    for await (const entry of handle) {
+    for (const entry of entries) {
       const path = directory === '' ? entry.name : `${directory}/${entry.name}`;
       if (entry.isDirectory()) {
         if (!excludesDirectory(path, scope.rules)) pending.push(path);
@@ -101,10 +138,28 @@ async function listCandidates(scope: RepositoryScope, signal: AbortSignal): Prom
   return found.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
+/** What identifies a file's content for the digest cache: the file, its size and both times. */
+function digestKey(info: BigIntStats): string {
+  return `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
+}
+
 async function digestFile(
   absolute: string,
   cache: FileDigestCache,
-): Promise<{ sha256: string; text: boolean; size: number } | undefined> {
+): Promise<FileDigest | undefined> {
+  // A file already hashed is known by one `lstat`, which follows no link either: the key is the
+  // one `fstat` gives for the same file, and a change of content, mode or owner changes `ctime`.
+  // Only a file to hash is opened, and then its own `fstat` makes the key. A file another build
+  // is hashing under the same key is waited for, not read twice.
+  let seen: BigIntStats;
+  try {
+    seen = await lstat(absolute, { bigint: true });
+  } catch {
+    return undefined; // removed since the walk
+  }
+  if (!seen.isFile()) return undefined;
+  const known = await cache.known(digestKey(seen));
+  if (known !== undefined) return { ...known, size: Number(seen.size) };
   let handle: FileHandle;
   try {
     handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -114,36 +169,40 @@ async function digestFile(
   try {
     const info = await handle.stat({ bigint: true });
     if (!info.isFile()) return undefined;
-    const size = Number(info.size);
-    const key = `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
-    const cached = cache.get(key);
-    if (cached !== undefined) return { ...cached, size };
-    const hash = createHash('sha256');
-    const buffer = Buffer.allocUnsafe(HASH_CHUNK_BYTES);
-    // Text per ExecutorSet: no NUL in the first 8 KiB and valid UTF-8 throughout.
-    const utf8 = new TextDecoder('utf-8', { fatal: true });
-    let position = 0;
-    let text = true;
-    for (;;) {
-      const { bytesRead } = await handle.read(buffer, 0, HASH_CHUNK_BYTES, position);
-      if (bytesRead === 0) break;
-      const chunk = buffer.subarray(0, bytesRead);
-      if (
-        position < BINARY_PROBE_BYTES &&
-        chunk.subarray(0, BINARY_PROBE_BYTES - position).includes(0)
-      )
-        text = false;
-      if (text) text = decodes(utf8, chunk);
-      hash.update(chunk);
-      position += bytesRead;
-    }
-    if (text) text = decodes(utf8);
-    const digest = { sha256: hash.digest('hex'), text };
-    cache.set(key, digest);
-    return { ...digest, size: position };
+    const key = digestKey(info);
+    const same = await cache.known(key);
+    if (same !== undefined) return { ...same, size: Number(info.size) };
+    const digest = hashOpenFile(handle);
+    cache.computed(key, digest);
+    return await digest;
   } finally {
     await handle.close();
   }
+}
+
+/** The digest and text test of an open file, read once from its start. */
+async function hashOpenFile(handle: FileHandle): Promise<FileDigest> {
+  const hash = createHash('sha256');
+  const buffer = Buffer.allocUnsafe(HASH_CHUNK_BYTES);
+  // Text per ExecutorSet: no NUL in the first 8 KiB and valid UTF-8 throughout.
+  const utf8 = new TextDecoder('utf-8', { fatal: true });
+  let position = 0;
+  let text = true;
+  for (;;) {
+    const { bytesRead } = await handle.read(buffer, 0, HASH_CHUNK_BYTES, position);
+    if (bytesRead === 0) break;
+    const chunk = buffer.subarray(0, bytesRead);
+    if (
+      position < BINARY_PROBE_BYTES &&
+      chunk.subarray(0, BINARY_PROBE_BYTES - position).includes(0)
+    )
+      text = false;
+    if (text) text = decodes(utf8, chunk);
+    hash.update(chunk);
+    position += bytesRead;
+  }
+  if (text) text = decodes(utf8);
+  return { sha256: hash.digest('hex'), text, size: position };
 }
 
 /**

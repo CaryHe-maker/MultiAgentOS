@@ -19,31 +19,31 @@ promptRef:
   version: v0.1.0
 unitRefs:
   - id: repository-list
-    version: v0.1.0
+    version: v0.2.0
   - id: repository-search
-    version: v0.1.0
+    version: v0.2.0
   - id: file-read
-    version: v0.1.0
+    version: v0.2.0
   - id: file-write
-    version: v0.1.0
+    version: v0.2.0
   - id: file-edit
-    version: v0.1.0
+    version: v0.2.0
   - id: output-read
-    version: v0.1.0
+    version: v0.2.0
   - id: run-command
-    version: v0.1.0
+    version: v0.2.0
   - id: git-inspect
-    version: v0.1.0
+    version: v0.2.0
   - id: web-search
-    version: v0.1.0
+    version: v0.2.0
   - id: web-fetch
-    version: v0.1.0
+    version: v0.2.0
   - id: external-list
-    version: v0.1.0
+    version: v0.2.0
   - id: external-read
-    version: v0.1.0
+    version: v0.2.0
   - id: external-search
-    version: v0.1.0
+    version: v0.2.0
   - id: context-assemble
     version: v0.1.0
   - id: model-call
@@ -54,50 +54,65 @@ actions:
   end:
     - toolRef:
         id: reply
-        version: v0.1.0
+        version: v0.2.0
       then: PUBLISH_REPLY
       allowedInFinal: true
   onDegraded: PUBLISH_NOTICE
   sleep:
     toolRef:
       id: sleep
-      version: v0.1.0
+      version: v0.2.0
   message:
     toolRef:
       id: send-message
-      version: v0.1.0
+      version: v0.2.0
   viewTasks:
     toolRef:
       id: view-tasks
-      version: v0.1.0
+      version: v0.2.0
   jobOutput:
     toolRef:
       id: job-output
-      version: v0.1.0
+      version: v0.2.0
   jobList:
     toolRef:
       id: job-list
-      version: v0.1.0
+      version: v0.2.0
   jobKill:
     toolRef:
       id: job-kill
-      version: v0.1.0
+      version: v0.2.0
   stop:
     toolRef:
       id: stop-subagents
-      version: v0.1.0
+      version: v0.2.0
   todos:
     toolRef:
       id: update-todos
-      version: v0.1.0
+      version: v0.2.0
   askUser:
     toolRef:
       id: ask-user
-      version: v0.1.0
-  spawn:
-    toolRef:
-      id: run-subagents
-      version: v0.1.0
+      version: v0.2.0
+  delegate:
+    - toolRef:
+        id: subagent
+        version: v0.1.0
+      agent: chat-sub
+      context: fresh
+    - toolRef:
+        id: subagent-fork
+        version: v0.1.0
+      agent: chat-sub
+      context: inherit
+    - toolRef:
+        id: mission
+        version: v0.1.0
+      agent: main
+      context: fresh
+      template:
+        id: mission
+        version: v0.1.0
 capabilities:
   - repo.read
   - workspace.write
@@ -108,9 +123,9 @@ capabilities:
   - external.read
   - agent.spawn
 limits:
-  maxRounds: 80
+  maxRounds: 200
   maxToolCallsPerRound: 8
-  maxToolUnits: 200
+  maxToolUnits: 1000
 budget:
   perCallInputLimit: 880000
   maxOutputTokens: 64000

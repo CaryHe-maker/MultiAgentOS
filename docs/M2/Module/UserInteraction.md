@@ -98,7 +98,7 @@ RunFinished → 记录区显示结束说明；若运行因额度结束，提示�
 | Ctrl+C | AWAITING_INPUT 或草稿 | 清空输入；2 秒内连按两次则 `shutdown` |
 | Ctrl+C | RUNNING | 暂停（`pauseRun`）；再按一次为中止 |
 
-`/fork`、`/undo`、`/diff`，`/continue`、`/steer` 与 Alt+Enter（运行中插话，M2Design 第 4.5 节）、`/timeline`、`/compact`（只在 AWAITING_INPUT 时可用）已实现；`/run` 没有做（[M2Limitations](../M2Limitations.md)）。
+`/fork`、`/undo`、`/diff`，`/continue`、`/steer` 与 Alt+Enter（运行中插话，M2Design 第 4.5 节）、`/timeline`、`/compact`（只在 AWAITING_INPUT 时可用）、`/mission <目标>`（一条普通消息，另带 `delegateTo: mission`，Orchestration D114；只打 `/mission` 时显示用法；Mission 代替 chat 工作时活动区不显示 chat 那一行，运行中写的话直接作为说明交给 Mission，D115）已实现；`/run` 没有做（[M2Limitations](../M2Limitations.md)）。
 
 ### 5.4 暂停、继续、中止、插话与询问
 

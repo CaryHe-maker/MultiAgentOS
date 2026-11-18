@@ -40,7 +40,7 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 
 设计以 M2Design 第 7.3 节为准。`RunLedgers` 在 Turn 账本之下为每个 SubAgent 持有一个账本（`Monitor` 实例），main 与没有父 AgentRun 的 AgentRun 直接使用 Turn 账本。
 
-- `reserveDelegation({ delegationId, parentAgentRunId, shares })`：可委派额度 = 上级账本余额 − 上级的收尾保留 − 上级一次普通调用的余量（`Monitor.delegable()`）。全部份额之和不超过它才一次性划出（`Monitor.lend`），否则整次不执行，返回 `BUDGET_INSUFFICIENT` 与可委派的余额。
+- `reserveDelegation({ delegationId, parentAgentRunId, shares })`：可委派额度 = 上级账本余额 − 上级的收尾保留 − 上级一次普通调用的余量（`Monitor.delegable()`）。全部份额之和不超过它才一次性划出（`Monitor.lend`），否则整次不执行，返回 `BUDGET_INSUFFICIENT` 与可委派的余额。`delegationWants(need)` 给出这时可以追加多少（至少缺的部分，Orchestration D115）；补额度时缺的部分借不到，这个任务才记为缺额度。
 - `registerAgentRun({ agentRunId, delegationId, taskName, agent })`：任务登记时，委派保留中属于它的份额成为它自己的账本；份额小于该 Agent 的 `minShare` 时账本以 WRAP_UP 开启（只能收尾，Workflow 按统一收尾路径处理）。
 - `endAgentRun(agentRunId)`：未使用的部分立即还给上级；已用的与未知的（没有结算的预留）不还；重复调用无效果。Turn 关闭时尚未结束的 SubAgent 一并结束。
 - `releaseDelegation(delegationId)`：没有登记的任务的份额还给上级。

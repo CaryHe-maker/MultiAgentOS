@@ -102,7 +102,9 @@ export function controlLineOf(
     case 'VIEW_TASKS':
       return line(definitions.viewTasksTool, '');
     case 'SPAWN':
-      return line(definitions.spawnTool, controlSummaryOf('SPAWN', ending.arguments));
+      return ending.delegate === undefined
+        ? line(definitions.spawnTool, controlSummaryOf('SPAWN', ending.arguments))
+        : line({ toolName: ending.delegate.toolName }, delegatedSummary(ending.arguments));
     case 'SLEEP':
       return line(definitions.sleepTool, controlSummaryOf('SLEEP', ending.arguments));
     case 'STOP':
@@ -115,4 +117,10 @@ export function controlLineOf(
     default:
       return undefined;
   }
+}
+
+/** What a tool that starts one subtask is shown as: what the task is for (Orchestration D112). */
+function delegatedSummary(args: unknown): string {
+  const description = (args as { readonly description?: unknown } | null)?.description;
+  return typeof description === 'string' ? description : '';
 }

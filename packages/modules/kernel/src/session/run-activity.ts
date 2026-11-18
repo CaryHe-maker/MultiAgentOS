@@ -35,6 +35,8 @@ export class RunActivity {
   readonly #deps: RunActivityDeps;
   readonly #labels = new Map<string, string>();
   readonly #parents = new Map<string, string>();
+  /** AgentRuns of tasks that work in their caller's place until they deliver (D115). */
+  readonly #standIns = new Set<string>();
   /** The task each AgentRun is a segment of, and that task's parent (Orchestration 3.2). */
   readonly #missions = new Map<string, { missionId: string; parentMissionId?: string }>();
   /** Tasks asleep between segments: the line they keep, until the task ends. */
@@ -75,8 +77,10 @@ export class RunActivity {
     label: string,
     parentAgentRunId?: string,
     mission?: { readonly missionId: string; readonly parentMissionId?: string },
+    standsIn = false,
   ): void {
     this.#labels.set(agentRunId, label);
+    if (standsIn) this.#standIns.add(agentRunId);
     if (parentAgentRunId !== undefined) this.#parents.set(agentRunId, parentAgentRunId);
     if (mission !== undefined) {
       this.#missions.set(agentRunId, { ...mission });
@@ -101,6 +105,7 @@ export class RunActivity {
       ...(parent === undefined ? {} : { parentAgentRunId: parent }),
       ...this.#missionFields(agentRunId),
       label,
+      ...(this.#standIns.has(agentRunId) ? { standsIn: true as const } : {}),
       phase,
       ...(unit === undefined ? {} : { unit }),
       ...(todos === undefined ? {} : { todos }),
@@ -147,6 +152,7 @@ export class RunActivity {
       ...(parent === undefined ? {} : { parentAgentRunId: parent }),
       ...this.#missionFields(spec.agentRunId),
       label,
+      ...(this.#standIns.has(spec.agentRunId) ? { standsIn: true as const } : {}),
       phase: 'RETRYING',
       ...(NOT_TOOLS.has(spec.unit.executionKind)
         ? {}
@@ -308,6 +314,7 @@ export class RunActivity {
 
   #forget(agentRunId: string): void {
     this.#labels.delete(agentRunId);
+    this.#standIns.delete(agentRunId);
     this.#parents.delete(agentRunId);
     this.#missions.delete(agentRunId);
   }

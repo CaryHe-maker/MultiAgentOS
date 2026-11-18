@@ -1,4 +1,4 @@
-import { mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { normalizeRequestPath } from '@multiagentos/contracts';
 import fc from 'fast-check';
@@ -228,6 +228,65 @@ describe('file set and snapshot', () => {
       'a.ts',
       'b.ts',
     ]);
+  });
+
+  it('builds the same set from a warm cache as from a cold one', async () => {
+    const root = await emptyDirectory('snap');
+    await writeTree(root, { ...files, 'logo.bin': Buffer.from([1, 0, 2]), 'gbk.txt': GBK_TEXT });
+    const cache = new FileDigestCache();
+    const cold = await snapshot(root, cache);
+    expect(await snapshot(root, cache)).toEqual(cold);
+    expect(await snapshot(root)).toEqual(cold);
+  });
+
+  it('hashes each file once when builds run at the same time, and each gets the whole set', async () => {
+    const root = await emptyDirectory('snap');
+    await writeTree(root, { ...files, 'logo.bin': Buffer.from([1, 0, 2]), 'gbk.txt': GBK_TEXT });
+    const hashed: string[] = [];
+    class Counting extends FileDigestCache {
+      public override computed(key: string, digest: Parameters<FileDigestCache['computed']>[1]) {
+        hashed.push(key);
+        super.computed(key, digest);
+      }
+    }
+    const cache = new Counting();
+    const builds = await Promise.all([
+      snapshot(root, cache),
+      snapshot(root, cache),
+      snapshot(root, cache),
+    ]);
+    const alone = await snapshot(root);
+    for (const built of builds) expect(built).toEqual(alone);
+    expect(hashed).toHaveLength(5);
+    expect(new Set(hashed).size).toBe(5);
+  });
+
+  it('hashes again a file whose content changed under the same size and mtime', async () => {
+    const root = await emptyDirectory('snap');
+    await writeTree(root, files);
+    const cache = new FileDigestCache();
+    const before = await snapshot(root, cache);
+    const path = join(root, 'src/a.ts');
+    const { mtime } = await stat(path);
+    await writeFile(path, 'export const a = 9;\n');
+    await utimes(path, mtime, mtime);
+    const after = await snapshot(root, cache);
+    expect(after.snapshotId).not.toBe(before.snapshotId);
+    expect(after).toEqual(await snapshot(root));
+  });
+
+  it('leaves out a file of a warm cache once it is a link, wherever the link points', async () => {
+    const root = await emptyDirectory('snap');
+    const outside = await emptyDirectory('outside');
+    await writeTree(root, files);
+    await writeTree(outside, { 'secret.txt': 'export const a = 1;\n' });
+    const cache = new FileDigestCache();
+    await snapshot(root, cache);
+    await rm(join(root, 'src/a.ts'));
+    await symlink(join(outside, 'secret.txt'), join(root, 'src/a.ts'));
+    const after = await snapshot(root, cache);
+    expect(after.files.map((file) => file.path)).toEqual(['.hidden/b.ts', 'README.md']);
+    expect(after).toEqual(await snapshot(root));
   });
 
   it('applies exclusions appended by Core', async () => {

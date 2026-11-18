@@ -201,6 +201,11 @@ export const AgentDefinitionSchema = Type.Object(
               toolRef: DefinitionRefSchema,
               then: Type.Enum(['PUBLISH_REPLY', 'FINISH_SUBAGENT']),
               allowedInFinal: Type.Boolean(),
+              /**
+               * A FINISH_SUBAGENT end the model may also reach by answering in plain text when
+               * nothing of its task still runs (Orchestration D112): the text is the summary of its result.
+               */
+              byText: Type.Optional(Type.Boolean()),
             },
             { additionalProperties: false },
           ),
@@ -218,6 +223,28 @@ export const AgentDefinitionSchema = Type.Object(
         /** The `run_subagents` tool of an Agent whose ceiling has `agent.spawn` (M2Design 3.6). */
         spawn: Type.Optional(
           Type.Object({ toolRef: DefinitionRefSchema }, { additionalProperties: false }),
+        ),
+        /**
+         * Tools that each start one subtask (Orchestration D112): the subtask runs as `agent`, and
+         * starts from a new context (`fresh`, only its prompt) or from the caller's (`inherit`).
+         * With `template`, it runs that template's step instead, told as the template tells it
+         * (its goal, guide and input limit), and the tool takes `workflow.MissionArgs` (D113);
+         * it takes the caller's turn over, and with it all the caller can lend (D115).
+         * They need `agent.spawn`, like `spawn`.
+         */
+        delegate: Type.Optional(
+          Type.Array(
+            Type.Object(
+              {
+                toolRef: DefinitionRefSchema,
+                agent: Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$' }),
+                context: Type.Enum(['fresh', 'inherit']),
+                template: Type.Optional(DefinitionRefSchema),
+              },
+              { additionalProperties: false },
+            ),
+            { minItems: 1, maxItems: 4 },
+          ),
         ),
         /** The `sleep` tool: the segment ends and the task waits to be woken (Orchestration 4.1). */
         sleep: Type.Optional(
@@ -250,13 +277,24 @@ export const AgentDefinitionSchema = Type.Object(
     ),
     /** An Agent that `run_subagents` may start, with the share of budget it gets by default. */
     spawnable: Type.Optional(
-      Type.Object({ defaultShare: Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
+      Type.Object(
+        {
+          defaultShare: Type.Integer({ minimum: 1 }),
+          /**
+           * Tasks of this Agent started together, in one call, with the caller's context wait for
+           * the first of them to send its first request (D104), so they find its prefix in the
+           * cache. Only `run_subagents` starts several in one call; a delegation tool starts one.
+           */
+          staggered: Type.Optional(Type.Boolean()),
+        },
+        { additionalProperties: false },
+      ),
     ),
     /** The source of the capability ceiling (Kernel/Core 5a.1). */
     capabilities: Type.Array(Type.Enum(PROTECTED_CAPABILITIES), { uniqueItems: true }),
     limits: Type.Object(
       {
-        maxRounds: Type.Integer({ minimum: 1, maximum: 100 }),
+        maxRounds: Type.Integer({ minimum: 1, maximum: 300 }),
         maxToolCallsPerRound: Type.Integer({ minimum: 0, maximum: 32 }),
         maxToolUnits: Type.Integer({ minimum: 1, maximum: 1000 }),
         maxWallClockMs: Type.Optional(Type.Integer({ minimum: 1 })),

@@ -27,6 +27,8 @@ export interface ActivityLine {
    */
   readonly missionId?: string;
   readonly parentMissionId?: string;
+  /** A Mission working in its caller's place (D115): shown where the caller was. */
+  readonly standsIn?: true;
   /** The tree branch in front of the label (`├─ `), empty for a line without a parent. */
   readonly branch?: string;
   readonly phase: string;

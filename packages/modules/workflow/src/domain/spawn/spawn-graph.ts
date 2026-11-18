@@ -2,7 +2,7 @@ import type {
   ArtifactRef,
   GraphNodeRecord,
   SessionLogRecord,
-  SubagentTask,
+  SpawnTask,
 } from '@multiagentos/contracts';
 import { renderPlaybook } from './playbook.js';
 import { registeredOf } from '../handover/handover.js';
@@ -218,7 +218,12 @@ export function taskScopeOf(
     writeScope: spawn.writeScope,
     inputs: spawn.inputs,
     dependencies,
-    ...(spawn.specialist === undefined ? {} : { playbook: renderPlaybook(spawn.specialist) }),
+    // A specialist follows its playbook; a template's step started as a task, its guide (D113).
+    ...(spawn.specialist !== undefined
+      ? { playbook: renderPlaybook(spawn.specialist) }
+      : node.guide === undefined
+        ? {}
+        : { playbook: node.guide }),
     ...(continued === undefined ? {} : { continued }),
     ...(inherited === undefined ? {} : { inherited }),
     ...(spawn.cut === true ? fullFromOf(records, workflowRunId, node) : {}),
@@ -323,7 +328,7 @@ export function stepScopeOf(node: GraphNodeRecord): TaskScope | undefined {
 
 /** The task as the graph holds it, from what the caller wrote and what the Kernel granted. */
 export function spawnNodeOf(
-  task: SubagentTask & { readonly writeRoots: readonly string[] },
+  task: SpawnTask & { readonly writeRoots: readonly string[] },
   share: { readonly tokens: number; readonly clamped?: 'MIN' | 'MAX' } | undefined,
 ): NonNullable<GraphNodeRecord['spawn']> {
   // A task always has a line of what it does: the caller's, or the start of its goal.
@@ -336,6 +341,7 @@ export function spawnNodeOf(
     ...(task.effort === undefined ? {} : { effort: task.effort }),
     tokens: share?.tokens ?? 1,
     ...(share?.clamped === undefined ? {} : { clamped: share.clamped }),
+    ...(task.standsIn === true ? { standsIn: true as const } : {}),
   };
 }
 

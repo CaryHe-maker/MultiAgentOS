@@ -124,7 +124,29 @@ describe('the repository catalog', () => {
   });
 });
 
+const CHAT = 'agents/chat/v0.1.0.yaml';
+
+/** Chat with its `mission` entry as `change` leaves it. */
+function withMissionEntry(content: Content, change: (entry: Content) => void): Content {
+  const actions = content['actions'] as { delegate: Content[] };
+  const delegate = actions.delegate.map((each) => ({ ...each }));
+  const entry = delegate.find((each) => each['template'] !== undefined);
+  if (entry === undefined) throw new Error('chat has no mission entry');
+  change(entry);
+  return { ...content, actions: { ...actions, delegate } };
+}
+
 describe('the rules of a v1 catalog', () => {
+  // A Mission takes all its caller can lend (Orchestration D115): no entry names a share.
+  it('refuses a share on a delegate entry', async () => {
+    const issues = await issuesWhen(CHAT, (c) =>
+      withMissionEntry(c, (entry) => {
+        entry['share'] = 2_000_000;
+      }),
+    );
+    expect(issues).toContain(`DEFINITION_INVALID ${CHAT}`);
+  });
+
   it.each([
     [
       'a repository unit that does not declare repo.read',

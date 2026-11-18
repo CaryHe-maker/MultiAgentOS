@@ -1,10 +1,11 @@
-import { cp, lstat, mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { cp, lstat, mkdir, rename, rm } from 'node:fs/promises';
 import { join, posix } from 'node:path';
 import {
   DEFAULT_REPOSITORY_EXCLUSIONS,
   isExcluded,
   type SandboxProfile,
 } from '@multiagentos/contracts';
+import { readTree } from './tree-read.js';
 
 /**
  * What Execution looks for in the repository before a command (M2Design 6.1): the secret files
@@ -38,6 +39,11 @@ interface Found {
   readonly protectedPaths: string[];
 }
 
+/**
+ * Every entry below `relative`, several directories at a time. What is found goes into lists that
+ * the callers sort or turn into a set, and the entries are counted as they are listed, so the
+ * result and the answer to "too big" do not depend on the order directories are read in.
+ */
 async function walk(
   root: string,
   relative: string,
@@ -46,33 +52,31 @@ async function walk(
   found: Found,
   budget: { left: number; exhausted: boolean },
 ): Promise<void> {
-  let entries;
-  try {
-    entries = await readdir(join(root, relative), { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (budget.left <= 0) {
-      budget.exhausted = true;
-      return;
-    }
-    budget.left -= 1;
-    const path = relative === '' ? entry.name : posix.join(relative, entry.name);
-    if (entry.isDirectory()) {
-      if (PROTECTED_DIRECTORY_NAMES.has(entry.name)) found.protectedPaths.push(path);
-      if (SKIPPED_DIRECTORIES.has(entry.name)) continue;
-      if (isExcluded(path, rules)) {
-        found.maskedDirs.push(path);
-        continue;
+  await readTree(root, relative, (directory, entries) => {
+    const below: string[] = [];
+    for (const entry of entries) {
+      if (budget.left <= 0) {
+        budget.exhausted = true;
+        return Promise.resolve([]);
       }
-      await walk(root, path, rules, exclusions, found, budget);
-    } else if (entry.isFile() || entry.isSymbolicLink()) {
-      if (isExcluded(path, rules)) found.masked.push(path);
-      else if (PROTECTED_FILE_NAMES.has(entry.name) && !isExcluded(path, exclusions))
-        found.protectedPaths.push(path);
+      budget.left -= 1;
+      const path = directory === '' ? entry.name : posix.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (PROTECTED_DIRECTORY_NAMES.has(entry.name)) found.protectedPaths.push(path);
+        if (SKIPPED_DIRECTORIES.has(entry.name)) continue;
+        if (isExcluded(path, rules)) {
+          found.maskedDirs.push(path);
+          continue;
+        }
+        below.push(path);
+      } else if (entry.isFile() || entry.isSymbolicLink()) {
+        if (isExcluded(path, rules)) found.masked.push(path);
+        else if (PROTECTED_FILE_NAMES.has(entry.name) && !isExcluded(path, exclusions))
+          found.protectedPaths.push(path);
+      }
     }
-  }
+    return Promise.resolve(below);
+  });
 }
 
 export async function scanRepository(options: ScanOptions): Promise<SandboxScan> {
@@ -125,7 +129,8 @@ export async function quarantineNewProtected(
   quarantineDir: string,
 ): Promise<string[]> {
   const after = await protectedPathsOf(options);
-  const created = [...after].filter((path) => !before.has(path));
+  // Sorted: the scan reads directories in no fixed order, and a parent comes before what is in it.
+  const created = [...after].filter((path) => !before.has(path)).sort();
   const moved: string[] = [];
   for (const path of created) {
     const target = join(quarantineDir, `${String(Date.now())}-${path.replaceAll('/', '__')}`);

@@ -167,6 +167,7 @@ export interface RunWorkDeps {
   readonly agentShare?: (
     ref: ReserveDelegationRequest['tasks'][number]['agentRef'],
     context: { readonly sessionId: string; readonly workflowRunId: string },
+    caller: RegisterAgentRunRequest['agentRef'],
   ) => AgentShare;
   readonly newDelegationId?: () => string;
   readonly inputIsValid: (unit: UnitDefinition, input: unknown) => boolean;
@@ -375,6 +376,8 @@ export class RunWork {
   #budgetDeclined = false;
   /** What the open question about the budget would add. */
   #budgetOffer = 0;
+  /** The calls to start tasks that wait for that answer, and the AgentRun of each (D115). */
+  readonly #budgetSpawns = new Map<string, string>();
   /** The subtasks the run has started, how many it may, and how that grew (D62). */
   #tasksStarted = 0;
   #taskLimit: number | undefined;
@@ -740,7 +743,7 @@ export class RunWork {
   }
 
   #maxMissionDepth(): number {
-    return this.#deps.maxMissionDepth ?? 2;
+    return this.#deps.maxMissionDepth ?? 3;
   }
 
   /** The tasks above `missionId` and itself, nearest first. */
@@ -854,6 +857,7 @@ export class RunWork {
             missionId,
             ...(mission.parent === undefined ? {} : { parentMissionId: mission.parent }),
           },
+      request.display.standsIn === true,
     );
     this.#clocks.register(agentRunId, pinned.agent.maxWallClockMs);
     return this.#accept(requestId, request);
@@ -922,9 +926,10 @@ export class RunWork {
       least: number;
       ceiling: number;
       clamped?: 'MIN' | 'MAX';
+      whole?: true;
     }[] = [];
     for (const task of request.tasks) {
-      const share = this.#deps.agentShare(task.agentRef, context);
+      const share = this.#deps.agentShare(task.agentRef, context, parent.agentRef);
       if (!share.ok) return refuse(share.reasonCode);
       if (share.defaultShare === undefined) return refuse('FORBIDDEN');
       const roots = task.writeRoots.flatMap((root) => normalizeRequestPath(root) ?? []);
@@ -936,6 +941,19 @@ export class RunWork {
       // topped up for its own calls: between four times the least by the Agent's declared limits
       // and twice the default; beyond it the task wraps up.
       const least = this.#deps.ledgers.leastShare(share.budget);
+      // A template's step takes the turn over (D115), and with it all its caller can lend: it has
+      // no ceiling of its own, and runs short only as main does, when the user adds no more.
+      if (share.defaultShare === 'ALL') {
+        tasks.push({
+          name: task.name,
+          roots,
+          tokens: least,
+          least,
+          ceiling: Number.MAX_SAFE_INTEGER,
+          whole: true,
+        });
+        continue;
+      }
       const asked = task.tokens ?? share.defaultShare;
       const ceiling = Math.max(4 * minShare(share.budget), Math.min(2 * share.defaultShare, asked));
       tasks.push({
@@ -949,11 +967,27 @@ export class RunWork {
     }
     const leastTotal = tasks.reduce((sum, task) => sum + task.least, 0);
     const delegationId = this.#deps.newDelegationId?.() ?? newId('dlg');
-    const result = this.#deps.ledgers.reserveDelegation({
-      delegationId,
-      parentAgentRunId,
-      shares: tasks.map(({ name, tokens, ceiling }) => ({ name, tokens, ceiling })),
-    });
+    const reserve = () => {
+      // What the caller can lend beyond the least of the others goes to a task that takes all.
+      const rest = this.#deps.ledgers.delegable(parentAgentRunId) - leastTotal;
+      for (const task of tasks)
+        if (task.whole === true) task.tokens = task.least + Math.max(0, rest);
+      return this.#deps.ledgers.reserveDelegation({
+        delegationId,
+        parentAgentRunId,
+        shares: tasks.map(({ name, tokens, ceiling }) => ({ name, tokens, ceiling })),
+      });
+    };
+    let result = reserve();
+    // Short of tokens (rule 6, D115): more is added by the configuration, or the user is asked and
+    // the call is refused until the answer comes (Workflow makes it again then), as for a model
+    // call; without more, it is refused for the budget.
+    if (!result.ok) {
+      const need = tasks.reduce((sum, task) => sum + task.tokens, 0) - result.delegable;
+      const more = this.#moreForDelegation(need, requestId, parentAgentRunId);
+      if (more === 'ASKED') return refuse('BUDGET_ASKED');
+      if (more === 'EXTENDED') result = reserve();
+    }
     if (!result.ok) {
       const response: SyscallRejected = {
         requestId,
@@ -1308,23 +1342,55 @@ export class RunWork {
       this.#extendBudget(wants.add, requestId, agentRunId, 'CONFIGURED');
       return false;
     }
+    this.#askBudget(wants, requestId, agentRunId);
+    this.#waiting.set(requestId, waiting);
+    this.#activity.awaitingAuthorization(agentRunId);
+    return true;
+  }
+
+  /**
+   * A call to start tasks the input cannot lend enough for (D115): more is added as before a call
+   * of the model (rule 6), by the configuration, or by the user's answer, which the call waits for.
+   * Undefined when nothing can be added: the call is refused for the budget.
+   */
+  #moreForDelegation(
+    need: number,
+    requestId: string,
+    agentRunId: string,
+  ): 'EXTENDED' | 'ASKED' | undefined {
+    const policy = this.#deps.budgetExtension ?? { mode: 'ask' as const, max: 4 };
+    if (policy.mode === 'stop' || this.#budgetDeclined || this.#budgetExtensions >= policy.max)
+      return undefined;
+    const wants = this.#deps.ledgers.delegationWants(need);
+    if (wants === undefined) return undefined;
+    if (policy.mode === 'extend') {
+      this.#extendBudget(wants.add, requestId, agentRunId, 'CONFIGURED');
+      return 'EXTENDED';
+    }
+    this.#askBudget(wants, requestId, agentRunId);
+    this.#budgetSpawns.set(requestId, agentRunId);
+    return 'ASKED';
+  }
+
+  /** The question about more tokens; whoever is short while it is open waits for the same answer. */
+  #askBudget(
+    wants: { readonly used: number; readonly limit: number; readonly add: number },
+    requestId: string,
+    agentRunId: string,
+  ): void {
     const tasks = [...this.#missions.values()].filter(
       (mission) => mission.parent !== undefined && !mission.closed,
     ).length;
     const check = this.#authorization.askBudget(wants, tasks, requestId, agentRunId);
-    if (check.requested !== undefined) {
-      this.#budgetOffer = wants.add;
-      this.#host.toInteraction(check.requested);
-      this.#deps.audit({
-        type: 'AUTHORIZATION_ASKED',
-        requestId,
-        agentRunId,
-        capability: 'budget.extend',
-      });
-    }
-    this.#waiting.set(requestId, waiting);
-    this.#activity.awaitingAuthorization(agentRunId);
-    return true;
+    if (check.requested === undefined) return;
+    this.#budgetOffer = wants.add;
+    this.#host.toInteraction(check.requested);
+    this.#deps.audit({
+      type: 'AUTHORIZATION_ASKED',
+      requestId,
+      agentRunId,
+      capability: 'budget.extend',
+    });
   }
 
   /**
@@ -1846,22 +1912,27 @@ export class RunWork {
         );
       else this.#taskDeclined = true;
       this.#host.toWorkflowEvent({
-        type: 'TaskQuotaDecided',
+        type: 'DelegationDecided',
         granted: settled.resolution === 'GRANTED',
       });
     }
-    // More budget (rule 6): yes adds what was offered; no is not asked again for this input.
+    // More budget (rule 6): yes adds what was offered; no is not asked again for this input. The
+    // calls to start tasks that waited are made again by Workflow, which is told either way (D115).
     if (settled.capability === 'budget.extend') {
       const first = settled.waiters[0];
-      const waiter = first === undefined ? undefined : this.#waiting.get(first);
+      const asker =
+        first === undefined
+          ? undefined
+          : (this.#waiting.get(first)?.request.agentRunId ?? this.#budgetSpawns.get(first));
       if (settled.resolution !== 'GRANTED') this.#budgetDeclined = true;
-      else if (waiter !== undefined)
-        this.#extendBudget(
-          this.#budgetOffer,
-          first ?? requestId,
-          waiter.request.agentRunId,
-          'USER',
-        );
+      else if (first !== undefined && asker !== undefined)
+        this.#extendBudget(this.#budgetOffer, first, asker, 'USER');
+      const spawns = settled.waiters.filter((waiter) => this.#budgetSpawns.delete(waiter));
+      if (spawns.length > 0)
+        this.#host.toWorkflowEvent({
+          type: 'DelegationDecided',
+          granted: settled.resolution === 'GRANTED',
+        });
     }
     // "This folder from now on" is kept by Session management; the run has it too, for now.
     if (request.answer.scope === 'FOLDER') await this.#deps.trustWebSearch();

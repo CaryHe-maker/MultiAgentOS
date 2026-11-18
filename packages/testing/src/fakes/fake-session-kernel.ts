@@ -269,9 +269,8 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
 
   const openTurn = async (
     current: Run,
-    input: { inputId: string; text: string },
+    input: { inputId: string; text: string; delegateTo?: string },
     origin: { origin: 'initial' } | { origin: 'requested'; humanRequestId: string },
-    template?: DefinitionRef,
   ) => {
     current.inputCheckpointId = newId('ckp');
     await runToInteraction(current, {
@@ -287,7 +286,7 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
       inputId: input.inputId,
       contentRef: store(input.text),
       checkpointId: current.inputCheckpointId,
-      ...(template === undefined ? {} : { template }),
+      ...(input.delegateTo === undefined ? {} : { delegateTo: input.delegateTo }),
       ...origin,
     });
   };
@@ -759,12 +758,10 @@ export function createFakeSessionKernel(options: FakeSessionKernelOptions = {}):
           humanRequestId: request.humanRequestId,
           resolution: 'ANSWERED',
         });
-        await openTurn(
-          current,
-          request.input,
-          { origin: 'requested', humanRequestId: request.humanRequestId },
-          request.template,
-        );
+        await openTurn(current, request.input, {
+          origin: 'requested',
+          humanRequestId: request.humanRequestId,
+        });
       });
       return Promise.resolve(ack(request.requestId));
     },

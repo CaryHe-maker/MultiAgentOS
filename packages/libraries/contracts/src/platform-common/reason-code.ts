@@ -84,6 +84,8 @@ export const REASON_CODE_CATEGORY = {
   MISSION_NOT_FOUND: 'VALIDATION',
   WRITE_SCOPE_DELEGATED: 'CONFLICT',
   BUDGET_INSUFFICIENT: 'RESOURCE',
+  /** The input cannot lend what the tasks need; the user is asked for more (Orchestration D115). */
+  BUDGET_ASKED: 'RESOURCE',
   /** The run has started as many tasks as it may; the user is asked for more (D62). */
   TASK_QUOTA_ASKED: 'RESOURCE',
   /** The run has started as many tasks as it may, and no more are allowed (D62). */
@@ -156,6 +158,7 @@ export const CORE_REJECTED_CODES = [
   'MISSION_NOT_FOUND',
   'DELEGATION_NOT_FOUND',
   'COMPACTION_UNKNOWN',
+  'BUDGET_ASKED',
   'TASK_QUOTA_ASKED',
   'TASK_QUOTA_REACHED',
 ] as const satisfies readonly ReasonCode[];

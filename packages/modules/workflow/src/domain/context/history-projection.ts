@@ -342,7 +342,14 @@ function projectOwn(
   /** What the view knows of every task: to tell a child's result and its last segment. */
   const missionInfo = new Map<
     string,
-    { readonly parentId?: string; readonly name: string; readonly agent: string; last?: string }
+    {
+      readonly parentId?: string;
+      readonly name: string;
+      readonly agent: string;
+      /** It took its caller's turn over: its result is the result of the call (D115). */
+      readonly answersCall?: true;
+      last?: string;
+    }
   >();
   const nodeMission = new Map<string, string>();
   let taskShown = false;
@@ -554,6 +561,7 @@ function projectOwn(
               ...(node.mission.parentId === undefined ? {} : { parentId: node.mission.parentId }),
               name: node.name,
               agent: node.agentRef?.id ?? 'unknown',
+              ...(node.spawn?.standsIn === true ? { answersCall: true as const } : {}),
             });
         }
         break;
@@ -584,6 +592,8 @@ function projectOwn(
           break;
         }
         if (ownMission === undefined || info?.parentId !== ownMission) break;
+        // Its result comes back as the result of the call that started it (D115).
+        if (info.answersCall === true) break;
         const outcome =
           info.last === undefined ? undefined : outcomeOf(records, record.workflowRunId, info.last);
         const status =

@@ -1,0 +1,17 @@
+schemaVersion: v1
+kind: TOOL
+id: job-kill
+version: v0.2.0
+description: Control tool that stops a background command of the task. Turn-chat text.
+purpose: CONTROL
+modelName: job_kill
+modelDescription: >-
+  Stop a background command by its id.
+parametersContract:
+  kind: contract
+  id: workflow.JobKillArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

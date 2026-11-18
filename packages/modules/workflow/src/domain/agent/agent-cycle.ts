@@ -63,6 +63,8 @@ export interface AgentDefinitions {
   readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `run_subagents`: a control tool whose call the task graph answers, instead of ending the AgentRun. */
   readonly spawnTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** Tools that each start one subtask, answered like `run_subagents` (Orchestration D112). */
+  readonly delegateTools?: readonly DelegateTool[];
   /** `ask_user`: the same shape, answered by the user through a HUMAN node (M2Design 3.4). */
   readonly askTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `sleep`: ends the segment; the runner checks what it waits for (Orchestration 4.1). */
@@ -89,6 +91,20 @@ export interface EndTool {
   readonly parameters: Schema;
   readonly allowedInFinal: boolean;
   readonly action: EndAction;
+  /** It may also be reached by an answer written as text, when nothing is left to wait for (D112). */
+  readonly byText?: boolean;
+}
+
+/**
+ * A tool that starts one subtask (Orchestration D112): the subtask runs as `agent`, from a new
+ * context or from the caller's; with `template`, as that template's step (D113).
+ */
+export interface DelegateTool {
+  readonly toolName: string;
+  readonly parameters: Schema;
+  readonly agent: string;
+  readonly context: 'fresh' | 'inherit';
+  readonly template?: { readonly id: string; readonly version: string };
 }
 export interface AgentConfig {
   readonly repeatedIntent: {
@@ -105,8 +121,10 @@ export interface AgentConfig {
   readonly maxSubagentsPerCall: number;
   readonly maxDependencyDepth: number;
   readonly regenerationLimit: number;
-  /** Experiment (stagger): how long sibling workers wait for the first one's reply; 0 = never. */
+  /** How long staggered sibling tasks wait for the first one's reply (D104); 0 = never. */
   readonly staggerWorkersMs?: number;
+  /** The Agent a Turn-chat runs (Orchestration D112); `chat` when absent. */
+  readonly chatAgent?: string;
 }
 
 type Pending =
@@ -153,6 +171,11 @@ export interface AgentState {
   readonly finalUsed: boolean;
   /** The final call was asked again once, after an answer that was not one finishing call. */
   readonly finalRetried?: boolean;
+  /**
+   * The call the user asked for by sending the input with `/<tool>` (D114): until a turn makes it,
+   * a turn that does not is refused and asked again, `retries` more times; then it is dropped.
+   */
+  readonly required?: { readonly toolName: string; readonly retries: number } | undefined;
   readonly wrapUpReason?: WrapUpReason;
   readonly budget: BudgetView;
   readonly pending: ReadonlyMap<string, Pending>;
@@ -240,6 +263,8 @@ export type AgentEnding =
       readonly kind: 'SPAWN';
       readonly arguments: unknown;
       readonly source: ControlSource;
+      /** The tool that starts one subtask, when it was not `run_subagents` (D112). */
+      readonly delegate?: Omit<DelegateTool, 'parameters'>;
       /** The tasks taken out of the call and what was set right in it (D56). */
       readonly notes?: readonly string[];
       /** The tasks whose goal the graph holds cut; the call holds it whole. */
@@ -379,6 +404,7 @@ const FEEDBACK = {
   DUPLICATE_CALL: 'Not executed: the same call already succeeded and its result is above.',
   REPEATED_INTENT: 'Not executed: this call was repeated too many times.',
   NOT_EXECUTED: 'Not executed: only the finishing call is available now.',
+  DELEGATION_REQUIRED: 'Not executed: the user asked for a delegation tool to be called now.',
 } as const;
 /** Word for word the tool result of the refusal itself (M2Design 5.3). */
 const rejectedText = (toolName: string): string => `the user rejected tool "${toolName}"`;
@@ -665,7 +691,10 @@ export function answerRounds(
 }
 
 export function startAgent(
-  input: Pick<AgentState, 'workflowRunId' | 'sessionId' | 'agentRunId' | 'definitions'>,
+  input: Pick<
+    AgentState,
+    'workflowRunId' | 'sessionId' | 'agentRunId' | 'definitions' | 'required'
+  >,
   context: AgentContext,
 ): AgentTransition {
   const state: AgentState = {
@@ -870,6 +899,27 @@ function afterTools(
   return nextRound(stuck ? wrapUp(next, 'NO_PROGRESS') : next, context, records);
 }
 
+/** A turn that did not make the call the user asked for with `/<tool>` (D114): asked again. */
+function refuseForDelegation(
+  state: AgentState,
+  required: NonNullable<AgentState['required']>,
+  calls: readonly ModelToolCall[],
+  context: AgentContext,
+  records: readonly NewLogRecord[],
+): AgentTransition {
+  const name = required.toolName;
+  const detail = `Not executed: the user sent this message with /${name}, asking you to hand its task to ${name}. Call ${name} now, alone: write its description and its goal so they stand on their own, since it does not see this conversation; then sleep until it ends.`;
+  const notes =
+    calls.length === 0
+      ? [feedback(state, 'DELEGATION_REQUIRED', undefined, detail)]
+      : calls.map((call) => feedback(state, 'DELEGATION_REQUIRED', call.toolCallId, detail));
+  return nextRound(
+    { ...state, required: { toolName: name, retries: required.retries - 1 } },
+    context,
+    [...records, ...notes],
+  );
+}
+
 function invalidReply(
   state: AgentState,
   code: FeedbackCode,
@@ -911,6 +961,7 @@ function parametersOf(definitions: AgentDefinitions, name: string): unknown {
   return [
     definitions.todoTool,
     definitions.spawnTool,
+    ...(definitions.delegateTools ?? []),
     definitions.askTool,
     definitions.sleepTool,
     definitions.messageTool,
@@ -958,9 +1009,26 @@ function handleModel(
     },
     turn,
   ];
+  // The user sent this input with `/<tool>` (D114): the turn makes that call alone (todos may come
+  // with it), or none of it runs and the model is asked again; after the retries, it goes on as
+  // any turn does.
+  const required = state.required;
+  if (required !== undefined) {
+    const todo = state.definitions.todoTool?.toolName;
+    const acting = calls.filter((call) => call.toolName !== todo);
+    if (
+      required.retries === 0 ||
+      (acting.length === 1 && acting[0]?.toolName === required.toolName)
+    ) {
+      return handleModel({ ...state, required: undefined }, report, context, config);
+    }
+    return refuseForDelegation(state, required, calls, context, records);
+  }
   // An answer written as text, where a reply would end the run now, is that reply (D97): the
   // model ends a turn the way every main loop lets it, instead of writing it a second time.
-  const replyTool = state.definitions.endTools.find((tool) => tool.action === 'PUBLISH_REPLY');
+  const replyTool = state.definitions.endTools.find(
+    (tool) => tool.action === 'PUBLISH_REPLY' || tool.byText === true,
+  );
   if (
     calls.length === 0 &&
     // Only a reply the model ended itself: one cut off by the length limit, stopped by a content
@@ -1088,7 +1156,21 @@ function soleControlOf(
   calls: readonly ModelToolCall[],
 ): SoleControl | undefined {
   const spawn = state.spawnWithdrawn ? undefined : state.definitions.spawnTool;
+  const delegates = state.spawnWithdrawn ? [] : (state.definitions.delegateTools ?? []);
   for (const call of calls) {
+    // A tool that starts one subtask goes with ordinary calls as run_subagents does (D112); one
+    // that hands the work to a template's run takes the turn over, so it comes alone (D115).
+    const delegate = delegates.find((each) => each.toolName === call.toolName);
+    if (delegate !== undefined) {
+      const { parameters, ...named } = delegate;
+      return {
+        call,
+        parameters,
+        allowedInFinal: false,
+        ending: (source) => ({ kind: 'SPAWN', arguments: call.arguments, source, delegate: named }),
+        ...(delegate.template === undefined ? { inline: true } : {}),
+      };
+    }
     const tool = state.definitions.endTools.find((each) => each.toolName === call.toolName);
     if (tool !== undefined)
       return {
@@ -1365,7 +1447,9 @@ function actOn(
       // A withdrawn run_subagents stays in the request, so the cached prefix holds (D102), and a
       // call of it is refused here.
       records.push(
-        state.spawnWithdrawn && call.toolName === state.definitions.spawnTool?.toolName
+        state.spawnWithdrawn &&
+          (call.toolName === state.definitions.spawnTool?.toolName ||
+            (state.definitions.delegateTools ?? []).some((each) => each.toolName === call.toolName))
           ? feedback(state, 'TOOL_REJECTED', call.toolCallId, SPAWN_WITHDRAWN)
           : feedback(state, 'UNKNOWN_TOOL', call.toolCallId),
       );

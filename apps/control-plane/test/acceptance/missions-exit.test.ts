@@ -50,7 +50,8 @@ async function roots(files: Readonly<Record<string, string>> = {}): Promise<Plac
 }
 
 async function chatOn(place: Place, provider: ScriptedChat): Promise<Chat> {
-  const chat = await openChat({ ...place, provider });
+  // The task machinery, through a Turn-chat of Mission's root (D112).
+  const chat = await openChat({ ...place, provider, chatAgent: 'main' });
   open.push(chat);
   return chat;
 }

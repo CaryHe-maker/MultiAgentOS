@@ -94,7 +94,8 @@ real('a long task the process left in the middle (Orchestration 7.6)', () => {
 
       // The root decides again after the resume: the worker started after the checkpoint is gone.
       const provider = scriptedAgents({ main: [reply('delivered after the resume')] });
-      const chat = await openChat({ dataDir, repository, provider });
+      // The same Agent as the run it resumes (resume-entry.ts, D112).
+      const chat = await openChat({ dataDir, repository, provider, chatAgent: 'main' });
       open.push(chat);
       await until(() => chat.printed('NOTICE').length > 0, 'the welcome');
       await listSessions(chat);

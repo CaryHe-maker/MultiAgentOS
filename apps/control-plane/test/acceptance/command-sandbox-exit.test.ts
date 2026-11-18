@@ -7,6 +7,7 @@
  * Cases that need the real sandbox run where `bwrap` works (Ubuntu 24.04 and WSL, M2TechStack
  * 3.1); the others run wherever the product runs.
  */
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -17,7 +18,12 @@ import {
   type SystemFault,
 } from '@multiagentos/contracts';
 import { createExecutorRegistry } from '@multiagentos/executor-set';
-import { createSubprocessRunner, probeSandbox, type MemorySample } from '@multiagentos/kernel';
+import {
+  createSubprocessRunner,
+  probeLandlock,
+  probeSandbox,
+  type MemorySample,
+} from '@multiagentos/kernel';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   listSessions,
@@ -1090,6 +1096,42 @@ onLinux('the sandbox is not there', () => {
     TIMEOUT,
   );
 
+  it.skipIf(probeLandlock() === undefined)(
+    'holds an unisolated write outside the task to the task by default, and lets it through with unisolatedWrites any (D79)',
+    async () => {
+      const outside = join(homedir(), `.mao-d79-${String(process.pid)}-${String(Date.now())}`);
+      await mkdir(outside, { recursive: true });
+      try {
+        const attempt = async (unisolatedWrites: 'task' | 'any') => {
+          const place = await roots();
+          const file = join(outside, `${unisolatedWrites}.txt`);
+          const provider = scriptedChat(
+            run(`echo written > ${file}; echo "status=$?"`),
+            reply('d'),
+          );
+          const chat = await chatOn(place, provider, {
+            sandboxProbe: { available: false, reason: 'NO_BWRAP', hint: 'install bubblewrap' },
+            configure: kernel({
+              sandbox: {
+                ...kernelDefaults().sandbox,
+                unavailable: 'ask-unisolated',
+                unisolatedWrites,
+              },
+            }),
+            answer: () => 'y',
+          });
+          await chat.say('go');
+          return existsSync(file);
+        };
+        expect(await attempt('task')).toBe(false);
+        expect(await attempt('any')).toBe(true);
+      } finally {
+        await rm(outside, { recursive: true, force: true });
+      }
+    },
+    TIMEOUT,
+  );
+
   it(
     'the readonly preset offers no command tool at all',
     async () => {
@@ -1109,6 +1151,7 @@ onLinux('the sandbox is not there', () => {
 const kernelDefaults = () => ({
   sandbox: {
     unavailable: 'deny' as const,
+    unisolatedWrites: 'task' as const,
     homeReadOnly: [] as string[],
     mountPath: true,
     homeMaskedFiles: [] as string[],
@@ -1434,7 +1477,8 @@ real('the round limit', () => {
       reply('stopping; prompt to continue: "carry on from round 78"'),
     );
     // One question for the prefix `echo`, then the allowance covers every later round.
-    const chat = await chatOn(place, provider, { answer: () => 'p' });
+    // main's 80 rounds; chat has 200 (D112).
+    const chat = await chatOn(place, provider, { answer: () => 'p', chatAgent: 'main' });
     await chat.say('many rounds').catch(() => undefined);
     const statuses = provider.requests.map((request) => textOf(request.messages.at(-1)));
     expect(statuses.some((text) => text.includes('the round limit is near'))).toBe(true);

@@ -2,7 +2,6 @@ import { Type, type Static } from 'typebox';
 import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
-import { DefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { UserInputSchema } from './session-requests.js';
 
 /**
@@ -54,7 +53,6 @@ export const AnswerHumanRequestSchema = closed(
     ...inRun,
     humanRequestId: IdSchemas.humanRequestId,
     input: UserInputSchema,
-    template: Type.Optional(DefinitionRefSchema),
   },
   'kernel.control.AnswerHumanRequest.v1',
 );

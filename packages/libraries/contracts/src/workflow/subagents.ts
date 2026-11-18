@@ -113,9 +113,19 @@ export type RunSubagentsArgs = Static<typeof RunSubagentsArgsSchema>;
  * and a specialist runs as one. What the checks of a call and the graph work on.
  */
 export interface SpawnRequest {
-  readonly tasks: readonly SubagentTask[];
+  readonly tasks: readonly SpawnTask[];
   readonly plan?: string;
 }
+
+/**
+ * A task of a spawn request: the task a model wrote, run by any Agent that may be started; a tool
+ * that starts one subtask names its Agent in its definition (Orchestration D112).
+ */
+export type SpawnTask = Omit<SubagentTask, 'agent'> & {
+  readonly agent: string;
+  /** A Mission a chat's main handed a goal to, working in its place (Orchestration D115). */
+  readonly standsIn?: true;
+};
 
 /**
  * Parameters of `run_subagents` of a lead: explorers and workers only. Only the root starts a lead
@@ -135,6 +145,30 @@ export const RunSubagentsNestedArgsSchema = closed(
   },
   'workflow.RunSubagentsNestedArgs.v1',
 );
+
+/**
+ * Parameters of a tool that starts one subtask (Orchestration D112): what it is for, in a few words, and the
+ * prompt it starts with; a subtask that changes files names the paths it may change.
+ */
+export const DelegateArgsSchema = closed(
+  {
+    description: text(80),
+    prompt: longText(),
+    writeScope: Type.Optional(Type.Array(text(500), { maxItems: 10 })),
+  },
+  'workflow.DelegateArgs.v1',
+);
+export type DelegateArgs = Static<typeof DelegateArgsSchema>;
+
+/**
+ * Parameters of the tool that hands a goal to a Mission (Orchestration D113): what it is for, in a
+ * few words, and the goal, which the Mission's root owns from start to delivery.
+ */
+export const MissionArgsSchema = closed(
+  { description: text(80), goal: longText() },
+  'workflow.MissionArgs.v1',
+);
+export type MissionArgs = Static<typeof MissionArgsSchema>;
 
 /** Parameters of `finish_subagent` of an explorer. */
 export const ExplorerResultSchema = closed(

@@ -52,6 +52,12 @@ export const SpawnNodeSchema = closed({
   /** The ended task it takes up again, with that task's history (`continues`, Orchestration 5.3). */
   continues: Type.Optional(closed({ missionId: IdSchemas.missionScopeId })),
   /**
+   * A Mission a Turn-chat's main handed a goal to (D113, D115): until it delivers it works in
+   * main's place, so the user sees it in place of main and talks to it, and its reply is the
+   * answer of the turn; main reads it as the result of its call when the user writes next.
+   */
+  standsIn: Type.Optional(Type.Literal(true)),
+  /**
    * Its goal was longer than the graph holds (D56): the node holds the beginning,
    * the call that started it holds the whole, and the task is shown the whole from there.
    */
@@ -327,6 +333,8 @@ export const SessionLogRecordSchema = Type.Union(
       redirectedFrom: Type.Optional(IdSchemas.agentRunId),
       /** The checkpoint taken just before this input (Orchestration 7.2): an undo goes back to it. */
       checkpointId: Type.Optional(IdSchemas.checkpointId),
+      /** The delegation tool the user asked this input to go to (`/mission`, D114). */
+      delegateTo: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9_]{0,39}$' })),
     }),
     record('AGENT_RUN_REGISTERED', inTurn, {
       agentRunId: IdSchemas.agentRunId,

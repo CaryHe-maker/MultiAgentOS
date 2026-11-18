@@ -1,6 +1,6 @@
 # MultiAgentOS M2 使用说明
 
-> 适用于 M2 V1.0。机制见 [M2Design](M2Design.md) 与 [Orchestration](Orchestration.md)，已知限制见 [M2Limitations](M2Limitations.md)。
+> 适用于 M2 V1.1。机制见 [M2Design](M2Design.md) 与 [Orchestration](Orchestration.md)，已知限制见 [M2Limitations](M2Limitations.md)。
 
 ## 1. 平台与准备
 
@@ -19,7 +19,7 @@ alias mas='node /path/to/MultiAgentOS/apps/control-plane/dist/bin.js'
 
 | 命令 | 模式 | 做什么 |
 |---|---|---|
-| `mas [--repo <路径>] [--readonly]` | Turn-chat | 在一个本地仓库上持续对话：读、检索、写与编辑、运行命令（沙盒中）、联网、派生子任务；Session 可以保存、切换、回退、Fork 与继续，长对话自动压缩 |
+| `mas [--repo <路径>] [--readonly]` | Turn-chat | 在一个本地仓库上持续对话：读、检索、写与编辑、运行命令（沙盒中）、联网；把独立的一件事交给子任务（`subagent` 从提示开始、`subagent_fork` 从这段对话开始），把多部分的大目标交给 Mission（`mission`，也可以由用户用 `/mission <目标>` 指定）；Session 可以保存、切换、回退、Fork 与继续，长对话自动压缩 |
 | `mas run [--repo <路径>] [--readonly] "<目标>"` | Mission | 把一个目标作为长任务做到交付：根任务规划、把可以并行的部分派给子任务（worker、lead、explorer 与专家）、检查结果后交付，结束后退出；中途不等用户（[Orchestration](Orchestration.md) 第 10.1 节） |
 | `mas log [--repo <路径>] [<session>] [--input <n>] [--full] [--json] [--list]` | 日志查看 | 一个对话的时间线：用户说了什么、模型调用了什么、得到了什么（[Console](Console.md) 第 3 节） |
 
@@ -31,6 +31,7 @@ alias mas='node /path/to/MultiAgentOS/apps/control-plane/dist/bin.js'
 
 | 指令 | 作用 |
 |---|---|
+| `/mission <目标>` | 把一个大目标交给 Mission：chat 写好任务要求交出去（Mission 不看这段对话），之后 Mission 代替 chat 工作：运行中写的话、它问的问题都在你和它之间，它的答复就是这一轮的回答；结束后你再写话，chat 带着它的结果接着谈（Orchestration D114、D115） |
 | `/new`、`/sessions`、`/resume <n>`、`/delete <n>`、`/fork` | 新建、列出、打开、删除、分叉对话 |
 | `/undo`、`/diff`、`/checkpoints`、`/rewind #N` | 回退文件改动、看差异、列出 checkpoint、暂停时回到第 N 个 |
 | `/compact` | 立即压缩上下文 |
@@ -44,7 +45,7 @@ alias mas='node /path/to/MultiAgentOS/apps/control-plane/dist/bin.js'
 ## 4. 配置与数据
 
 - 数据目录缺省为 `~/.multiagentos`（对话日志、快照、产物）。
-- `MULTIAGENTOS_CONFIG` 指向一个 JSON 文件，覆盖内置的缺省值（数据目录、额度、Workflow 与 Kernel 的上限等，见 `apps/control-plane/src/config/system-config.ts`）。
+- `MULTIAGENTOS_CONFIG` 指向一个 JSON 文件，覆盖内置的缺省值（数据目录、额度、Workflow 与 Kernel 的上限等，见 `apps/control-plane/src/config/system-config.ts`）。`workflow.chatAgent` 选 Turn-chat 运行的 Agent：缺省 `chat`；`main` 是 Mission 的根任务，用 `run_subagents` 派出 worker、explorer、lead 与专家。
 - 界面：`MAS_AMBIGUOUS_WIDTH=narrow|wide` 覆盖歧义宽度字符的测量；`NO_COLOR`、`FORCE_COLOR` 照常生效。
 
 ## 5. 检查与评测

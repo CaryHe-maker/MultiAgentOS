@@ -88,6 +88,7 @@ export const InteractionMessages = Object.freeze({
     MISSION_NOT_FOUND: '找不到它所属的上级任务，或上级任务已经结束。',
     WRITE_SCOPE_DELEGATED: '已经交给子任务去写的范围，在它们结束之前不能再写。',
     BUDGET_INSUFFICIENT: '额度不够同时派生这些子任务。',
+    BUDGET_ASKED: '额度不够派生这些子任务，正在问用户是否追加。',
     DELEGATION_NOT_FOUND: '这次派生已经失效。',
     CONTEXT_COMPACTED: '较早的对话刚被压缩，需要重新组织上下文。',
     COMPACTION_SUMMARY_INVALID: '压缩用的摘要不合格。',

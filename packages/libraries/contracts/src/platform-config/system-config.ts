@@ -42,6 +42,12 @@ export const KernelConfigSchema = closed(
     /** The sandbox of commands (Interface/KernelSupervisor 9). */
     sandbox: closed({
       unavailable: Type.Enum(['deny', 'ask-unisolated']),
+      /**
+       * Where an unisolated command may write (D79): `task`, its task's write roots and the
+       * temporary directories, held by Landlock where the kernel has it; `any`, anywhere, for a
+       * machine that is itself the isolation, such as a throwaway container.
+       */
+      unisolatedWrites: Type.Enum(['task', 'any']),
       homeReadOnly: Type.Array(text(4096)),
       /** The PATH directories below $HOME come back read-only too (M2Design 6.1, v1.18). */
       mountPath: Type.Boolean(),
@@ -203,11 +209,16 @@ export const WorkflowConfigSchema = closed(
     maxSubagentsPerCall: count(1),
     maxDependencyDepth: count(),
     /**
-     * Experiment (stagger): workers of one run_subagents call that start with the same context
-     * start one first; the others wait for its first model reply, at most this many milliseconds,
-     * so they find its prefix in the provider's cache. 0 or absent: all start at once.
+     * Workers of one run_subagents call that start with the same context start one first; the
+     * others wait for its first model reply, at most this many milliseconds, so they find its
+     * prefix in the provider's cache (Orchestration D104). 0 or absent: all start at once.
      */
     staggerWorkersMs: Type.Optional(count()),
+    /**
+     * The Agent a Turn-chat runs (Orchestration D112): `chat` when absent. `main` runs a
+     * Turn-chat with the Agent of Mission's root, which starts its tasks with `run_subagents`.
+     */
+    chatAgent: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$' })),
   },
   'platform.config.WorkflowConfig.v1',
 );

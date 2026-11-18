@@ -12,6 +12,7 @@ import {
   type ModelStream,
   type RunFinished,
   type ShutdownSource,
+  type UserInput,
 } from '@multiagentos/contracts';
 import { describeReason } from '../domain/interaction-messages.js';
 import { ConsoleText as text, commandPreview, terminalText } from './console-text.js';
@@ -157,7 +158,25 @@ const COMMANDS: ReadonlySet<string> = new Set([
   '/rewind',
   '/recover',
   '/output',
+  '/mission',
 ]);
+
+/**
+ * The delegation tools a message can be sent to (D114): `/mission <goal>` is a message whose
+ * Agent must hand its task to `mission` in its next turn; the text goes as the user wrote it.
+ */
+const DELEGATIONS: ReadonlySet<string> = new Set(['mission']);
+
+/** A message as the Kernel takes it, with the delegation it asks for when it starts with one. */
+function userInputOf(text: string): UserInput {
+  const [first = ''] = text.split(/\s+/u);
+  const name = first.slice(1);
+  return {
+    inputId: newId('inp'),
+    text,
+    ...(first.startsWith('/') && DELEGATIONS.has(name) ? { delegateTo: name } : {}),
+  };
+}
 
 /** Whether a line that starts with `/` is a command: a known one, or one unknown word alone. */
 function isCommandLine(input: string): boolean {
@@ -439,23 +458,33 @@ export class Console {
       [...this.#generating.values()].map((call) => [call.agentRunId, call]),
     );
     const jobsByLine = this.#jobsByLine();
+    // A Mission in chat's place takes chat's line (D115): chat's turn is over, the Mission is the
+    // root of what runs.
+    const lines = [...this.#activity.values()];
+    const replaced = new Set(
+      lines.flatMap((each) =>
+        each.standsIn === true ? [each.parentMissionId ?? each.parentAgentRunId] : [],
+      ),
+    );
     return inTree(
-      [...this.#activity.values()].map((each) => {
-        const jobs = jobsByLine.get(each.missionId ?? each.agentRunId);
-        const line = jobs === undefined ? each : { ...each, jobs };
-        if (line.waitsForUser === true) return line;
-        const startedAt = answering.get(line.agentRunId);
-        if (startedAt !== undefined)
-          return { ...line, phase: text.answeringPhase, since: startedAt };
-        const call = generating.get(line.agentRunId);
-        return call === undefined
-          ? line
-          : {
-              ...line,
-              phase: text.generating(call.name, call.target),
-              since: call.startedAt,
-            };
-      }),
+      lines
+        .filter((each) => !replaced.has(each.missionId ?? each.agentRunId))
+        .map((each) => {
+          const jobs = jobsByLine.get(each.missionId ?? each.agentRunId);
+          const line = jobs === undefined ? each : { ...each, jobs };
+          if (line.waitsForUser === true) return line;
+          const startedAt = answering.get(line.agentRunId);
+          if (startedAt !== undefined)
+            return { ...line, phase: text.answeringPhase, since: startedAt };
+          const call = generating.get(line.agentRunId);
+          return call === undefined
+            ? line
+            : {
+                ...line,
+                phase: text.generating(call.name, call.target),
+                since: call.startedAt,
+              };
+        }),
     ).map(({ item, branch }) => ({ ...item, branch }));
   }
 
@@ -577,9 +606,14 @@ export class Console {
       await this.#command(input);
       return;
     }
+    await this.#message(input);
+  }
+
+  /** A message to the run: it opens a Session, answers the open request, or waits its turn. */
+  async #message(input: string): Promise<void> {
     if (this.#sessionId === undefined) {
       this.#deps.view.print({ kind: 'USER', text: terminalText(input) });
-      const prompt = { inputId: newId('inp'), text: input };
+      const prompt = userInputOf(input);
       const from = this.#forkFrom;
       this.#forkFrom = undefined;
       const accepted = await this.#deps.gateway.startSession(
@@ -599,6 +633,14 @@ export class Console {
     // A paused run goes on with what the user writes: the message is the note that comes with it.
     if (this.#runState === 'PAUSED') {
       await this.#resume(input);
+      return;
+    }
+    // While a Mission works in chat's place, what the user writes goes to it at once (D115).
+    if (
+      this.#runState === 'RUNNING' &&
+      [...this.#activity.values()].some((each) => each.standsIn)
+    ) {
+      await this.steer(input);
       return;
     }
     // Nothing waits for input: the message waits in the console, Kernel never sees it (5.2).
@@ -879,7 +921,7 @@ export class Console {
         sessionId,
         workflowRunId,
         humanRequestId,
-        input: { inputId: newId('inp'), text: input },
+        input: userInputOf(input),
       },
       this.#context(),
     );
@@ -969,6 +1011,10 @@ export class Console {
       return this.#listed[index] ?? value;
     };
     switch (name) {
+      case '/mission':
+        if (rest.length === 0) this.#notice(text.missionUsage);
+        else await this.#message(input);
+        return;
       case '/help':
         this.#notice(text.help);
         break;
@@ -1512,6 +1558,7 @@ export class Console {
               ? {}
               : { parentMissionId: event.parentMissionId }),
             label: terminalText(event.label),
+            ...(event.standsIn === true ? { standsIn: true as const } : {}),
             phase: text.phase[event.phase],
             // Waiting for the user is not work that is taking long: no seconds are counted for it.
             ...(WAITS_FOR_USER.has(event.phase) ? { waitsForUser: true } : {}),

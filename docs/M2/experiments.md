@@ -1057,3 +1057,103 @@ Cary 2026-11-18 定：基线1.2 冻结为 Mission 模式的最终版本，在最
 
 - 与 `dsh`：总用时少 38.8 分钟（约 31%），5 道都更快（pylua 快 10.0、survey-av-fusion 11.7、sqlengine 7.1、minidb 7.8、pyarchive 2.2 分钟）；平均分低 0.014（pylua、sqlengine 高于 `dsh`，minidb 同为满分，survey-av-fusion 低 0.004，pyarchive 低 0.097）；费用约为 1.64 倍。
 - 与第一次运行（基线1.1，95.9 / 0.910 / $2.237）：用时少 8.1 分钟，平均分高 0.007，费用低 21%。
+
+## M2 V1.1 的实验
+
+### T1：Turn-chat 开发集小任务（2026-11-18，分支 `feature/M2/v1.1-turn-chat`）
+
+**条件**：`MAS_MODE=chat`（chat 按单 Agent 的写法、`subagent`/`subagent_fork`/`mission` 三个派生工具，Orchestration D112、D113），`scripts/taskset/mas-run.sh` 不带界面，一次一道；时间上限用 `CAP=900`，与 `dsh` 当时的条件相同（phase 1 的 S7 与 final2，全权限、900 秒）；容器的 CPU 与内存取自各题 `task.toml`（NodeBB 为 1 个 CPU）。`dsh` 的数字取自 S7 与 final2，没有重跑。标签与版本：
+
+| 标签 | 提交 | 内容 |
+|---|---|---|
+| `t11` | `f22a648` | V1.1 的 chat，尚无下面的三项工具优化 |
+| `t11b` | `6bc5eca` | 加两项：检索与列目录的文件集合、命令前后的扫描 |
+| `t11c` | `c795f88` | 再加一项：同一文件的摘要正在计算时不重复计算 |
+| `t11d` | `dfc884a` | 再加 chat 与 chat-sub 提示里"思考要简短"的一句（Cary 定） |
+
+`t11` 的 4 道在 UTC 05:05–05:22（非高峰）；其余都在高峰时段（Cary 要求不等），费用按平时价格折半记。
+
+**计分的 7 道**（看图的 2 道不计分，见下文；parallel 一道 `mas-run.sh` 不支持，teleport 一道 `dsh` 无法运行）：
+
+| 题 | 标签 | mas 结果 / 用时 / 费用（平时价） | `dsh` 结果 / 用时 / 费用 |
+|---|---|---|---|
+| polyglot-c-py | t11 | 通过 / 216 s / $0.023 | 通过 / 133 s / $0.012 |
+| NodeBB | t11c | 通过 / 127 s / $0.011 | 通过 / 120 s / $0.011 |
+| qutebrowser | t11 | 通过 / 121 s / $0.012 | 通过 / 133 s / $0.010 |
+| configure-git-webserver | t11 | 失败 / 112 s / $0.011 | 失败 / 178 s / $0.017 |
+| vuls | t11c | 通过 / 127 s / $0.011 | 通过 / 192 s / $0.010 |
+| tune-mjcf | t11c | 通过 / 591 s / $0.032 | 通过 / 205 s / $0.009 |
+| raman-fitting | t11c | 通过 / 204 s / $0.020 | 通过（查了答案，见下文）/ 273 s / $0.019 |
+| **合计** | | **6/7 / 1498 s / $0.120** | **6/7 / 1234 s / $0.087** |
+
+- 通过数相同；用时多 21%，几乎全在 tune-mjcf：去掉它，mas 907 s、`dsh` 1029 s。3 道快于 `dsh`（qutebrowser、vuls、raman），NodeBB 持平，polyglot 与 tune-mjcf 慢。
+- 缓存命中率与 `dsh` 相同（t11 的 4 道合计 96.48% 对 96.34%）；未命中的总量多 31%，因为每次请求的上下文更大（NodeBB 平均 38.7k 对 22.1k token）。
+- 每题只跑一次；`dsh` 与 `t11` 的计时在机器时钟修好之前（见下文），各可能差到约 ±12 秒。
+
+**三项工具优化（实测，NodeBB 镜像，约一万个文本文件）**：检索与列目录每次调用都在 ExecutorSet 里构建整个仓库的文件集合与快照，命令前后 Kernel 各扫一遍受保护路径与改动指纹（`protectedPathsOf`、`fingerprintRoots`）。改动不改变结果、调用路径与权限检查（随机目录树对照测试、缓存冷热对照测试），记在 ExecutorSet.md 与 Kernel/Execution.md：
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| 文件集合热构建（2 个 CPU） | 1.3 s | 0.53 s（每目录读一次、已算过摘要的文件只 `lstat`） |
+| 命令前后的四次扫描（2 个 CPU） | 约 2.0 s | 约 0.93 s（同时读几个目录、同时 `lstat`） |
+| 两次同时的冷构建（2 个 CPU） | 各算一遍 | 4.8 s（共享正在计算的摘要） |
+| NodeBB 的工具时间（按轮合计，真实运行） | 113 s（t11） | 54 s（t11b）、38 s（t11c）；`dsh` 39 s |
+| NodeBB 的用时 | 229 s（t11） | 139 s（t11b）、127 s（t11c）；`dsh` 120 s |
+
+V1.2 的 Mission 大任务上检索与列目录 13 次共约 0.5 秒（从零写的项目，仓库很小），这项优化对它们几乎没有影响。NodeBB 只有 1 个 CPU：冷构建一次 6.4 s，两次同时 10.2 s（摘要在 `lstat` 之后、`open` 之前才登记为"正在计算"，同时开始的两次多半都没赶上），第一轮的冷检索因此仍要十几秒；把登记提前到第一次 `lstat` 是无损的，没有改。
+
+**机器时钟**：WSL 的系统时钟约每 30 秒往回跳约 11 秒、十几秒后再跳回（内核日志每分钟一条 "Time jumped backwards"），原因是 Windows 没有和网络时间同步（`w32tm` 显示来源为 Local CMOS Clock），比 WSL 的另一个时间来源慢约 11 秒。日志里"命令的完成早于提交"与一次"12 秒的组装"都是这个造成的（按写入顺序那次组装约 1.1 秒）。Cary 在 Windows 上设了 time.windows.com 并同步后，120 秒内 0 次跳变，WSL 与 Windows 相差 0.086 秒。
+
+**慢的两道**：
+
+- tune-mjcf（调 MuJoCo 模型让 2 秒的模拟用时降到 60% 以下）：591 s 里，前 107 s 写了 6 个探测脚本；第 12–13 轮用 `web_fetch` 读了 MuJoCo 的两个 C 源文件，上下文由 23k 涨到 56k token，之后每次请求 9–15 s；第 15 轮起自写多种子的对照脚本（12–60 个种子），把开关、求解器、tolerance、iterations 一批批试过去，每条命令 27–63 s，这一段 301 s。题目自带的 `eval.py` 一次不到 1 秒。27 次请求、思考输出 37k token（`dsh` 17 次、11.5k）。系统开销每条命令约 1 秒，没有等待或断流。
+- polyglot-c-py（写一个既是 Python 又是 C 的文件，算斐波那契数）：容器里没有 Python（第 2–4、17–18、24 轮都在找），模型只能验证 C 的一侧；设计双语文件时连续想了三轮（12、22、17 秒）；第 11–13 轮为了 `#if 0` 里三引号引起的 gcc 警告，两轮各想了约 38 秒（5.5k token）。26 次请求、思考输出 32k token（`dsh` 17 次、17k）。
+
+两道都是同一种倾向：想得多、自建验证、反复试；`dsh` 的提示里有 "Verify your work by running the code or tests" 与 "Keep answers brief and factual"，mas 的 chat 提示当时没有思考要简短的一句（此后加上，`t11d`），也没有前者。
+
+**看图的题不计分（Cary 定）**：`dsh` 有 `read_image`（读 PNG/JPEG/WebP/GIF，存为附件，统一成 8 位 sRGB、过大时缩小；请求时在 `/v1/messages` 的用户消息或工具结果里以 `{"type":"image","source":{"type":"base64",…}}` 或 DeepSeek Files 的 `file_id` 发出，前面加一段说明来源与尺寸的文字），模型直接看到图片；mas 没有图片输入。查了所有 `dsh` 运行的思考记录，用到看图的是 chess-best-move（看棋盘）、gcode-to-text（把刀路画成图再看）与最终集小任务 financial-document-processor（看 12 张发票图片），三道在 `taskset.json` 标 `excluded`（TaskSet 第 7 节）。这两道 mas 在 `t11d` 上都是 0 分：chess 用像素比对认棋盘，漏了 g2 的兵，只写出 e2e4（应为 e2e4、g2g4）；gcode 把刀路画成字符图逐段辨认，上下文由 5k 涨到 214k token，900 秒时还没写 `out.txt`。
+
+**`dsh` 查了评测答案的两道**：gcode-to-text 上 `dsh` 看图读成了 "hacking iz challenging"，随后搜到这是 Terminal-Bench 2 的公开题，从 GitHub 取了 tests 与 solution，照写了期望的 flag；raman-fitting 上它同样取了 solution 与 tests（它自己写道题目说了 "Do not cheat by using online solutions"）。mas 在这几次运行里联网只读了 MuJoCo 源码与棋子图片。raman-fitting 仍在计分里：mas 是自己做出来的；`dsh` 的成绩应读作"查了答案"。
+
+**加上"思考要简短"之后重跑两道慢的题**（`t11d`，代码同 `dfc884a`，UTC 08:18–08:26，高峰时段，费用按平时价格折半）：
+
+| 题 | 上一次 | `t11d` | `dsh` |
+|---|---|---|---|
+| polyglot-c-py | 216 s，26 次请求，思考输出 32.0k，每次请求的上下文 23.4k，$0.023 | **105 s**，17 次，**11.6k**，13.5k，$0.009 | 133 s，17 次，17.4k，17.7k，$0.012 |
+| tune-mjcf | 591 s，27 次，37.0k，43.5k，工具 346 s，$0.032 | **281 s**，31 次，**24.3k**，21.2k，工具 117 s，$0.018 | 205 s，17 次，11.5k，13.0k，工具 127 s，$0.009 |
+
+两道都通过；polyglot 比 `dsh` 快 21%；tune-mjcf 的模拟用时占原来的 0.45（加速 2.24 倍，`dsh` 0.50），没有再跑几十秒一次的多种子对照，但请求数与思考仍约为 `dsh` 的两倍。用每题最近一次运行，计分的 7 道：mas 6/7、1077 s、$0.092，`dsh` 6/7、1234 s、$0.087，用时少 13%。每题仍只各跑一次。
+
+最终集也因同样的原因剔除一道：小任务 filter-js-from-html 上 `dsh` 用了这道题自己的测试与参考解（TaskSet 第 7 节），最终集小任务计分 8 道。最终集的 5 道大任务上 `dsh` 没有作弊的条件：pylua、sqlengine、pyarchive 是离线题；5 道都是本项目设计的题，隐藏测试与参考答案第一次推到 GitHub 是 UTC 11-14 23:16，晚于 `dsh` 最后一道（22:24）；tests 在智能体结束后才复制进容器；请求记录里只有模型请求。5 道的思考日志都只存了最后 20000 个字符，后半段都是正常解题。仓库是公开的，此后联网运行这些题都可能搜到答案。
+
+### T2：Turn-chat 最终集小任务（2026-11-18 UTC 08:33–09:20，标签 `fs11`，代码同 `dfc884a`）
+
+**条件**：与 `dsh` 的最终集小任务相同：同一个 `agentrun.mjs`，各题自己的时间上限（`task.toml`，不再是开发集的 900 秒），网络、CPU 与内存取自各题的 `task.toml`（8 道都联网）；一次一道（`dsh` 当时有几道同时跑）。按 Cary 的要求在高峰时段跑，费用按低峰价格折半比较。计分 8 道（financial-document-processor 看图、filter-js-from-html 查了答案，都已剔除，TaskSet 第 7 节）。这是最终集小任务的第一次运行。两边都没有派子任务（`dsh` 每题一段对话，另有至多一次不开思考的辅助请求）。
+
+| 题 | mas 结果 / 用时 / 费用 | `dsh` 结果 / 用时 / 费用 | 请求 mas / `dsh` | 思考输出 mas / `dsh` |
+|---|---|---|---|---|
+| custom-memory-heap-crash | 通过 / 2.6 分 / $0.017 | 通过 / 1.4 分 / $0.009 | 29 / 18 | 18.2k / 9.6k |
+| constraints-scheduling | 通过 / 0.4 分 / $0.003 | 通过 / 0.7 分 / $0.005 | 7 / 6 | 4.0k / 7.3k |
+| llm-inference-batching-scheduler | 通过 / 8.5 分 / $0.057 | 通过 / 4.2 分 / $0.033 | 52 / 26 | 65.3k / 41.3k |
+| mailman | **失败** / 10.1 分 / $0.061 | 通过 / 5.2 分 / $0.035 | 67 / 35 | 62.2k / 24.2k |
+| navidrome-87d4db76 | 通过 / 4.3 分 / $0.017 | 通过 / 4.5 分 / $0.018 | 37 / 22 | 12.4k / 18.3k |
+| openlibrary-431442c9 | 通过 / 1.2 分 / $0.007 | 通过 / 0.7 分 / $0.006 | 23 / 11 | 5.9k / 6.1k |
+| navidrome-8d56ec89 | 通过 / 3.0 分 / $0.011 | 通过 / 3.9 分 / $0.015 | 20 / 21 | 9.0k / 14.2k |
+| openlibrary-0d13e6b4 | 通过 / 1.7 分 / $0.012 | 通过 / 2.3 分 / $0.019 | 18 / 17 | 13.8k / 21.7k |
+| **合计** | **7/8 / 31.8 分 / $0.185** | **8/8 / 22.9 分 / $0.140** | | |
+
+- 去掉 mailman（下面说的写权限两边不同）：7/7 对 7/7，21.7 对 17.7 分（多 23%），$0.124 对 $0.105。
+- 4 道快于 `dsh`（两道 navidrome、openlibrary-0d13、constraints），都是改代码的题；慢的三道请求数是 `dsh` 的 1.6–2 倍。llm-batching 是优化题：mas 写了自己的打包器，整个重写三次、改了十几处参数后又写了参数扫描脚本，工具时间 117 秒（`dsh` 11 秒）。缓存命中率两边相当（约 95%–97%）。
+
+**mailman 的失败是写权限，不是做法**：容器里没有 bwrap，命令走 `ask-unisolated`，Kernel 又用 Landlock 把未隔离命令的写入限制在任务的可写根目录、`/tmp`、`/var/tmp`、`/dev`（D79）；这道题要写 `/etc/mailman3`、`/etc/postfix`、`/var/lib/mailman3` 并起服务。mas 的回复说"沙箱拒绝了 `/app` 之外的所有写入"，于是把配置与安装脚本写在 `/app`、在 `/tmp` 里起了一个测试实例验证后停掉，判分时服务不在（"Mailing list does not exist"、连接被拒）。`dsh` 是 `danger-full-access`，哪里都能写。现在没有配置能在评测时放开 D79 的限制（`compose-system.ts` 在没有 bwrap 时只要能用就启用 Landlock），所以这一道两边的条件不同，不可比。phase 1 时 `dsh` 也有过同样的问题（当时缺省 `workspace-write`，见"dsh 沙箱问题"）。
+
+**mailman 在与 `dsh` 相同的写权限下重跑**（标签 `fs11w`，提交 `50864d6`，UTC 09:31–09:39）：新增 `kernel.sandbox.unisolatedWrites`（`task` 缺省，D79 照旧；`any` 不限制未隔离命令的写入，只用于本身就是隔离的机器），评测脚本以 `MAS_UNISOLATED_WRITES=any` 设置，写进运行记录的 `overrides`；只有这一次设置了。
+
+| | mas 受 D79 限制（fs11） | mas 不限制（fs11w） | `dsh` |
+|---|---|---|---|
+| 结果 | 失败 | **通过** | 通过 |
+| 用时 | 10.1 分 | 6.2 分 | 5.2 分 |
+| 费用（低峰价） | $0.061 | $0.025 | $0.035 |
+| 请求 / 思考输出 / 每次请求的上下文 | 67 / 62.2k / 71.6k | 43 / 24.3k / 37.0k | 35 / 24.2k / 71.5k |
+
+最终集小任务 8 道（mailman 取 fs11w）：mas 8/8、27.9 分、$0.149，`dsh` 8/8、22.9 分、$0.140；通过数相同，用时多 22%（主要是 llm-batching），费用多 6%。llm-batching 上 mas 多花 4.3 分钟，按测试的成本模型算的 8 个指标里只有 bucket 2 的顺序执行总时间好 5.9%，其余持平或差 0.2%–2.9%，没有得到更好的方案。
