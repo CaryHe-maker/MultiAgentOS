@@ -49,4 +49,4 @@ M2 开发过程中的旧计划、决定记录与实测已冻结在 [History/M2](
 
 ## 4. 版本
 
-**M2 V1.0**（2026-11-18）：Turn-chat 与 Mission 两种模式；Mission 即 Mission 基线1.2（Orchestration D110、D111，git 标签 `mission-baseline-1.2`），在最终集的 5 道大任务上与 `dsh` 对照：总用时 103.8 对 126.6 分钟，平均分 0.917 对 0.931，费用 $1.79 对 $1.07（[TaskSet](TaskSet.md) 第 6 节）。本目录全部文档描述的机制都已实现。
+**M2 V1.0**（2026-11-18）：Turn-chat 与 Mission 两种模式；Mission 即 Mission 基线1.2（Orchestration D110、D111，git 标签 `mission-baseline-1.2`），在最终集的 5 道大任务上与 `dsh` 对照：总用时 87.8 对 126.6 分钟，平均分 0.917 对 0.931，费用 $1.76 对 $1.07（pylua 取重复运行，正式运行那一次受 DeepSeek 断流影响）（[TaskSet](TaskSet.md) 第 6 节）。本目录全部文档描述的机制都已实现。

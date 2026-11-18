@@ -39,10 +39,10 @@ node apps/control-plane/dist/bin.js log --repo /home/me/projects/my-app
 
 | | 总用时（分钟） | 平均分 | 费用（美元） | 缓存命中率 |
 |---|---|---|---|---|
-| **Mission（M2 V1.0）** | **103.8** | 0.917 | 1.79 | 98.5% |
+| **Mission（M2 V1.0）** | **87.8** | 0.917 | 1.76 | 98.6% |
 | `dsh` | 126.6 | 0.931 | 1.07 | — |
 
-5 道里 4 道比 `dsh` 快（其中 3 道快 7–12 分钟），2 道分数高于 `dsh`、1 道同为满分；费用约为 1.7 倍，主要来自多个 Agent 各自的思考与检查。开发集上的大任务（awk、Python 子集、GNU 文本工具）Mission 都不低于 `dsh` 的分数，用时少 20%–49%。任务集、规则与逐次结果见 [TaskSet](docs/M2/TaskSet.md) 与 [experiments](docs/M2/experiments.md)，已知限制见 [M2Limitations](docs/M2/M2Limitations.md)。
+5 道都比 `dsh` 快（4 道快 7–12 分钟，总用时少约 31%），2 道分数高于 `dsh`、1 道同为满分；费用约为 1.6 倍，主要来自多个 Agent 各自的思考与检查。pylua 取同一版本的重复运行：正式运行那一次 DeepSeek 两次断流，用时受环境影响（[experiments](docs/M2/experiments.md)）。开发集上的大任务（awk、Python 子集、GNU 文本工具）Mission 都不低于 `dsh` 的分数，用时少 20%–49%。任务集、规则与逐次结果见 [TaskSet](docs/M2/TaskSet.md) 与 [experiments](docs/M2/experiments.md)，已知限制见 [M2Limitations](docs/M2/M2Limitations.md)。
 
 ## 架构
 
