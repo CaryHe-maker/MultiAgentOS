@@ -12,6 +12,7 @@ import {
   type ModelStream,
   type RunFinished,
   type ShutdownSource,
+  type UserInput,
 } from '@multiagentos/contracts';
 import { describeReason } from '../domain/interaction-messages.js';
 import { ConsoleText as text, commandPreview, terminalText } from './console-text.js';
@@ -157,7 +158,25 @@ const COMMANDS: ReadonlySet<string> = new Set([
   '/rewind',
   '/recover',
   '/output',
+  '/mission',
 ]);
+
+/**
+ * The delegation tools a message can be sent to (D114): `/mission <goal>` is a message whose
+ * Agent must hand its task to `mission` in its next turn; the text goes as the user wrote it.
+ */
+const DELEGATIONS: ReadonlySet<string> = new Set(['mission']);
+
+/** A message as the Kernel takes it, with the delegation it asks for when it starts with one. */
+function userInputOf(text: string): UserInput {
+  const [first = ''] = text.split(/\s+/u);
+  const name = first.slice(1);
+  return {
+    inputId: newId('inp'),
+    text,
+    ...(first.startsWith('/') && DELEGATIONS.has(name) ? { delegateTo: name } : {}),
+  };
+}
 
 /** Whether a line that starts with `/` is a command: a known one, or one unknown word alone. */
 function isCommandLine(input: string): boolean {
@@ -577,9 +596,14 @@ export class Console {
       await this.#command(input);
       return;
     }
+    await this.#message(input);
+  }
+
+  /** A message to the run: it opens a Session, answers the open request, or waits its turn. */
+  async #message(input: string): Promise<void> {
     if (this.#sessionId === undefined) {
       this.#deps.view.print({ kind: 'USER', text: terminalText(input) });
-      const prompt = { inputId: newId('inp'), text: input };
+      const prompt = userInputOf(input);
       const from = this.#forkFrom;
       this.#forkFrom = undefined;
       const accepted = await this.#deps.gateway.startSession(
@@ -879,7 +903,7 @@ export class Console {
         sessionId,
         workflowRunId,
         humanRequestId,
-        input: { inputId: newId('inp'), text: input },
+        input: userInputOf(input),
       },
       this.#context(),
     );
@@ -969,6 +993,10 @@ export class Console {
       return this.#listed[index] ?? value;
     };
     switch (name) {
+      case '/mission':
+        if (rest.length === 0) this.#notice(text.missionUsage);
+        else await this.#message(input);
+        return;
       case '/help':
         this.#notice(text.help);
         break;

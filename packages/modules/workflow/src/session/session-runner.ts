@@ -159,6 +159,9 @@ export interface SessionRunnerDeps {
   readonly newAgentRunId?: () => string;
 }
 
+/** How often a model that did not make the call the user asked for with `/<tool>` is asked again (D114). */
+const REQUIRED_RETRIES = 2;
+
 /** The Agent of a Turn-chat unless configured (D112); Mission's root is the Agent its template names. */
 const CHAT_AGENT = 'chat';
 /** The id the root task of a Turn-chat is named by (Orchestration 3.2). */
@@ -353,6 +356,8 @@ export class SessionRunner {
   #repositoryRoot = '';
   #records: SessionLogRecord[] = [];
   #mode: 'CHAT' | 'ORCHESTRATION' = 'CHAT';
+  /** The delegation tool the last input asked for, until the segment it opens starts (D114). */
+  #delegateNext: string | undefined;
   /** The checkpoint of the input whose work goes on; undefined while waiting for one. */
   #inputCheckpointId: string | undefined;
   /** Calls of run_subagents that wait for the user's answer about more subtasks (D62). */
@@ -1512,6 +1517,7 @@ export class SessionRunner {
         contentRef: event.contentRef,
         ...(event.origin === 'requested' ? { humanRequestId: event.humanRequestId } : {}),
         checkpointId: event.checkpointId,
+        ...(event.delegateTo === undefined ? {} : { delegateTo: event.delegateTo }),
       },
       {
         type: 'NODE_ENDED',
@@ -1521,6 +1527,7 @@ export class SessionRunner {
       },
     ]);
     if (event.origin === 'initial') await this.#deps.store.setTitle(event.contentRef);
+    this.#delegateNext = event.delegateTo;
     await this.#advance(workflowRunId);
   }
 
@@ -1866,6 +1873,18 @@ export class SessionRunner {
     return found?.spawn === undefined ? undefined : found;
   }
 
+  /**
+   * What the user asked with `/<tool>` (D114), taken once by the segment of chat the input opens:
+   * a delegation tool of that Agent by that name, with two retries; nothing when it has none.
+   */
+  #requiredDelegation(definitions: AgentDefinitions): AgentState['required'] {
+    const name = this.#delegateNext;
+    this.#delegateNext = undefined;
+    if (name === undefined) return undefined;
+    const tool = definitions.delegateTools?.find((each) => each.toolName === name);
+    return tool === undefined ? undefined : { toolName: tool.toolName, retries: REQUIRED_RETRIES };
+  }
+
   async #startAgent(workflowRunId: string, node: GraphNodeRecord): Promise<void> {
     const sessionId = this.#sessionIdOrThrow();
     if (this.#inputCheckpointId === undefined)
@@ -2028,12 +2047,16 @@ export class SessionRunner {
             ...(node.mission === undefined ? {} : { missionId }),
             ...(task === undefined ? {} : { task }),
           };
+    // The input the user sent with `/<tool>` (D114): the segment of chat it opens calls that tool.
+    const required =
+      scope.kind === 'MAIN' ? this.#requiredDelegation(binding.definitions) : undefined;
     const transition = startAgent(
       {
         workflowRunId,
         sessionId,
         agentRunId,
         definitions: binding.definitions,
+        ...(required === undefined ? {} : { required }),
       },
       this.#context(scope),
     );

@@ -674,7 +674,7 @@ export class SessionActor {
           fork: { fromSessionId, fromInputCount: result.fromInputCount },
         });
         const run = this.#startRun({ mode: 'CHAT' }, true);
-        await this.#openInput(run, start.input.inputId, contentRef, { origin: 'initial' });
+        await this.#openInput(run, start.input, contentRef, { origin: 'initial' });
       });
       return;
     }
@@ -695,7 +695,7 @@ export class SessionActor {
           : { mode: 'ORCHESTRATION', templateRef: start.template },
         true,
       );
-      await this.#openInput(run, start.input.inputId, contentRef, { origin: 'initial' });
+      await this.#openInput(run, start.input, contentRef, { origin: 'initial' });
     });
   }
 
@@ -801,7 +801,7 @@ export class SessionActor {
 
   async #openInput(
     run: Run,
-    inputId: string,
+    input: Pick<UserInput, 'inputId' | 'delegateTo'>,
     contentRef: ArtifactRef,
     origin:
       | { readonly origin: 'initial' }
@@ -831,10 +831,11 @@ export class SessionActor {
     outbox.runToWorkflow(this.#sessionId, run.workflowRunId, {
       type: 'HumanAnswered',
       kind: 'prompt',
-      inputId,
+      inputId: input.inputId,
       contentRef,
       checkpointId,
       ...(template === undefined ? {} : { template }),
+      ...(input.delegateTo === undefined ? {} : { delegateTo: input.delegateTo }),
       ...origin,
     });
   }
@@ -945,7 +946,7 @@ export class SessionActor {
     });
     await this.#openInput(
       run,
-      input.inputId,
+      input,
       contentRef,
       { origin: 'requested', humanRequestId },
       template,

@@ -3,8 +3,16 @@ import { DefinitionRefSchema } from '../catalog/definition-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { closed, text } from '../platform-common/schema-helpers.js';
 
-/** The text is stored by Execution as an artifact and never enters the log. */
-export const UserInputSchema = closed({ inputId: IdSchemas.inputId, text: text(100000) });
+/**
+ * The text is stored by Execution as an artifact and never enters the log. `delegateTo`: the user
+ * asked that the Agent hand this input to its delegation tool of that name (`/mission`, D114); the
+ * Kernel passes it on and never reads it.
+ */
+export const UserInputSchema = closed({
+  inputId: IdSchemas.inputId,
+  text: text(100000),
+  delegateTo: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9_]{0,39}$' })),
+});
 export type UserInput = Static<typeof UserInputSchema>;
 
 const startSession = { requestId: IdSchemas.requestId, prompt: UserInputSchema };

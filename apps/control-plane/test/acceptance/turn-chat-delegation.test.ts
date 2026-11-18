@@ -155,3 +155,76 @@ describe('mission (Orchestration D113)', () => {
     TIMEOUT,
   );
 });
+
+describe('/mission (Orchestration D114)', () => {
+  const missionScript = [
+    tool('write_file', { path: 'parser.txt', content: 'done\n' }),
+    reply('parser.txt written'),
+    reply('parser.txt written'),
+  ];
+
+  it(
+    'asks chat again when it does not hand the task to mission, then runs the Mission it writes',
+    async () => {
+      const provider = scriptedAgents({
+        main: [
+          // A turn that does the work itself is refused: the user asked for a Mission.
+          tool('read_file', { path: 'notes.txt' }),
+          tool('mission', {
+            description: 'deliver the parser',
+            goal: 'Write parser.txt with one line: done.',
+          }),
+          waitForTasks(),
+          reply('the mission delivered parser.txt'),
+        ],
+        mission: missionScript,
+      });
+      const chat = await chatOn(provider);
+      await chat.say('/mission build the parser');
+      await until(() => chat.printed('REPLY').length > 0, 'the reply');
+      expect(chat.printed('REPLY')).toEqual(['the mission delivered parser.txt']);
+      const [first, second] = requestsOf(provider, 'main');
+      // chat reads what the user wrote, /mission included.
+      expect(all(first)).toContain('/mission build the parser');
+      expect(all(second)).toContain('the user sent this message with /mission');
+      expect(all(second)).not.toContain('the answer is 42');
+      // The Mission starts from the goal chat wrote, not from the conversation.
+      const [root] = requestsOf(provider, 'mission');
+      expect(all(root)).toContain('The goal you own:\nWrite parser.txt with one line: done.');
+      expect(all(root)).not.toContain('/mission build the parser');
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'gives up after two retries and goes on with what chat does',
+    async () => {
+      const provider = scriptedAgents({
+        main: [
+          tool('read_file', { path: 'notes.txt' }),
+          tool('read_file', { path: 'notes.txt' }),
+          reply('I answered myself'),
+        ],
+      });
+      const chat = await chatOn(provider);
+      await chat.say('/mission what do the notes say');
+      await until(() => chat.printed('REPLY').length > 0, 'the reply');
+      expect(chat.printed('REPLY')).toEqual(['I answered myself']);
+      expect(requestsOf(provider, 'main')).toHaveLength(3);
+      expect(requestsOf(provider, 'mission')).toHaveLength(0);
+    },
+    TIMEOUT,
+  );
+
+  it(
+    'shows how to use /mission when no goal comes with it',
+    async () => {
+      const provider = scriptedAgents({ main: [reply('unused')] });
+      const chat = await chatOn(provider);
+      await chat.console.submit('/mission');
+      expect(chat.printed('NOTICE').at(-1)).toContain('用法：/mission <目标>');
+      expect(provider.requests).toHaveLength(0);
+    },
+    TIMEOUT,
+  );
+});

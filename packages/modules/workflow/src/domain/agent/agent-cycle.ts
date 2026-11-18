@@ -171,6 +171,11 @@ export interface AgentState {
   readonly finalUsed: boolean;
   /** The final call was asked again once, after an answer that was not one finishing call. */
   readonly finalRetried?: boolean;
+  /**
+   * The call the user asked for by sending the input with `/<tool>` (D114): until a turn makes it,
+   * a turn that does not is refused and asked again, `retries` more times; then it is dropped.
+   */
+  readonly required?: { readonly toolName: string; readonly retries: number } | undefined;
   readonly wrapUpReason?: WrapUpReason;
   readonly budget: BudgetView;
   readonly pending: ReadonlyMap<string, Pending>;
@@ -399,6 +404,7 @@ const FEEDBACK = {
   DUPLICATE_CALL: 'Not executed: the same call already succeeded and its result is above.',
   REPEATED_INTENT: 'Not executed: this call was repeated too many times.',
   NOT_EXECUTED: 'Not executed: only the finishing call is available now.',
+  DELEGATION_REQUIRED: 'Not executed: the user asked for a delegation tool to be called now.',
 } as const;
 /** Word for word the tool result of the refusal itself (M2Design 5.3). */
 const rejectedText = (toolName: string): string => `the user rejected tool "${toolName}"`;
@@ -685,7 +691,7 @@ export function answerRounds(
 }
 
 export function startAgent(
-  input: Pick<AgentState, 'workflowRunId' | 'sessionId' | 'agentRunId' | 'definitions'>,
+  input: Pick<AgentState, 'workflowRunId' | 'sessionId' | 'agentRunId' | 'definitions' | 'required'>,
   context: AgentContext,
 ): AgentTransition {
   const state: AgentState = {
@@ -890,6 +896,27 @@ function afterTools(
   return nextRound(stuck ? wrapUp(next, 'NO_PROGRESS') : next, context, records);
 }
 
+/** A turn that did not make the call the user asked for with `/<tool>` (D114): asked again. */
+function refuseForDelegation(
+  state: AgentState,
+  required: NonNullable<AgentState['required']>,
+  calls: readonly ModelToolCall[],
+  context: AgentContext,
+  records: readonly NewLogRecord[],
+): AgentTransition {
+  const name = required.toolName;
+  const detail = `Not executed: the user sent this message with /${name}, asking you to hand its task to ${name}. Call ${name} now, alone: write its description and its goal so they stand on their own, since it does not see this conversation; then sleep until it ends.`;
+  const notes =
+    calls.length === 0
+      ? [feedback(state, 'DELEGATION_REQUIRED', undefined, detail)]
+      : calls.map((call) => feedback(state, 'DELEGATION_REQUIRED', call.toolCallId, detail));
+  return nextRound(
+    { ...state, required: { toolName: name, retries: required.retries - 1 } },
+    context,
+    [...records, ...notes],
+  );
+}
+
 function invalidReply(
   state: AgentState,
   code: FeedbackCode,
@@ -979,6 +1006,18 @@ function handleModel(
     },
     turn,
   ];
+  // The user sent this input with `/<tool>` (D114): the turn makes that call alone (todos may come
+  // with it), or none of it runs and the model is asked again; after the retries, it goes on as
+  // any turn does.
+  const required = state.required;
+  if (required !== undefined) {
+    const todo = state.definitions.todoTool?.toolName;
+    const acting = calls.filter((call) => call.toolName !== todo);
+    if (required.retries === 0 || (acting.length === 1 && acting[0]?.toolName === required.toolName)) {
+      return handleModel({ ...state, required: undefined }, report, context, config);
+    }
+    return refuseForDelegation(state, required, calls, context, records);
+  }
   // An answer written as text, where a reply would end the run now, is that reply (D97): the
   // model ends a turn the way every main loop lets it, instead of writing it a second time.
   const replyTool = state.definitions.endTools.find(

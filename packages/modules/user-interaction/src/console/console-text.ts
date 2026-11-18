@@ -270,9 +270,11 @@ export const ConsoleText = Object.freeze({
   },
   /** `/compact` is refused while the run is not waiting for input, or main is being compacted already. */
   compactNotNow: '暂时无法压缩：请等当前运行或正在进行的压缩结束后再试。',
+  missionUsage: '用法：/mission <目标>。chat 会把这个目标写成任务要求交给 Mission，等它交付后告诉你结果。',
   unknownCommand: (name: string) => `没有这条指令：${name}。/help 查看指令。`,
   help: [
     '/new              开始新对话',
+    '/mission <目标>   把一个大目标交给 Mission：chat 写好任务要求交出去，等它交付',
     '/fork             从当前对话分出一个新对话',
     '/sessions         列出本仓库的对话',
     '/resume <编号>    打开对话',

@@ -327,6 +327,8 @@ export const SessionLogRecordSchema = Type.Union(
       redirectedFrom: Type.Optional(IdSchemas.agentRunId),
       /** The checkpoint taken just before this input (Orchestration 7.2): an undo goes back to it. */
       checkpointId: Type.Optional(IdSchemas.checkpointId),
+      /** The delegation tool the user asked this input to go to (`/mission`, D114). */
+      delegateTo: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9_]{0,39}$' })),
     }),
     record('AGENT_RUN_REGISTERED', inTurn, {
       agentRunId: IdSchemas.agentRunId,
