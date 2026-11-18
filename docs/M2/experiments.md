@@ -1146,3 +1146,14 @@ V1.2 的 Mission 大任务上检索与列目录 13 次共约 0.5 秒（从零写
 - 4 道快于 `dsh`（两道 navidrome、openlibrary-0d13、constraints），都是改代码的题；慢的三道请求数是 `dsh` 的 1.6–2 倍。llm-batching 是优化题：mas 写了自己的打包器，整个重写三次、改了十几处参数后又写了参数扫描脚本，工具时间 117 秒（`dsh` 11 秒）。缓存命中率两边相当（约 95%–97%）。
 
 **mailman 的失败是写权限，不是做法**：容器里没有 bwrap，命令走 `ask-unisolated`，Kernel 又用 Landlock 把未隔离命令的写入限制在任务的可写根目录、`/tmp`、`/var/tmp`、`/dev`（D79）；这道题要写 `/etc/mailman3`、`/etc/postfix`、`/var/lib/mailman3` 并起服务。mas 的回复说"沙箱拒绝了 `/app` 之外的所有写入"，于是把配置与安装脚本写在 `/app`、在 `/tmp` 里起了一个测试实例验证后停掉，判分时服务不在（"Mailing list does not exist"、连接被拒）。`dsh` 是 `danger-full-access`，哪里都能写。现在没有配置能在评测时放开 D79 的限制（`compose-system.ts` 在没有 bwrap 时只要能用就启用 Landlock），所以这一道两边的条件不同，不可比。phase 1 时 `dsh` 也有过同样的问题（当时缺省 `workspace-write`，见"dsh 沙箱问题"）。
+
+**mailman 在与 `dsh` 相同的写权限下重跑**（标签 `fs11w`，提交 `50864d6`，UTC 09:31–09:39）：新增 `kernel.sandbox.unisolatedWrites`（`task` 缺省，D79 照旧；`any` 不限制未隔离命令的写入，只用于本身就是隔离的机器），评测脚本以 `MAS_UNISOLATED_WRITES=any` 设置，写进运行记录的 `overrides`；只有这一次设置了。
+
+| | mas 受 D79 限制（fs11） | mas 不限制（fs11w） | `dsh` |
+|---|---|---|---|
+| 结果 | 失败 | **通过** | 通过 |
+| 用时 | 10.1 分 | 6.2 分 | 5.2 分 |
+| 费用（低峰价） | $0.061 | $0.025 | $0.035 |
+| 请求 / 思考输出 / 每次请求的上下文 | 67 / 62.2k / 71.6k | 43 / 24.3k / 37.0k | 35 / 24.2k / 71.5k |
+
+最终集小任务 8 道（mailman 取 fs11w）：mas 8/8、27.9 分、$0.149，`dsh` 8/8、22.9 分、$0.140；通过数相同，用时多 22%（主要是 llm-batching），费用多 6%。llm-batching 上 mas 多花 4.3 分钟，按测试的成本模型算的 8 个指标里只有 bucket 2 的顺序执行总时间好 5.9%，其余持平或差 0.2%–2.9%，没有得到更好的方案。

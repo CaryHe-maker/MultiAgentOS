@@ -1112,7 +1112,11 @@ onLinux('the sandbox is not there', () => {
           const chat = await chatOn(place, provider, {
             sandboxProbe: { available: false, reason: 'NO_BWRAP', hint: 'install bubblewrap' },
             configure: kernel({
-              sandbox: { ...kernelDefaults().sandbox, unavailable: 'ask-unisolated', unisolatedWrites },
+              sandbox: {
+                ...kernelDefaults().sandbox,
+                unavailable: 'ask-unisolated',
+                unisolatedWrites,
+              },
             }),
             answer: () => 'y',
           });

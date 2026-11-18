@@ -49765,6 +49765,7 @@
           "type": "object",
           "required": [
             "unavailable",
+            "unisolatedWrites",
             "homeReadOnly",
             "mountPath",
             "homeMaskedFiles"
@@ -49774,6 +49775,12 @@
               "enum": [
                 "deny",
                 "ask-unisolated"
+              ]
+            },
+            "unisolatedWrites": {
+              "enum": [
+                "task",
+                "any"
               ]
             },
             "homeReadOnly": {
@@ -50674,6 +50681,7 @@
               "type": "object",
               "required": [
                 "unavailable",
+                "unisolatedWrites",
                 "homeReadOnly",
                 "mountPath",
                 "homeMaskedFiles"
@@ -50683,6 +50691,12 @@
                   "enum": [
                     "deny",
                     "ask-unisolated"
+                  ]
+                },
+                "unisolatedWrites": {
+                  "enum": [
+                    "task",
+                    "any"
                   ]
                 },
                 "homeReadOnly": {
