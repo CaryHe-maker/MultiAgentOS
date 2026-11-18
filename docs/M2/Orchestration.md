@@ -232,8 +232,8 @@ ended(m)    = 有 MISSION_ENDED(m)
 根任务只在两种情况下结束：模板根任务末步的 `complete_step`，或运行收敛（此时 Workflow 为它追加 `MISSION_ENDED`）。
 Turn-chat 的根任务某一步失败或被中止，与现在相同：下一个 `HUMAN(prompt)` 以 `all_done` 照常到来，下一步仍属于同一个任务。
 
-**读到 `YIELDED` 的边看接手的那一段**：一条边的起点是 `YIELDED` 的段时，`edgeState` 沿 `CONTINUES` 边找到接手它的最后一段再判定，
-与现在循环边"只读最后一次迭代"的做法相同（`effectiveSource`）；还没有接手的段（任务在休眠）时边为 `WAITING`。
+**读到 `YIELDED` 的边看接手的那一段**：一条边的起点是 `YIELDED` 的段时，`edgeState` 沿 `CONTINUES` 边找到接手它的最后一段再判定；
+还没有接手的段（任务在休眠）时边为 `WAITING`。
 所以模板里"子任务 A 完成后 B 开始"无论 A 中间休眠几次都成立，下游也不会因为 A 休眠而被跳过。
 `SUCCEEDED` 的步骤照常被读取：Turn-chat 中 `main·1` 回复之后 `prompt₂` 就绪，与现在一样。
 
@@ -242,8 +242,8 @@ Turn-chat 的根任务某一步失败或被中止，与现在相同：下一个 
 - **同一时刻至多一个 AgentRun**：任务的一段结束之前，不会登记它的下一段（不变量 M1，第 11 节）。
 - **上下文以任务为范围**：任务的投影是它全部段的步骤，加上投递给它的通知（子任务结果、后台命令结束、消息、用户答复）。
   原来 main 跨 Turn、跨 WorkflowRun 的投影规则推广到所有任务；子任务被唤醒时看到自己之前的全部工作。
-- **压缩以任务为对象**：`CONTEXT_COMPACTED.target` 改为 `{ missionId }`，原来的 `MAIN` 与 `AGENT_RUN` 两种取消。
-- **`read_output` 与交接以任务为范围**：任务能读自己所有段的工具输出；交接登记的接收方 `to` 改为 `{ missionId }`。
+- **压缩**：对象仍是 Turn-chat 的 `MAIN` 或某一段的 `AGENT_RUN`（`CONTEXT_COMPACTED.target`）；任务的下一段从压缩后的投影接着做。
+- **`read_output` 与交接以任务为范围**：任务能读自己所有段的工具输出；交接登记的接收方 `to` 可以是一个任务（`{ kind: 'MISSION', missionId }`），它的哪一段都能读。
   原来代码中以 `agent.id === 'main'` 判断"顶层"的五处（M2Baseline 缺口 13）全部改为按任务判断，根任务按 `parent` 为空判断。
 - **拒绝仍绑定 AgentRun**：用户拒绝某项能力后，只对这一段生效；下一段可以重新询问（与现在"下一个 Turn 可以改主意"一致）。
 
@@ -255,11 +255,9 @@ Turn-chat 的根任务某一步失败或被中止，与现在相同：下一个 
 id: research
 version: v1.0.0
 owner: { agent: main }
-checkpoints: { onHuman: true, onRootSpawn: true }   # 第 7.2 节；缺省即此值
 nodes:
   - { name: plan,   kind: AGENT, role: owner, goal: "写出调研简报并派生 explorer 调研" }
-  - { name: review, kind: HUMAN, request: { type: review, artifactFrom: plan }, dependsOn: [plan],
-      loop: { to: plan, when: { field: verdict, equals: reject }, maxIterations: 3 } }
+  - { name: review, kind: HUMAN, request: { type: review, artifactFrom: plan }, dependsOn: [plan] }
   - { name: verify, kind: AGENT, agent: explorer, goal: "核对报告中的引用", dependsOn: [review] }
   - { name: report, kind: AGENT, role: owner, dependsOn: [verify], output: true }
 ```
@@ -267,16 +265,14 @@ nodes:
 - `role: owner` 的节点是根任务的步骤（`mission.id` 为根任务）。校验：owner 节点之间必须有全序
   （任意两个 owner 节点之间都有依赖路径），否则 `OWNER_NOT_LINEAR`；这同时保证前一个 owner 步骤休眠时，
   后一个不可能就绪（它的入边经前一步读到 `WAITING`），根任务因此不会同时有两段在运行。
-  循环展开复制的 owner 节点仍属于根任务。
-- 其他 AGENT 节点是根任务的子任务（`mission.parentId` 为根任务，每个节点、每次迭代一个任务）。它们的结果照常沿依赖边交给后继，
+- 其他 AGENT 节点是根任务的子任务（`mission.parentId` 为根任务，每个节点一个任务）。它们的结果照常沿依赖边交给后继，
   同时登记一次交给根任务的交接，并作为通知在根任务的下一段出现，所以根任务是名副其实的负责人。
 - 根任务的一步以 `complete_step` 收尾后，下一个 owner 节点就绪时就是它的下一步。最后一个 owner 节点（标 `output: true` 的那个，
   校验要求恰有一个，并且是 owner 节点）的 `complete_step` 结束根任务。
 - 根任务结束、并且图上没有可以就绪的节点时，运行收敛；必有报告的规则不变（M2Design 第 7.3 节）。
 
-**Turn-chat 是一个普通的模板**（D6）：owner 是 main；它只有一条生长规则——根任务的一段以 `reply` 结束后，
-追加一个 `HUMAN(prompt)` 节点，答复唤醒根任务的下一段。它的 checkpoint 策略是 `{ onHuman: true, onRootSpawn: false }`。
-原来写在代码里的 `chat` 生长规则变成"owner 在 `reply` 之后等开放输入"这一条通用规则的实例，不再有专门的分支。
+**Turn-chat 的生长规则**（D6）：根任务是 chat 的 Agent；它的一步结束后（不论成败），追加一个 `HUMAN(prompt)` 节点与依赖它的下一步，
+答复开启下一次输入的工作（`chatGrowthRevision`）。它只有用户输入的 checkpoint（第 7.2 节）。
 
 Turn-chat 不运行模板：它的 chat 用 `subagent`、`subagent_fork` 派一个子任务，用 `mission`（或用户的 `/mission <目标>`）把一个大目标交给 Mission 的根任务，由它按模板 `mission` 的所有者一步运行，并代替 chat 工作到它结束（D112–D115）。专家（第 3.9 节，D39）只由 Mission 里的 `run_subagents` 派出；`workflow.chatAgent = main` 时 Turn-chat 由 main 运行，用 `run_subagents`。原设想的 `/run <模板>` 没有实现（D46 删除）。
 
@@ -431,14 +427,14 @@ type WakeCondition =
 
 ### 4.4 唤醒的上限与等用户的根任务
 
-- **连续唤醒上限**（D12）：由后台命令、消息、定时触发的唤醒，每个任务在两次人类输入之间至多 `maxConsecutiveWakes` 次（缺省 3）。
+- **连续唤醒上限**（D12）：由后台命令、消息、定时触发的唤醒，每个任务在两次人类输入之间至多 3 次（`MAX_CONSECUTIVE_WAKES`）。
   超过之后这类事件只积累通知，不再唤醒；本运行中任何一次人类输入（答复、插话、新消息）使所有任务的计数复位，
   一个任务的任一子任务结束也使它自己的计数复位（D95：有子任务结束说明工作在推进；长任务里用户可能一小时都不说话）。
   子任务结束、人类答复触发的唤醒不计数：它们是任务本来就在等的东西。
   要求一个决定的请求（子任务向父任务申请轮次，D91）总能唤醒对方，也不计数（D94）：申请的任务在等答复，每个 AgentRun 只申请一次，不会形成循环。
 - **等开放输入的根任务**（Turn-chat 中 `reply` 之后）会被自己的后台命令结束唤醒（D12）。Workflow 先以
-  `withdrawHuman` 请 Kernel 收回开放输入的请求（运行离开 AWAITING_INPUT，界面保留输入框里的内容；用户恰好已经提交时，
-  Kernel 以 `HUMAN_ALREADY_ANSWERED` 拒绝，这次唤醒改为把通知积累给答复唤醒的那一段），再追加根任务的下一段；
+  `withdrawOpenInput` 请 Kernel 收回开放输入的请求（运行离开 AWAITING_INPUT，界面保留输入框里的内容；用户恰好已经提交时，
+  Kernel 以 `HUMAN_REQUEST_NOT_PENDING` 拒绝，这次唤醒改为把通知积累给答复唤醒的那一段），再追加根任务的下一段；
   这一段处理完再 `reply` 时重新请求开放输入。这一段是 Turn-chat 中唯一不由用户消息开启的一步，界面标为"后台任务结束后的跟进"。
 - **等局部询问的任务**（`ask_user` 之后）只由答复唤醒：后台命令与消息只积累通知，避免同一个问题被问两遍。
 - **停滞检测**：运行中没有活动的 AgentRun、没有在途 Unit、没有运行中的后台命令与定时、没有待答复的人类请求，
@@ -462,7 +458,7 @@ send_message({
   就唤醒（受第 4.4 节的上限约束）；在等局部询问就积累；已结束就告诉发送方。
 - **接收方看到的**：`[来自任务 frontend 的消息] …`。消息是**材料，不是指令**：发送方可能读过被注入的网页或文件，
   所以消息与工具结果同一信任级别，也不带任何权限；能力、写入范围与额度都不随消息流动。
-- **限量**：每段至多 `maxMessagesPerSegment` 条（缺省 10）；每个任务在两次人类输入之间收到的消息超过 50 条时，
+- **限量**：每段至多 10 条（`MAX_MESSAGES_PER_SEGMENT`）；每个任务在两次人类输入之间收到的消息超过 50 条时，
   之后的只积累、不再唤醒。
 - **用途**：兄弟之间传递接口约定（前端告诉后端它要的 API 形状）、子任务向父任务汇报阶段性结果或提问。
   需要回复时，发送方 `sleep({ until: [{ kind: 'message' }] })`。父任务对子任务的回复同样是一条消息。
@@ -641,32 +637,32 @@ Kernel 的静止条件因此改为"没有活动的 AgentRun、没有在途的前
 checkpoint 是一个**一致的切面**：日志中的一个位置，加上该位置对应的工作区快照。
 
 ```ts
-interface Checkpoint {
+// 快照索引（Kernel）中的一行，Interface/Persistence 第 4.4 节
+interface CheckpointLine {
+  kind: 'CHECKPOINT';
   checkpointId: string;          // 前缀 ckp
-  seq: number;                   // 本 Session 中 checkpoint 的序号；界面的"第 N 轮"是 kind = HUMAN_PROMPT 的序号
-  workflowRunId: string;
-  kind: 'HUMAN_PROMPT' | 'HUMAN_ANSWER' | 'ROOT_SPAWN' | 'TEMPLATE';
+  ckpKind: 'INPUT' | 'HUMAN_ANSWER' | 'ROOT_SPAWN' | 'TEMPLATE';   // INPUT：用户的一条输入，界面的"第 N 轮"
   label: string;                 // 界面用："第 3 轮：把登录改成…"、"派生 frontend、backend"、"审阅 plan"
-  cutSeq: number;                // 日志切面：此位置及之前的记录属于切面之前
-  triggerSeq?: number;           // 触发它的记录（答复、派生），回溯时与切面之后的记录一起被取代
-  snapshot: string;              // 影子 git 中的快照
-  heldUnits: string[];           // 屏障期间被扣住、尚未执行的 requestId
-  runningJobs: string[];         // 切面时仍在运行的后台命令
+  snapshot?: string;             // 影子 git 中的快照；拍摄失败时没有，不能回到它
+  at: string;
 }
+// 会话日志（Workflow）中，运行内的 checkpoint 另有
+//   CHECKPOINT_REQUESTED { checkpointId, kind, label, triggerToolCallId? }   触发它的调用（根任务的 run_subagents），回溯时一起取代
+//   CHECKPOINT_TAKEN { checkpointId, outcome, snapshot?, heldUnits }         它的日志位置就是切面 cutSeq；heldUnits 是屏障期间被扣住、尚未执行的 requestId
 ```
 
 **快照照旧**：影子 git、独立 `GIT_DIR`、排除规则、16 MiB 上限都不变（M2Design 第 4.6 节），变的只是何时拍。
 
 ### 7.2 何时拍
 
-checkpoint 策略写在模板里（`checkpoints`），Turn-chat 与其他编排走同一套代码（D8）：
+何时拍由运行的形态决定，Turn-chat 与 Mission 走同一套代码（D8）：
 
-| 时机 | `kind` | 适用 | 触发记录（`triggerSeq`） | 回溯后回到 |
+| 时机 | `kind` | 适用 | 触发 | 回溯后回到 |
 |---|---|---|---|---|
-| 开放输入得到答复（含 `mas run` 的目标、Turn-chat 的每条消息） | `HUMAN_PROMPT` | `onHuman`；Turn-chat 只有这一种 | `HUMAN_ANSWERED` | 等这条输入的状态，用户可以重写它 |
-| 局部询问得到答复 | `HUMAN_ANSWER` | `onHuman` | `HUMAN_ANSWERED` | 等这个答复的状态 |
-| 根任务调用 `run_subagents` | `ROOT_SPAWN` | `onRootSpawn`；嵌套层的派生不拍（D10） | 发出这次派生的 `MODEL_TURN` | 这次派生之前：根任务重新决定要不要派生、怎样派生 |
-| 模板节点声明 `checkpoint: true` | `TEMPLATE` | 模板 | 无 | 该节点启动之前 |
+| 开放输入得到答复（含 `mas run` 的目标、Turn-chat 的每条消息） | `INPUT` | 都有；Turn-chat 只有这一种；Kernel 在开启这次输入时拍 | `HUMAN_ANSWERED` | 等这条输入的状态，用户可以重写它 |
+| 局部询问得到答复 | `HUMAN_ANSWER` | Mission | `HUMAN_ANSWERED` | 等这个答复的状态 |
+| 根任务调用 `run_subagents` | `ROOT_SPAWN` | Mission；嵌套层的派生不拍（D10） | 这次派生的调用（`triggerToolCallId`） | 这次派生之前：根任务重新决定要不要派生、怎样派生 |
+| 模板的一步开始 | `TEMPLATE` | 编译出多个步骤的模板 | 无 | 该节点启动之前 |
 
 **触发的后果在 checkpoint 之后才发生**：Workflow 收到触发事件（答复、派生）后先请求 checkpoint，
 等 `CHECKPOINT_TAKEN` 记下之后，才启动被唤醒的段、登记子任务、启动声明了 checkpoint 的节点。
@@ -678,12 +674,12 @@ checkpoint 策略写在模板里（`checkpoints`），Turn-chat 与其他编排�
 
 ### 7.3 屏障
 
-Workflow 决定拍 checkpoint 时追加 `CHECKPOINT_REQUESTED`，再向 Kernel 发 `requestCheckpoint`。Kernel：
+Workflow 决定拍 checkpoint 时追加 `CHECKPOINT_REQUESTED`，再向 Kernel 发 `takeCheckpoint`。Kernel：
 
 1. 进入屏障：**只扣住会改文件的 Unit**（D9）——新的 WRITE 与前台 EXEC 不派发，留在队列里；READ、网页、MODEL 照常；
 2. 等在途的 WRITE 与前台 EXEC 结束（后台命令不等）；
 3. 拍快照，写 checkpoint 索引；
-4. 发出 `CheckpointTaken { checkpointId, snapshot, heldUnits, runningJobs }`，解除屏障，被扣住的 Unit 依次派发。
+4. 发出 `CheckpointTaken { checkpointId, outcome: 'TAKEN', snapshot, heldUnits }`，解除屏障，被扣住的 Unit 依次派发。
 
 Workflow 收到后追加 `CHECKPOINT_TAKEN`，它的日志位置就是 `cutSeq`。
 
@@ -693,26 +689,13 @@ MODEL 与 READ 不改文件，它们的记录落在切面哪一边都与快照�
 唯一的例外是后台命令（D9）：它们在快照之后的写入不在快照里，checkpoint 记下它们，回溯时先停止再还原。
 
 屏障期间有授权询问挂起的 WRITE 或 EXEC 不算在途（与现在"等待授权不占并发"相同），不会让屏障等用户。
-屏障的等待上限是 `checkpointBarrierMs`（缺省 10000，即 10 秒；原为 600000，D63）；超过时放弃这次 checkpoint，记 `CHECKPOINT_SKIPPED`，运行照常，不报错。
+屏障的等待上限是 `checkpointBarrierMs`（缺省 10000，即 10 秒；原为 600000，D63）；超过时放弃这次 checkpoint（`CheckpointTaken { outcome: 'SKIPPED' }`），运行照常，不报错。
 
 ### 7.4 索引与 Session 级的列表
 
-Kernel 的 `snapshot-index.jsonl` 改为 `checkpoint-index.jsonl`（Session 级，跨 WorkflowRun）：
-
-```ts
-type CheckpointIndexLine =
-  | { kind: 'TAKEN'; checkpointId: string; seq: number; workflowRunId: string; ckpKind: Checkpoint['kind'];
-      snapshot?: string; at: string }
-  | { kind: 'SEALED'; checkpointId: string; sealSnapshot?: string;
-      changedFiles: { path: string; change: 'ADDED' | 'MODIFIED' | 'DELETED' }[]; at: string }
-  | { kind: 'EPOCH'; repositoryRoot: string; at: string }
-  | { kind: 'ROLLED_BACK'; toCheckpointId: string; revertedCheckpointIds: string[]; forced: boolean;
-      backupSnapshot?: string; at: string };
-```
-
-一个 checkpoint 在下一个 checkpoint 拍下、或运行静止（等开放输入、收敛）时被**封口**（`SEALED`）：
-记下封口时的快照与这段时间改动过的文件。这正是原来 `TURN_STARTED` 与 `TURN_ENDED` 的一对，只是不再叫 Turn。
-回溯的"外部修改检查"用封口快照比较（M2Design 第 4.6 节第 2 步）。
+Kernel 的 `snapshot-index.jsonl`（Session 级，跨 WorkflowRun）记下 checkpoint（`CHECKPOINT`）、运行静止时的结束快照（`SETTLED`）、换文件夹（`EPOCH`）与回退（`ROLLED_BACK_TO`），字段见 Interface/Persistence 第 4.4 节。
+一个 checkpoint 的区间到下一个 checkpoint，或到运行静止（等开放输入、收敛）时的结束快照为止；这正是原来 `TURN_STARTED` 与 `TURN_ENDED` 的一对，只是不再叫 Turn。
+回溯的"外部修改检查"用最近的快照比较（M2Design 第 4.6 节第 2 步）。
 
 ### 7.5 回溯
 
@@ -724,8 +707,8 @@ type CheckpointIndexLine =
 1. 结束所有活动的 AgentRun（`INTERRUPTED(ROLLED_BACK)`），停止切面之后启动的后台命令，以及 checkpoint 记录为运行中的后台命令；
 2. 确定范围：切面之后各区间改动过的文件的并集，加上被停止的后台命令写过的文件；
 3. 外部修改检查、询问"强制回退或取消"、兜底快照、写入前复查：完全照旧；
-4. Kernel 在索引中追加 `ROLLED_BACK`，发出 `RolledBack`；Workflow 追加 `ROLLED_BACK { toCheckpointId, revertedCheckpointIds, forced, externalFiles, backupSnapshot? }`；
-5. 投影：`cutSeq` 之后的记录与 `triggerSeq` 被一条说明取代（"已回到 checkpoint 3：派生 frontend、backend 之前"）。日志只追加；
+4. Kernel 在索引中追加 `ROLLED_BACK_TO`，发出 `CheckpointRolledBack`；Workflow 追加 `ROLLED_BACK { checkpointId, label, cutSeq, fromSeq, cancelledMissionIds, files, undo?, forced?, externalFiles? }`；
+5. 投影：从 `fromSeq`（触发它的调用，或 `/undo` 时打开它的输入）起的记录被一条说明取代（"已回到 checkpoint 3：派生 frontend、backend 之前"）。日志只追加；
 6. **图从切面恢复**：切面时正在运行的段记为 `YIELDED`（原因 `ROLLED_BACK`），各自立即追加接手的下一段（同一个任务，新的 AgentRun），
    从任务的投影接着做；那一段在切面时还没有结果的工具调用（`heldUnits`，以及结果落在切面之后的）不重新提交，
    而是作为"回溯前未执行"的说明交给新的一段，由它决定是否重做；切面时在休眠的任务仍在休眠，等的东西照旧；
@@ -741,7 +724,7 @@ type CheckpointIndexLine =
 |---|---|
 | `/checkpoints` | 列出本 Session 尚未被回退的 checkpoint：序号、种类、标签、改动的文件数 |
 | `/undo` | 回到最近一个 checkpoint 之前的那个状态，可以连续执行；Turn-chat 中等于现在的 `/undo` |
-| `/rewind <序号>` | 回到指定的 checkpoint |
+| `/rewind #<序号>` | 暂停时回到指定的 checkpoint |
 | `/diff [序号]` | 该 checkpoint 区间的改动（缺省最近一个） |
 
 不提供 redo；被覆盖的内容在兜底快照中（与现在相同）。
@@ -769,29 +752,15 @@ Kernel 仍然与业务无关、与拓扑无关（M2Design 第 7 节）：它看�
 
 ### 8.1 MissionScope
 
-每个任务一份，Kernel.Core 在内存中维护（不跨进程，续跑时重建）：
-
-```ts
-interface MissionScope {
-  missionId: string;
-  parentMissionId?: string;
-  depth: number;
-  capabilityCeiling: Capability[];   // 由 Agent 定义、父任务的上限、预设与深度计算；之后不变
-  writeRoots: string[];              // 写入占用；减去已委派给子任务的部分（第 8.2 节）
-  ledger: Ledger;                    // 第 8.3 节
-  jobs: string[];                    // 本任务的后台命令
-  wakeTimers: { timerId: string; at: string }[];
-  status: 'OPEN' | 'CLOSED';
-}
-```
+每个任务一份，Kernel.Core 在内存中维护（`session/run-work.ts`；不跨进程，续跑时重建）：任务的标识与父任务、深度、能力上限（由 Agent 定义、父任务的上限、预设与深度计算；之后不变）、写入占用（减去已委派给子任务的部分，第 8.2 节）、它当前的段、是否已关闭；它的账本在 Monitor（第 8.3 节），后台命令与定时归 Supervisor 与 Core 的计时。
 
 | 请求 | 说明 |
 |---|---|
-| 打开 | 任务的第一段登记时打开（`registerAgentRun` 带 `mission: { id, parentId? }`，没有这个 MissionScope 时就打开它）：根任务在运行开启后，子任务在它第一次就绪时。`reserveDelegation` 只为子任务划拨额度（带各任务的 `missionId`），不打开 MissionScope，所以彼此有依赖、写入范围重叠的兄弟任务不会因为同时"打开"而冲突 |
+| 打开 | 任务的第一段登记时打开（`registerAgentRun` 带 `mission: { missionId, parentMissionId? }`，没有这个 MissionScope 时就打开它）：根任务在运行开启后，子任务在它第一次就绪时。`reserveDelegation` 只为子任务划拨额度（带各任务的 `missionId`），不打开 MissionScope，所以彼此有依赖、写入范围重叠的兄弟任务不会因为同时"打开"而冲突 |
 | `registerAgentRun` 带 `mission` | MissionScope 不能是 CLOSED；该任务没有活动的 AgentRun（`MISSION_BUSY`）；父任务的 MissionScope 是 OPEN 的（父任务可以在休眠，不要求父 AgentRun 还在）。AgentRun 的能力上限 = MissionScope 上限与预设的交集，每段重新计算 |
-| `closeMissionScope` | 任务结束时：剩余额度返还父任务，释放写入占用，停止后台命令与定时 |
+| 关闭 | 任务的最后一段结束时（`endAgentRun` 不带 `missionContinues`），或休眠的任务不会再醒时（`closeMission`）：剩余额度返还父任务，释放写入占用；回溯后要重开的任务以 `restoreMission` 重新打开 |
 
-原来 AgentRun 上的 `parentAgentRunId`、`delegationId`、`taskName` 移到 MissionScope 上：父子关系属于任务，不属于某一段。
+任务的第一段登记时仍带 `parentAgentRunId`、`delegationId`、`taskName`，以领取委派里它的份额；父子关系属于任务，不属于某一段。
 
 ### 8.2 写入占用按任务
 
@@ -807,27 +776,24 @@ interface MissionScope {
 
 ```text
 WorkflowRun 账本（budget.runTokenLimit）
-  └─ 根任务的 MissionScope 账本 = 运行级账本
-       └─ 段：每个 AgentRun 登记时从它的 MissionScope 划出一份（segmentShare，缺省为 Agent 的份额），结束时剩余返还
-            └─ 子任务的 MissionScope 账本：由这一段的 run_subagents 委派划出
-                 └─ 子任务的段 …
+  └─ 输入的账本：每次输入（Mission 运行只有开头一次）从运行级账本划出 inputTokenLimit，结束时剩余返还；根任务的各段直接用它
+       └─ 子任务的账本：由 run_subagents 委派划出，以任务为键，任务的每一段都用它
+            └─ 孙任务的账本 …
 ```
 
-- 根任务每段的份额是 Agent 的缺省份额（`segmentShare`）；子任务每段的份额是它的 MissionScope 当前的全部余额：
-  子任务的总花费由委派时划给它的份额封顶，休眠不改变这个上限；
-- 根任务一段的份额就是原来"一个 Turn 的份额"的对应物：Turn-chat 中用户每条消息唤醒根任务的一段，这一段连同它委派出去的，
-  受这一份额约束，与原来按 Turn 划分额度的效果相同；
+- 子任务的总花费由它的上限封顶（规则 5：开账时只拿最小份额，按需从上面补，累计不超过上限），休眠不改变这个上限（`Kernel/Monitor` 第 3.2a 节）；
+- 模板的一步（Turn-chat 的 `mission`）接管调用方的这一轮，以调用方可委派的全部开账，没有上限（D115）；
 - 收尾保留、一次 final-call 仍按 AgentRun（M2Design 第 7.3 节）；
-- `BudgetView` 改为 `{ agentRun, mission, run }`。
+- `BudgetView` 为 `{ agentRun, input, run }`：`agentRun` 是这一段所在任务的账本。
 
 ### 8.4 静止、开放输入与计时
 
 - **静止**：没有活动的 AgentRun，并且没有在途的前台 Unit。后台命令与定时不影响静止（第 6.3 节）。
 - **开放输入**（`requestHuman(prompt)`）仍要求静止；受理时运行进入 AWAITING_INPUT，并封口当前 checkpoint（第 7.4 节）。
-  原来"受理时结束当前 Turn"的动作删除，`TurnClosed` 事件删除。
-- **活动时限**（取代 Turn 超时）：一个活动期从运行离开 AWAITING_INPUT 起（开放输入得到答复、运行开启、
+  这次输入的工作随之结束，Kernel 发出 `InputSettled`（取代 `TurnClosed`）。
+- **输入的时限**（取代 Turn 超时）：从运行离开 AWAITING_INPUT 起（开放输入得到答复、运行开启、
   等输入的根任务被后台命令唤醒），到下一次请求开放输入或运行收敛为止，不计暂停与"全部工作都在等人类"的时间，
-  上限 `activityTimeoutSeconds`（Turn-chat 1800；其他编排 14400，因为它们是长任务）。到点按中止处理，与原来的 Turn 超时相同。
+  上限 `inputTimeoutSeconds`（Turn-chat，缺省 1800）或 `orchestrationTimeoutSeconds`（Mission，缺省 14400，因为它是长任务）。到点按中止处理（`INPUT_TIMEOUT`）。
 - **暂停**：原来的不变量"PAUSED 时在途尝试数为 0"改为"PAUSED 时在途的前台尝试数为 0"，后台命令不受暂停影响（第 6.3 节）。
 - **AgentRun 的墙钟**照旧；休眠的任务没有 AgentRun，不计墙钟。
 
@@ -835,16 +801,16 @@ WorkflowRun 账本（budget.runTokenLimit）
 
 | 请求或事件 | 说明 |
 |---|---|
-| `scheduleWake({ missionId, timerId, seconds })`、`cancelWake` | Kernel 计时（时间归 Kernel），到点发出 `WakeDue { missionId, timerId }`；只在本运行内有效 |
-| `requestCheckpoint({ kind, label, triggerSeq? })` | 第 7.3 节；屏障期间再来的请求合并为同一个 checkpoint |
-| `CheckpointTaken`、`CheckpointSkipped`、`RolledBack` | 第 7.3、7.5 节 |
-| `UnitStarted { requestId, missionId, jobId }` | 只用于后台命令与前台转后台 |
-| `withdrawHuman({ humanRequestId })` | Workflow 请求收回待答复的开放输入（第 4.4 节）；Kernel 让运行离开 AWAITING_INPUT 并通知界面；已被答复时以 `HUMAN_ALREADY_ANSWERED` 拒绝 |
+| `scheduleWake({ missionId, timerId, seconds })` | Kernel 计时（时间归 Kernel），到点发出 `WakeDue { missionId, timerId }`；只在本运行内有效；任务醒来或结束后，过时的到点由 Workflow 忽略 |
+| `takeCheckpoint({ checkpointId, kind, label })` | 第 7.3 节；屏障期间再来的请求合并为同一个 checkpoint |
+| `CheckpointTaken { outcome: TAKEN \| SKIPPED }`、`CheckpointRolledBack` | 第 7.3、7.5 节 |
+| `JobEnded { jobKey, exit, … }`、`controlJob({ jobKey, action })` | 后台命令的结束与读取、停止（第 6 节）；它属于哪个任务由 Workflow 记着（`JOB_STARTED`） |
+| `withdrawOpenInput({ humanRequestId, checkpointId })` | Workflow 请求收回待答复的开放输入（第 4.4 节）；Kernel 让运行离开 AWAITING_INPUT 并通知界面；已被答复时以 `HUMAN_REQUEST_NOT_PENDING` 拒绝 |
 
 ### 8.6 删除的东西
 
-`TurnRecord`、Turn 账本、`TurnClosed`、`HumanAnswered.turnId`、`registerAgentRun` 的 `NO_OPEN_TURN`、
-`AGENT_RUN_ACTIVE`（开放输入的拒绝改为 `NOT_QUIESCENT`）、`snapshot-index.jsonl` 的 `TURN_*` 行。
+`TurnRecord`、Turn 账本、`TurnClosed`（改为 `InputSettled`）、`HumanAnswered.turnId`（改为 `checkpointId`）、`registerAgentRun` 的 `NO_OPEN_TURN`（改为 `NO_OPEN_INPUT`）、
+`snapshot-index.jsonl` 的 `TURN_*` 行（旧日志仍能读）。开放输入在不静止时仍以 `AGENT_RUN_ACTIVE` 拒绝。
 
 ## 9. Workflow 的变化
 
@@ -852,19 +818,22 @@ WorkflowRun 账本（budget.runTokenLimit）
 
 | 记录 | 变化 |
 |---|---|
-| `GRAPH_EXTENDED` | `source` 增加 `WAKE`；AGENT 节点带 `mission`；边增加 `CONTINUES`，删除 `RESUME` |
-| `NODE_ENDED` | `status` 增加 `YIELDED` |
+| `GRAPH_EXTENDED` | `source` 增加 `STEER`、`ASK`、`WAKE`；AGENT 节点带 `mission`；边增加 `CONTINUES`；`RESUME` 只在 `ask_user` 与接管调用方这一轮的任务（D115）上 |
+| `NODE_ENDED` | `status` 增加 `YIELDED`；另带 `result?`（子任务这一段的结果） |
+| `NODE_RESUMED` | 保留：有 `RESUME` 边的调用回来了（其余派生立即返回，D14，结果随 `MISSION_ENDED` 出现在调用方的下一次组装） |
 | `MISSION_ENDED` | 新增：`missionId`、`status` |
-| `NODE_RESUMED` | 删除（等待改为休眠） |
-| `SEGMENT_YIELDED` | 新增：`nodeId`、`until: WakeCondition[]`、`timeoutSeconds`、`noteRef?` |
-| `MISSION_WOKEN` | 新增：`missionId`、`causes`（事件的日志位置与种类） |
-| `MISSION_MESSAGE` | 新增：第 5 节 |
-| `JOB_STARTED`、`JOB_ENDED` | 新增：`jobId`、`missionId`、`requestId`、退出状态；`JOB_OUTPUT_READ` 记录读取位置 |
-| `CHECKPOINT_REQUESTED`、`CHECKPOINT_TAKEN`、`CHECKPOINT_SKIPPED`、`ROLLED_BACK` | 新增：第 7 节 |
-| `TURN_STARTED`、`TURN_ENDED`、`WORKSPACE_REVERTED` | 删除；后者由 `ROLLED_BACK` 取代 |
+| `SEGMENT_YIELDED` | 新增：`nodeId`、`missionId`、`agentRunId`、`until: WakeCondition[]`、`timeoutSeconds`、`source?` |
+| `MISSION_WOKEN` | 新增：`missionId`、`causes`（事件的日志位置与种类）、`checkpointId?` |
+| `MISSION_TIMER_DUE` | 新增：`missionId`、`timerId` |
+| `MISSION_MESSAGE` | 新增：第 5 节（`from`、`to`、`kind`、`interrupt?`、`replyTo?` 等）；`MESSAGE_UNANSWERED`：任务结束时没回答的请求 |
+| `PLAN_REGISTERED` | 新增：根任务写下的计划（D24） |
+| `JOB_STARTED`、`JOB_READ`、`JOB_ENDED` | 新增：`missionId`、`jobId`、`jobKey`、`requestId`、命令摘要、读取位置、退出状态 |
+| `CHECKPOINT_REQUESTED`、`CHECKPOINT_TAKEN`、`ROLLED_BACK` | 新增：第 7 节；放弃的 checkpoint 是 `CHECKPOINT_TAKEN(outcome: SKIPPED)` |
+| `INPUT_SETTLED` | 新增：取代 `TURN_ENDED` |
+| `TURN_STARTED`、`TURN_ENDED`、`WORKSPACE_REVERTED` | 不再写，旧日志仍能读；后者由 `ROLLED_BACK` 取代 |
 | `AGENT_RUN_REGISTERED` | 带 `missionId` |
-| `REFERENCES_REGISTERED.to`、`CONTEXT_COMPACTED.target` | 改为 `{ missionId }` |
-| `CONTEXT_COMPACTION_REVOKED.reason` | `TURN_REVERTED` 改为 `ROLLED_BACK` |
+| `REFERENCES_REGISTERED.to` | 增加 `{ kind: 'MISSION', missionId }`（交给一个任务，它的哪一段都能读） |
+| `CONTEXT_COMPACTION_REVOKED.reason` | 增加 `ROLLED_BACK`（旧日志为 `TURN_REVERTED`） |
 
 ### 9.2 推进规则
 
@@ -888,8 +857,7 @@ M2Design 第 3.3 节的处理顺序保留，第 6 步"唤醒"改为：
   `complete_step`、`finish_subagent`、`reply` 之前必须等它派生的子任务全部结束：仍有未结束的子任务时以 FEEDBACK 退回，
   提示先 `sleep({ until: [{ kind: 'children', mode: 'all' }] })`。这保证"子任务交回结果，父任务才算结束"（D4）。
   这条规则只针对它用 `run_subagents` 派生的子任务；模板编译出的子任务由图的依赖约束，不受它影响；
-- 能派生的任务：能力上限含 `agent.spawn`，即 `depth < maxMissionDepth`（第 3.6 节）；派生次数与任务数的上限从"每个 Turn"改为"每个任务"
-  （`maxSpawnCallsPerMission` 缺省 4，`maxChildrenPerMission` 缺省 12），另设运行级的 `maxMissionsPerRun`（缺省 60）；
+- 能派生的任务：能力上限含 `agent.spawn`，即 `depth < maxMissionDepth`（第 3.6 节）；一次调用至多 `maxSubagentsPerCall`（8）个任务，整次运行的子任务数由 Kernel 按 `kernel.tasks.perRun`（缺省 60）计数，到上限先问用户（D62）；
 - 任务名在同一个父任务的全部子任务中唯一（原来是一次调用内唯一），因为消息按名字寻址。
 
 ### 9.4 内置 Agent
@@ -914,14 +882,14 @@ M2Design 第 3.3 节的处理顺序保留，第 6 步"唤醒"改为：
 
 | 原来 | 现在 |
 |---|---|
-| Turn 的开启与结束 | 不再是实体；开放输入的答复是 `HUMAN_PROMPT` checkpoint，静止时封口 |
-| Turn 账本 | 根任务每段的份额（第 8.3 节） |
-| Turn 超时 | 活动时限（第 8.4 节） |
-| 开始、结束快照与快照索引 | checkpoint 的快照与封口快照（第 7.4 节） |
+| Turn 的开启与结束 | 不再是实体；开放输入的答复是一个 `INPUT` checkpoint，这次输入的工作在静止时结束（`InputSettled`） |
+| Turn 账本 | 输入的账本（第 8.3 节） |
+| Turn 超时 | 输入的时限（第 8.4 节） |
+| 开始、结束快照与快照索引 | checkpoint 的快照与静止时的结束快照（第 7.4 节） |
 | `/undo`、`/diff` 按 Turn | 按 checkpoint（第 7.5 节） |
 | 派生上限按 Turn | 按任务（第 9.3 节） |
 | `registerAgentRun` 需要开启中的 Turn | 需要 OPEN 的 MissionScope、运行在 RUNNING |
-| Session 列表的 `turnCount` | `promptCount`（`HUMAN_PROMPT` checkpoint 的数量），界面仍叫"轮" |
+| Session 列表的 `turnCount` | `inputCount`（用户输入的条数），界面仍叫"轮" |
 | `read_output` 不读被回退 Turn 中的调用 | 不读被回溯取代的记录中的调用 |
 
 ## 10. 例子：设计一个分布式系统
@@ -948,8 +916,8 @@ backend·3   被 raft、storage 结束与 job_1 结束唤醒：看到汇合结�
 main·3      被 children all 唤醒：汇合结果（backend、frontend 按书写顺序）→ reply
 ```
 
-用户觉得前端方向不对时，`/undo` 回到这条消息之前重写需求；如果这是一个声明了 `onRootSpawn` 的模板，
-还可以 `/rewind` 到"派生 backend、frontend 之前"那个 checkpoint，附一句说明后让 main 重新分工。
+用户觉得前端方向不对时，`/undo` 回到这条消息之前重写需求；如果这是 Mission 运行（`mas run`），
+还可以暂停后 `/rewind` 到"派生 backend、frontend 之前"那个 checkpoint，附一句说明后让 main 重新分工。
 
 ### 10.1 任务导向的长任务：内置模板 `mission`
 
@@ -960,9 +928,8 @@ main·3      被 children all 唤醒：汇合结果（backend、frontend 按书�
 
 ```yaml
 id: mission
-version: v1.0.0
+version: v0.1.0
 owner: { agent: main }
-checkpoints: { onHuman: true, onRootSpawn: true }
 nodes:
   - { name: deliver, kind: AGENT, role: owner, output: true, goal: "完成用户给出的目标并交付" }
 ```
@@ -1053,7 +1020,7 @@ M2Decisions 中需要改写的决定：第 1 节"结束方式由定义声明的�
 | 1 | `job_output` 的增量读取位置跨段是否保留（上一段读到哪里，下一段接着读） | 保留：位置属于任务，记在日志里 |
 | 2 | 模板子任务（非派生）能否再派生 | 能，按同样的深度规则；模板中的 `lead` 节点就是这种用法 |
 | 3 | 等局部询问的任务被消息积累的通知，在答复唤醒时是否一起给出 | 一起给出，按日志顺序排在答复之后 |
-| 4 | `maxConsecutiveWakes`、`maxMessagesPerSegment`、`maxBackgroundJobs` 的缺省值 | 用本文的值（`workflow` 配置可改） |
+| 4 | 连续唤醒、每段消息数、后台命令数的上限 | 用本文的值（代码中的常量 `MAX_CONSECUTIVE_WAKES`、`MAX_MESSAGES_PER_SEGMENT`、`MAX_BACKGROUND_JOBS`，不可配置） |
 | 5 | 父任务在子任务运行时能否写入自己范围内、子任务范围之外的文件 | 现在不能（第 8.2 节）；按评测看是否值得放宽 |
 | 7 | 停止与中断是否要立即取消在途的工作（D20 写的是按暂停的规则停下） | 现在在这一轮结束时生效，安全、不需要改 Kernel；代价是最多等一次模型调用或一条命令。要立即生效，需要 Kernel 增加"只中断一个 AgentRun"（按 AgentRun 取消队列与在途执行） |
 | 7a | **（已解决，见第 15 节）评测证据（2026-11-12）**：`subagents.stop` 的第 3 次运行中，被停止的 worker 正以 `timeoutMs: 600000` 在前台运行一个 5 分钟的脚本；main 第 9 秒就拿到答案并停止它，却因"子任务没结束不能交付"等了 5 分钟以上（步骤超时）。停止必须能取消在途的命令与模型调用 | 实现 Kernel 单独中断一个 AgentRun（按 AgentRun 取消队列与在途执行），优先级提前 |
@@ -1084,7 +1051,7 @@ M2Decisions 中需要改写的决定：第 1 节"结束方式由定义声明的�
 | 后台命令（第 6 节） | 已实现 | `run_command` 的 `runInBackground`；前台超时转后台（`promoteOnTimeout` 缺省开）；`job_output`、`job_list`、`job_kill`；结束通知按下一次组装送达；`sleep` 的 `jobs` 条件唤醒，受连续唤醒上限约束；任务结束、运行收敛时停止；每个运行至多 4 个；最长 1 小时。实现方式与差别见第 6.5 节 |
 | 模型可见的任务工具 | 已修正 | 之前 `sleep`、`send_message`、`view_tasks`、`stop_subagents` 没有进入给模型的工具列表（脚本化测试不看工具列表，没有暴露）；现在与作业工具一起列出，并有用例断言 |
 | checkpoint：运行中途的切面（第 7.1–7.3 节，C1） | 已实现（2026-11-13） | 编排模式下根任务派生、用户答复 `ask_user` 时，Workflow 记 `CHECKPOINT_REQUESTED`（切面），系统调用 `takeCheckpoint`；Kernel 只扣住写入与前台命令（读、网页、模型调用照常，后台命令不等），在途的都结束后拍快照、写索引行 `CHECKPOINT`，放行，回报 `CheckpointTaken`（含被扣住未执行的单元）；等待超过 `checkpointBarrierMs`（缺省 600 秒）放弃（`SKIPPED`）。**与 D8 的差别**：Turn 没有被整个去掉，保留为"两次用户输入之间"的区间，checkpoint 是它之下更细的切面；Turn-chat 的 checkpoint 就是 Turn 的开始，`/undo` 不变。整体去掉 Turn 涉及日志、投影、回退、计时几十处，风险大于收益，待评审确认 |
-| checkpoint：列表与差异（C2） | 已实现（2026-11-13） | `/checkpoints` 列出本对话未被回退的 checkpoint（每轮的开始与运行中途的切面），各带之后改动的文件数；`/diff #N` 显示第 N 个 checkpoint 的区间（到下一个 checkpoint 或这一轮结束）的改动；`/diff [N]` 按轮的用法不变。系统调用 `listCheckpoints`，`diffTurns` 增加 `checkpoint` |
+| checkpoint：列表与差异（C2） | 已实现（2026-11-13） | `/checkpoints` 列出本对话未被回退的 checkpoint（每轮的开始与运行中途的切面），各带之后改动的文件数；`/diff #N` 显示第 N 个 checkpoint 的区间（到下一个 checkpoint 或这一轮结束）的改动；`/diff [N]` 按轮的用法不变。系统调用 `listCheckpoints`，`diff` 带 `checkpoint` |
 | checkpoint：运行中途回溯（C3） | 已实现（2026-11-13） | 运行暂停时 `/rewind #N`：文件还原到该 checkpoint 的快照（兜底快照保存被覆盖的内容）；**工作也回到切面**：图与任务按切面时的状态读取（回溯取回的日志区间不算，撤销 `/undo` 除外）。切面之后开始的任务撤回：段结束，休眠的在 Kernel 关闭（新的 `closeMission`，停止休眠任务时也用），派生它们的份额退回，后台命令停止。切面时已有的子任务一律**暂停在当时的状态**：在跑的段以休眠结束，当时没拿到结果的调用作为"回溯前未完成"答复，任务以 `until: parent` 休眠，只有父任务的消息（或中断）唤醒它，父任务也可以停止它；在切面之后结束的任务由 Kernel 重新打开（新的 `restoreMission`：份额从父任务重新划拨、写入范围重新占用）。切面时尚未答复的问题重新发给用户（`askedAgain`，Kernel 允许休眠中的任务挂着问题），提问的任务等新的答复，答复按第一次处理。根任务接上新的一段，读到回到了哪里、哪些子任务在等它放行或停止；它自己的问题被重问时则继续等答复。回到"用户输入"的 checkpoint 时保留这次输入、撤回其后的工作。运行保持暂停，`/continue` 继续。**与第 7.5 节的差别**：回溯不做外部修改检查（以兜底快照代替，按 Cary 2026-11-13 的决定）；重新打开的任务按原份额划拨，父任务余额不够时按余额 |
 | 仓库模板（预编排模式的用户直接调用，D29） | **已删除**（2026-11-14，D46） | `mas run` 只收目标，`.multiagentos/workflows/` 不再读取；检查器 `readRepositoryTemplate` 与它的测试一并删除 |
 | Turn 与 checkpoint 统一（D8），第一步：快照与回退 | 已实现（2026-11-13） | 快照索引只有 checkpoint：Turn-chat 每次用户输入时拍 `INPUT` checkpoint（位置与原来每轮开始相同），运行静止时记 `SETTLED`；`/undo` 等于回到最近的 checkpoint 并把它一起撤回（`ROLLED_BACK_TO { inclusive }`），`/rewind #N` 回到第 N 个 checkpoint 并保留它，两者走同一个计划与执行（`planUndo`/`planRewind` + `applyRollBack`），事件都是 `CheckpointRolledBack`（撤销带 `undo`）；外部修改检查与"强制或取消"保留在撤销里。Workflow 一律记 `ROLLED_BACK`，投影、压缩撤销、嵌套指令、工具输入的新鲜度、交接都按"被撤回的日志区间"处理（回溯以前漏掉的这几处也一并补上）。旧的索引行（`TURN_*`、`REVERTED`）与旧日志（`WORKSPACE_REVERTED`）照常读取与撤销。界面：`/checkpoints` 显示"第 n 次输入"，撤销提示改为"已撤销上一次输入以来的工作"。第二步见下一行 |

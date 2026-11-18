@@ -1,6 +1,6 @@
 # UserInteraction 与 Kernel 的接口
 
-> 状态：已实现；发布前再与代码核对一次。约定见 [Interface](README.md)。
+> 状态：已实现，与 `packages/libraries/contracts`（`ports.ts` 的 `InteractionGatewayPort`、`kernel-control`、`kernel-session`）一致。约定见 [Interface](README.md)。
 
 ## 1. 范围
 
@@ -13,7 +13,7 @@ UserInteraction 的请求不携带仓库路径。
 | 方向 | 内容 |
 |---|---|
 | UserInteraction → Kernel | 新建、Fork、打开、列出、删除 Session；以模板开启运行；回答授权与人类请求；读取产物；关闭 |
-| UserInteraction → Kernel | 回退与差异 |
+| UserInteraction → Kernel | 回退、回到 checkpoint、继续上次进程留下的长任务、差异与 checkpoint 列表 |
 | UserInteraction → Kernel | 暂停、继续、中止、运行中插话 |
 | UserInteraction → Kernel | `/compact` |
 | Kernel → UserInteraction | 压缩完成的通知 |
@@ -33,15 +33,18 @@ interface InteractionGatewayPort {
   answerAuthorization(request: AnswerAuthorizationRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   answerHuman(request: AnswerHumanRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   readArtifact(request: ReadArtifactRequest, context: BoundaryContext): Promise<ArtifactContent | SyscallRejected>;
-  shutdown(request: ShutdownRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
-  undoTurns(request: UndoTurnsRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
-  confirmUndo(request: ConfirmUndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
-  diffTurns(request: DiffTurnsRequest, context: BoundaryContext): Promise<TurnDiff | SyscallRejected>;
   pauseRun(request: PauseRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   resumeRun(request: ResumeRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   interruptRun(request: InterruptRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   steerRun(request: SteerRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;          // 运行中插话，只在 RUNNING 时受理（M2Design 第 4.5 节）
-  // compactContext（第 2.4 节）
+  compactContext(request: CompactContextRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 第 2.4 节
+  undo(request: UndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  recoverRun(request: RecoverRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;      // /recover（Orchestration 第 7.6 节）
+  confirmUndo(request: ConfirmUndoRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  diff(request: DiffRequest, context: BoundaryContext): Promise<CheckpointDiff | SyscallRejected>;
+  rewindCheckpoint(request: RewindCheckpointRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 暂停时回到第 N 个 checkpoint（Orchestration 第 7.5 节）
+  listCheckpoints(request: ListCheckpointsRequest, context: BoundaryContext): Promise<CheckpointList | SyscallRejected>;
+  shutdown(request: ShutdownRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
 }
 ```
 
@@ -72,6 +75,7 @@ interface StartRunRequest {          // mas run <模板> "<目标>"，总是新�
 interface UserInput {
   inputId: string;                   // 前缀 inp，UserInteraction 分配；重复提交按它去重
   text: string;                      // 1..100000 个字符；Kernel 交给 Execution 存为产物，不进入日志正文
+  delegateTo?: string;               // /mission：这次输入要交给哪个派生工具（Orchestration D114）；Kernel 只转交
 }
 
 interface SessionAccepted {
@@ -112,14 +116,26 @@ interface AnswerAuthorizationRequest {
 type AuthorizationAnswer =
   | { scope: 'ALLOW' }               // 不确定级与安全级：本运行内对这个资源键有效；project.instructions：信任这份内容
   | { scope: 'ONCE' }                // 极危险级只有它与 DENY；这个 UnitAttempt 结束时作废
+  | { scope: 'COMMAND' }             // 命令：本运行内这条命令
+  | { scope: 'PREFIX' }              // 命令：本运行内这个前缀
+  | { scope: 'ANY_HOST' }            // web.fetch：本运行内任何公开网站
+  | { scope: 'FOLDER' }              // web.search：这个文件夹以后都允许
   | { scope: 'DENY' };
-  // 本运行内这条命令、本运行内这个前缀
 
-interface UndoTurnsRequest {         // 只在 AWAITING_INPUT，否则 UNDO_NOT_AVAILABLE
+interface UndoRequest {              // /undo：回到最近一个 checkpoint 之前（ALL：第一个之前）；只在 AWAITING_INPUT，否则 UNDO_NOT_AVAILABLE
   requestId: string;
   sessionId: string;
   workflowRunId: string;
   scope: 'LAST' | 'ALL';
+}
+
+interface RewindCheckpointRequest {  // 只在暂停时：文件回到这个 checkpoint 的快照，切面之后的工作被取代
+  requestId: string; sessionId: string; workflowRunId: string;
+  checkpoint: number;                // listCheckpoints 中的序号
+}
+
+interface RecoverRunRequest {        // 只在新对话等第一条输入时：上次进程留下的长任务从最近的 checkpoint 继续
+  requestId: string; sessionId: string; workflowRunId: string;
 }
 
 interface ConfirmUndoRequest {       // 回答 UndoConfirmationRequested
@@ -130,18 +146,32 @@ interface ConfirmUndoRequest {       // 回答 UndoConfirmationRequested
   decision: 'FORCE' | 'CANCEL';
 }
 
-interface DiffTurnsRequest {         // 倒数第 n 个尚未被回退的 Turn，缺省 1
+interface DiffRequest {              // listCheckpoints 中第 checkpoint 个，或倒数第 n 个（都没有时为 1）的区间改了什么
   requestId: string;
   sessionId: string;
   n?: number;
+  checkpoint?: number;
 }
 
-interface TurnDiff {
+interface CheckpointDiff {
   requestId: string;
   outcome: 'ACCEPTED';
-  turnId: string;
   files: { path: string; change: 'ADDED' | 'MODIFIED' | 'DELETED' }[];
   diffRef: ArtifactRef;              // 统一 diff 文本；被排除的文件不在其中
+}
+
+interface ListCheckpointsRequest { requestId: string; sessionId: string }
+
+interface CheckpointList {           // 没有被回退的 checkpoint，从早到晚（Orchestration 第 7.4 节）
+  requestId: string;
+  outcome: 'ACCEPTED';
+  items: {
+    seq: number;
+    kind: 'INPUT' | 'ROOT_SPAWN' | 'HUMAN_ANSWER' | 'TEMPLATE';   // INPUT 是用户的一条输入
+    label: string;
+    at: string;
+    changedFiles?: number;           // 这一段改了几个文件（已知时）
+  }[];
 }
 
 // 运行控制。四个请求都只带运行的标识；Kernel 不解释说明的内容，只存正文并转交 Workflow
@@ -149,20 +179,19 @@ interface PauseRunRequest { requestId: string; sessionId: string; workflowRunId:
 interface InterruptRunRequest { requestId: string; sessionId: string; workflowRunId: string }
 interface ResumeRunRequest {
   requestId: string; sessionId: string; workflowRunId: string;
-  steer?: { input: UserInput; targetAgentRunId?: string };   // 继续并附加说明；缺省目标为本 Turn 的 main
+  steer?: { input: UserInput; targetAgentRunId?: string };   // 继续并附加说明；缺省目标为 main（代替 chat 工作的 Mission 在时为它，D115）
 }
 interface SteerRunRequest {
   requestId: string; sessionId: string; workflowRunId: string;
   input: UserInput;                  // kind = 'steer'
-  targetAgentRunId?: string;         // 缺省为本 Turn 的 main；给出时必须是本运行的 AgentRun（否则 INVALID_INPUT）
+  targetAgentRunId?: string;         // 缺省同上；给出时必须是本运行的 AgentRun（否则 INVALID_INPUT）
 }
 
   requestId: string;
   sessionId: string;
   workflowRunId: string;
   humanRequestId: string;
-  input: UserInput;                  // kind = 'prompt'（开放输入）；局部询问的答复，kind 为 'ask' | 'confirm' | 'review'，正文是答复文本，结构化字段按 UserInput 的 `fields` 给出
-  template?: DefinitionRef;          // 以 /run 发起本 Turn 时给出
+  input: UserInput;                  // 开放输入的答复，或局部询问（ask、confirm、review）的答复文本
 }
 
 interface ReadArtifactRequest {
@@ -198,8 +227,10 @@ interface CompactContextRequest {
 type KernelToInteractionEvent =
   | AuthorizationRequest | AuthorizationResolved
   | HumanRequest | HumanResolved
-  | MessagePublished | RunStateChanged | ActivityEvent | RunFinished;
-  // ContextCompacted、CompactionFailed（第 3.4 节）、ExternalReadPaused（Kernel/Core 5h）、BackgroundJobs
+  | MessagePublished | RunStateChanged | ActivityEvent | BackgroundJobs | RunFinished
+  | UndoConfirmationRequested | UndoCancelled | CheckpointRolledBack
+  | ContextCompacted | CompactionFailed        // 第 3.4 节
+  | ExternalReadPaused;                         // Kernel/Core 第 5h 节
 
 type AuthorizationRequest =
   | {
@@ -217,12 +248,27 @@ type AuthorizationRequest =
   | {  // 写 AGENTS.md，极危险级，回答 ONCE 或 DENY；展示确切内容
       type: 'AuthorizationRequest'; questionId: string; capability: 'workspace.write';
       path: string; contentRef: ArtifactRef; critical: true;
-    };
+    }
   | {  // 读工作区之外的目录，危险级，回答 ALLOW 或 DENY；root 是回答所授权的目录，path 是被请求的路径
       type: 'AuthorizationRequest'; questionId: string; capability: 'external.read';
       root: string; path: string; provider: string;
+    }
+  | {  // 一条命令（Kernel/Core 第 5b 节）：确切地显示要运行什么、在哪里、可以写哪里、是否联网、是否未隔离；options 是可以回答的范围
+      type: 'AuthorizationRequest'; questionId: string; capability: 'command.exec';
+      command: string; workdir: string; writableRoots: string[]; network: boolean; unisolated: boolean; critical: boolean;
+      prefixes: string[]; unreusable: UnreusableReason[]; matched?: string; approvalDigest: string;
+      options: ('ONCE' | 'COMMAND' | 'PREFIX' | 'DENY')[];   // 极危险或不能复用的命令只有 ONCE 与 DENY
+    }
+  | { type: 'AuthorizationRequest'; questionId: string; capability: 'web.search'; queries: string[]; provider: string }
+  | { type: 'AuthorizationRequest'; questionId: string; capability: 'web.fetch'; url: string; host: string }
+  | {  // 这次输入的额度快用完了（M2Design 第 7.3 节规则 6；派生时借不出也问，Orchestration D115）：ALLOW 加 add，DENY 收尾
+      type: 'AuthorizationRequest'; questionId: string; capability: 'budget.extend';
+      used: number; limit: number; add: number; tasks: number;
+    }
+  | {  // 这次运行启动的子任务到了上限（Orchestration D62）：ALLOW 再允许 add 个，DENY 拒绝这次与以后的调用
+      type: 'AuthorizationRequest'; questionId: string; capability: 'tasks.extend';
+      started: number; limit: number; add: number;
     };
-  // command.exec、command.network、web.search、web.fetch
 
 interface ExternalReadPaused {       // 连续两次读取外部文件失败，运行已暂停（Kernel/Core 5h）；控制台用红字显示
   type: 'ExternalReadPaused';
@@ -241,12 +287,15 @@ interface UndoCancelled {
   reason: 'USER_CANCELLED' | 'NEW_INPUT' | 'SESSION_CLOSED' | 'FILE_CHANGED';
 }
 
-interface WorkspaceReverted {        // 发给 UserInteraction 与 Workflow
-  type: 'WorkspaceReverted';
-  revertedTurnIds: string[];
-  forced: boolean;
-  externalFiles: string[];           // 被覆盖的外部修改
-  backupSnapshot?: string;           // 强制时的兜底快照
+interface CheckpointRolledBack {     // 工作区回到了一个 checkpoint（Orchestration 第 7.5 节）；发给 UserInteraction 与 Workflow
+  type: 'CheckpointRolledBack';
+  checkpointId: string;
+  label: string;
+  files: string[];                   // 放回的文件
+  backupSnapshot?: string;           // 放回之前它们的内容
+  undo?: boolean;                    // /undo：这个 checkpoint 本身也被取回（打开它的那条输入一起撤销）；没有时是回到 checkpoint，工作从那里继续
+  forced?: boolean;                  // 用户选择覆盖系统之外的修改
+  externalFiles?: string[];          // 被覆盖的外部修改
 }
 
 interface AuthorizationResolved {
@@ -258,18 +307,17 @@ interface AuthorizationResolved {
 interface HumanRequest {
   type: 'HumanRequest';
   humanRequestId: string;
-  kind: 'prompt' | 'ask' | 'confirm' | 'review';   // 后三种是局部询问，不要求静止，不结束 Turn
+  kind: 'prompt' | 'ask' | 'confirm' | 'review';   // 后三种是局部询问，不要求静止，不结束这次输入的工作
   attachedAgentRunId?: string;       // 局部询问：发起 ask_user 的 AgentRun；界面据此标明来自哪个 Agent 与任务名
   question?: string;                 // 局部询问：问题文本（≤1000）
   fields?: HumanField[];             // 局部询问：至多 8 个，type 为 'text' | 'textarea' | 'select' | 'multiselect' | 'confirm'
   reviewRef?: ArtifactRef;           // kind = review：要审阅的产物，界面经 readArtifact 展示
-
 }
 
 interface HumanResolved {
   type: 'HumanResolved';
   humanRequestId: string;
-  resolution: 'ANSWERED' | 'CANCELLED';
+  resolution: 'ANSWERED' | 'CANCELLED' | 'WITHDRAWN';   // WITHDRAWN：工作不等用户继续了，开放输入被收回（Orchestration 第 4.4 节）
 }
 
 interface MessagePublished {         // message-publish 完成时发出
@@ -283,7 +331,7 @@ interface MessagePublished {         // message-publish 完成时发出
 interface RunStateChanged {
   type: 'RunStateChanged';
   state: 'RUNNING' | 'AWAITING_INPUT' | 'CONVERGING' | 'PAUSING' | 'PAUSED' | 'INTERRUPTING';
-  turnId?: string;                   // 有开启中的 Turn 时给出
+  checkpointId?: string;             // 这份工作所属输入的 checkpoint；AWAITING_INPUT 时没有
 }
 
 interface ActivityEvent {            // 只用于界面，由 Kernel 依据登记与尝试状态生成
@@ -291,10 +339,13 @@ interface ActivityEvent {            // 只用于界面，由 Kernel 依据登�
   agentRunId: string;
   label: string;                     // 登记时的 display.label
   parentAgentRunId?: string;
+  missionId?: string;                // 它所属的任务与上级任务：活动区按任务画树，任务在两段之间休眠时树不变
+  parentMissionId?: string;
+  standsIn?: true;                   // 代替调用方工作的 Mission（Orchestration D115）：活动区把它画在调用方的位置，用户的话交给它
   phase: ActivityPhase;
   unit?: { unitAttemptId: string; toolName: string; argsSummary: string; state: 'QUEUED' | 'RUNNING' | 'DONE'; fullRef?: ArtifactRef };   // toolName 与 argsSummary 取自 submitUnit 的 display；fullRef 只在 DONE 且预览截断时给出
   retry?: { attempt: number; retryAt: string };   // phase = 'RETRYING' 时必填：第几次技术重试、何时重试（M2Design 第 7.4 节）
-  todos?: { total: number; done: number; current?: string };   // Workflow 经 updateActivity 交来的待办进度，原样转发
+  todos?: { total: number; completed: number; current?: string };   // Workflow 经 updateActivity 交来的待办进度，原样转发
   at: string;
 }
 
@@ -306,9 +357,13 @@ interface BackgroundJobs {           // 只用于界面：一个任务正在运�
 }
 
 type ActivityPhase =
-  | 'ASSEMBLING' | 'THINKING' | 'RETRYING' | 'CALLING_TOOL' | 'AWAITING_AUTHORIZATION'
-  | 'QUEUED' | 'WRAPPING_UP' | 'ENDED';
-  // WAITING_SUBTASKS、AWAITING_ANSWER（等待 ask_user 的答复）、PAUSED、COMPACTING
+  | 'ASSEMBLING' | 'THINKING' | 'RETRYING' | 'CALLING_TOOL' | 'AWAITING_AUTHORIZATION' | 'QUEUED'
+  | 'WAITING_SUBTASKS'               // 调用了 run_subagents，等它的任务
+  | 'AWAITING_ANSWER'                // 调用了 ask_user，等答复
+  | 'AWAITING_GRANT'                 // 向上级申请更多轮次，等回答（Orchestration D91）
+  | 'PAUSED' | 'COMPACTING' | 'WRAPPING_UP'
+  | 'SLEEPING'                       // 这一段结束，任务休眠到被唤醒（Orchestration 第 4 节），活动区保留它的一行
+  | 'ENDED';
 
 interface RunFinished extends RunEnd {   // RunEnd 见 WorkflowKernel 第 3.1 节
   type: 'RunFinished';
@@ -329,9 +384,16 @@ interface SessionOpened {
   type: 'SessionOpened';
   repositoryRoot: string;
   title?: string;                    // ≤80，来自第一条 prompt
-  turnCount: number;
-  fork?: { fromSessionId: string; fromTurnCount: number };
+  inputCount: number;
+  fork?: ForkOrigin;
+  interruptedRun?: { label: string };   // 上次进程留在中途的长任务：/recover 从这个 checkpoint 继续
   divergedFiles?: string[];          // 打开时的工作区差异（M2Design 第 2.3 节 Session 第 6 条）
+}
+
+interface ForkOrigin {               // 从哪个 Session 分出、那时它有几条输入；checkpoint 取代 Turn 之前写的行是 fromTurnCount
+  fromSessionId: string;
+  fromInputCount?: number;
+  fromTurnCount?: number;
 }
 
 interface SessionFailed {
@@ -365,9 +427,9 @@ interface SessionList {
     title?: string;                  // ≤80
     createdAt: string;
     lastActiveAt: string;
-    turnCount: number;
-    fork?: { fromSessionId: string; fromTurnCount: number };
-  }[];                               // 所有未删除的 Session（各个文件夹的），按最后活动时间倒序
+    inputCount: number;
+    fork?: ForkOrigin;
+  }[];                               // 至多 1000 个                               // 所有未删除的 Session（各个文件夹的），按最后活动时间倒序
 }
 
 interface SessionDeleted {
@@ -387,7 +449,7 @@ interface ContextCompacted {         // 压缩生效（Workflow 已记入日志�
   type: 'ContextCompacted';
   trigger: 'AUTO' | 'OVERFLOW' | 'USER';
   summaryRef?: ArtifactRef;          // 界面可以经 readArtifact 展示摘要；只有修剪、没有写摘要时省略
-  compactedTurns: number;            // 被摘要取代的 Turn 数（部分取代的 Turn 也计入）；只有修剪时为 0
+  compactedInputs: number;           // 工作被摘要取代的用户输入数（部分取代的也计入）；只有修剪时为 0
   prunedResults: number;            // 被修剪的工具结果数
 }
 
@@ -405,7 +467,7 @@ interface CompactionFailed {
 | `StartSessionRequest` | `mode = 'FORK'` 时必须有 `fromSessionId`；`mode = 'NEW'` 时不得有 |
 | `AuthorizationRequest` | 按 `capability` 取对应变体的字段 |
 | 运行内请求 | `sessionId`、`workflowRunId` 必须与 `BoundaryContext` 中的一致 |
-| `RunStateChanged` | `state = 'AWAITING_INPUT'` 时不得有 `turnId` |
+| `RunStateChanged` | `state = 'AWAITING_INPUT'` 时不得有 `checkpointId` |
 | `ActivityEvent` | `phase = 'RETRYING'` 时必须有 `retry`，其他阶段不得有 |
 
 ## 5. 原因码

@@ -4,7 +4,7 @@
 
 ## 1. 定位
 
-Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、结果检查与事件交付，是内外部 syscall 的处理者与 Kernel 对外事件的唯一出口。
+Core 负责 Session 与运行的管理、授权、Lease、控制裁决、输入的开启与结束、结果检查与事件交付，是内外部 syscall 的处理者与 Kernel 对外事件的唯一出口。
 组件间交互见 [Interaction](Interaction.md)，长期规划见 [Kernel 架构](../../Architecture/Module/Kernel.md) 第 3、5、6 节。
 
 ## 2. 相对 M1 的变化
@@ -12,13 +12,13 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 | M1 | M2 | 依据 |
 |---|---|---|
 | 运行管理：创建与回收运行 actor | Session 管理：创建与回收 Session actor，持有系统级状态（Session 引用、信任记录） | M2Design 第 2.6 节 |
-| 没有 Turn | 依据开放输入开启与结束 Turn，维护 `TurnRecord` | M2Design 第 2.3 节 |
+| 没有输入的概念 | 依据开放输入开启与结束一次输入的工作，以这条输入的 checkpoint 命名，维护当前输入（`openInput`） | M2Design 第 2.3 节，Orchestration 第 7.1 节 |
 | 人类参与只有授权询问 | 转发人类请求与答复；用户输入的正文交给 Execution 存为产物 | M2Design 第 4.1、4.2 节 |
 | 授权只有 `repo.read` | 增加 `project.instructions`（`AGENTS.md` 的信任） | M2Design 第 9.5 节 |
 | 同一时刻至多一个 ACTIVE 的 AgentRun | 放开：顶层只有 main，SubAgent 与模板节点可并行 ACTIVE | M2Design 第 7.1 节 |
 | Lease = Agent 定义的能力 ∩ 用户授权 ∩ 系统策略，绑定运行 | 能力上限与授权条目两步判定；Lease 是为一次执行签发的许可 | M2Design 第 5 节 |
 | 每个运行至多一次 final-call | 每个 AgentRun 至多一次 | M2Design 第 7.3 节 |
-| 运行超时由 Core 计时 | 删除；由 Turn 超时取代 | M2Design 第 7.4 节 |
+| 运行超时由 Core 计时 | 删除；由输入超时取代 | M2Design 第 7.4 节 |
 | 上下文规模只由 Executor 裁剪 | Core 在受理 `context-assemble` 时与进入 AWAITING_INPUT 时检查规模，决定并组织压缩（先修剪、再摘要，第 6a 节） | M2Design 第 9.6 节 |
 | 用户输入只有开放输入与授权回答 | 运行中插话 `steerRun`：RUNNING 时受理，正文交 Execution 存储后以 `HumanAnswered(kind: steer)` 交给 Workflow | M2Design 第 4.5 节 |
 | — | `updateActivity`：待办进度原样放进 ActivityEvent | M2Design 第 3.5 节 |
@@ -29,10 +29,10 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
   按 `sessionId` 分发消息；建立与回收 Session actor（Interaction 第 5、6 节）。
 - **Session 命令**：以 Session 级事件向 Workflow 下达 `SessionCommand`，以系统级事件下达 `SessionListQuery`、`SessionDelete`，按 `commandId`、`queryId` 等待并核对回复。
 - **运行**：开启运行（生成 `workflowRunId`）、处理 Workflow 的 syscall、维护运行控制状态（RUNNING、AWAITING_INPUT、CONVERGING、CLOSED）与 runEpoch、组织收敛。
-- **Turn**：开放输入得到答复时开启，请求开放输入或运行收敛时结束；结束时做静止检查；调用 Monitor 建立与结算 Turn 账本。
+- **输入**：开放输入得到答复时开启，请求开放输入或运行收敛时结束；结束时做静止检查；调用 Monitor 建立与结算这次输入的账本。
 - **人类请求**：受理 `requestHuman(prompt)`，转发为 `HumanRequest`；受理 `answerHuman`，由 Execution 存储正文后以 `HumanAnswered` 交给 Workflow。
 - **授权**：`repo.read`（M1 原样）与 `project.instructions`（第 5 节）；Lease 只在 Core 内存中。
-- **AgentRun 登记**：校验定义与 digest（M1 原样），检查思考强度在 Agent 允许的范围内；登记的 AgentRun 自动归入开启中的 Turn。
+- **AgentRun 登记**：校验定义与 digest（M1 原样），检查思考强度在 Agent 允许的范围内；登记的 AgentRun 属于开启中的输入。
 - **结果检查与事件交付**：与 M1 相同，UnitReport 增加 `unitRunId` 与 `BudgetView`；每个 AgentRun 至多一次 final-call。
 - **审计**：写入本 Session 目录中的 `audit.jsonl`。
 
@@ -46,10 +46,10 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 | Session 命令 | Session 级 | 待回复的 `commandId` 及其用途 |
 | Session 级 Outbox | Session 级 | 每个接收方一个 `seq` 计数与待发队列 |
 | 运行控制状态 | 运行级 | `runState`、`runEpoch`、`closeReason`、`failure`、`resultRef`、开始与收敛时间、pending 集合 |
-| `TurnRecord` | 运行级 | `turnId`、序号、`OPEN` / `CLOSED`、开启时间、结束原因、用量（M2Design 第 2.3 节） |
+| 当前输入 | 运行级 | 开启中的输入（以它的 checkpoint 命名）与它的计时；结束时以 `InputSettled` 告知 Workflow（M2Design 第 2.3 节） |
 | 待答复的人类请求 | 运行级 | `humanRequestId → { nodeId, kind }`；至多一个开放输入，其余是局部询问 |
-| 请求记录 | 运行级 | 与 M1 相同（`requestId →` 请求摘要与响应），增加 `unitRunId`、`turnId` |
-| AgentRun 登记 | 运行级 | 与 M1 相同，增加 `nodeId`、`effort`、`turnId`、`finalCallUsed` |
+| 请求记录 | 运行级 | 与 M1 相同（`requestId →` 请求摘要与响应），增加 `unitRunId` |
+| AgentRun 登记 | 运行级 | 与 M1 相同，增加 `nodeId`、`effort`、所属任务、`finalCallUsed` |
 | 授权记录与 Lease | 运行级 | 与 M1 相同；增加 `project.instructions` 的询问记录 |
 | 运行级 Outbox、计时器 | 运行级 | 与 M1 相同；删除运行总时长计时 |
 
@@ -59,7 +59,7 @@ Core 负责 Session 与运行的管理、授权、Lease、控制裁决、Turn、
 
 第一个需要它的 Unit 询问一次，同意后本运行内的 AgentRun 都可使用；拒绝绑定提出请求的 AgentRun，它之后同类的 Unit 直接以 `REJECTED(USER_DECLINED)` 交付、不再询问，下一个 AgentRun 可以重新询问（M2Design 第 5.3 节）。`command.exec` 例外：拒绝只绑定被拒的那一条命令（工作目录加命令行），同一 AgentRun 的其他命令照常判定、照常询问。
 询问不超时，一直等到用户回答；只在运行收敛时取消（M2Design 第 5.3 节）——这是相对 M1 的变化，M1 的询问计时器与 `authorizationTimeoutMs` 删除。
-拒绝作为被拒 Unit 的结果交给 Workflow，不改变运行控制状态与 Turn。
+拒绝作为被拒 Unit 的结果交给 Workflow，不改变运行控制状态。
 
 ### 5.2 `project.instructions`
 
@@ -131,14 +131,14 @@ requestedCapabilities ⊄ capabilities，或 writeRoots 越出仓库 → 登记�
 
 ### 5a.5 回退的发起与确认
 
-Core 受理 `undoTurns`、`confirmUndo`、`diffTurns`（只在 AWAITING_INPUT，否则 `UNDO_NOT_AVAILABLE`），调用 Execution（[Execution](Execution.md) 第 6c 节）：
+Core 受理 `undo`、`confirmUndo`（只在 AWAITING_INPUT，否则 `UNDO_NOT_AVAILABLE`）与 `diff`，调用 Execution（[Execution](Execution.md) 第 6c 节）；暂停时的 `rewindCheckpoint` 走同一条回退路径（Orchestration 第 7.5 节）：
 
 ```text
-undoTurns → Execution.planUndo
-  没有可回退的 Turn → NOTHING_TO_UNDO
-  没有外部修改      → Execution.applyUndo，发出 WorkspaceReverted
+undo → Execution.planUndo（回到最近一个 checkpoint 之前；ALL：第一个之前）
+  没有可回退的 checkpoint → NOTHING_TO_UNDO
+  没有外部修改      → Execution.applyRollBack，发出 CheckpointRolledBack(undo: true)
   有外部修改        → 记录 undoId，向 UserInteraction 发出 UndoConfirmationRequested
-confirmUndo(FORCE)  → 拍兜底快照，Execution.applyUndo；复查失败时恢复并重新发出确认
+confirmUndo(FORCE)  → 拍兜底快照，Execution.applyRollBack；复查失败时恢复，以 UndoCancelled(FILE_CHANGED) 结束
 confirmUndo(CANCEL)、下一条 answerHuman、切换或关闭 Session → 发出 UndoCancelled，不修改文件
 ```
 
@@ -175,12 +175,12 @@ confirmUndo(CANCEL)、下一条 answerHuman、切换或关闭 Session → 发出
 
 ## 5c. 中断的统一入口与内存压力
 
-M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个入口 `interrupt(reason)`；内存压力、用户中止、Turn 超时、暂停超时都使用这同一个入口。
+M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个入口 `interrupt(reason)`；内存压力、用户中止、输入超时、暂停超时都使用这同一个入口。
 
 | 来源 | Core 的处理 |
 |---|---|
 | `MemoryPressure(source = SYSTEM)` | 只通知与记录（系统级 `memory-events` 记录，界面提示），不拒绝任何工作，不收尾，不中断 |
-| `MemoryPressure(PROCESS, WARNING)` | 记入审计；拒绝登记新的 AgentRun 与开启新的 Turn（`MEMORY_PRESSURE`）；每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），Workflow 进入 `wrapUpReason = MEMORY_LIMIT`，走统一收尾路径，结束后留下报告 |
+| `MemoryPressure(PROCESS, WARNING)` | 记入审计；拒绝登记新的 AgentRun 与开启新的输入（`MEMORY_PRESSURE`）；每个 ACTIVE 的 AgentRun 收到 `QUOTA_EXHAUSTED`（`quota = 'MEMORY'`），Workflow 进入 `wrapUpReason = MEMORY_LIMIT`，走统一收尾路径，结束后留下报告 |
 | `MemoryPressure(PROCESS, DANGER)` | 运行进入 INTERRUPTING：Outbox 先向 Workflow 发出 `RunInterrupted(MEMORY_PRESSURE)`，随后取消待答复的询问、在途与排队的尝试，拒绝新的 AgentRun 与除 `message-publish` 之外的 Unit（`MEMORY_PRESSURE`）；运行保持打开，让 Workflow 发布一条不经模型的回复并 `closeRun(INTERRUPTED)`。Workflow 在 `interruptBackstopMs`（缺省 `cancelGraceMs + convergenceMarginMs + 10 秒`）内没有关闭时，Kernel 自己关闭。运行关闭后对话仍打开，界面说明原因，用户的下一条消息开启新的运行；一次性命令以退出码 75 退出。没有运行或没有打开的 Session 时只通知与记录，不退出 |
 
 - 同一级别不重复处理；级别回落后再次升高会再次触发。已发生的收尾不撤销，但拒绝新工作以采样器当前的级别为准：回落后新的 AgentRun 与工具即可继续。
@@ -205,7 +205,7 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 - `agent.spawn` 在 `readonly` 预设下保留：派生出的 SubAgent 的能力受父的能力上限限制，写入类 SubAgent 在 `readonly` 下登记不了。
 - 测试：`run-work.test.ts` 的 "SubAgents"、`run-delegations.test.ts`。
 
-## 5e. 运行控制：暂停、继续、中止、运行中插话与 Turn 超时
+## 5e. 运行控制：暂停、继续、中止、运行中插话与输入超时
 
 设计以 M2Design 第 4.3–4.5、7.4、7.6 节为准。`RunPhase` 在 `RUNNING`、`AWAITING_INPUT`、`CONVERGING`、`CLOSED` 之外增加 `PAUSING`、`PAUSED`、`INTERRUPTING`。"正在中断"标志（`RunWork` 内的 `#interrupting`）并入 `RunPhase`：中断只有这一个状态来源，不再有第二个布尔量。
 
@@ -213,25 +213,25 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 | 消息 | 来自 | 检查 | 动作 |
 |---|---|---|---|
-| `pauseRun` | UserInteraction | 运行为 RUNNING，且有开启中的 Turn（否则 `REQUEST_CONFLICT`） | 进入 PAUSING；Execution 按并发类别收敛在途尝试（[Execution](Execution.md) 第 4e 节）；在途为 0 时进入 PAUSED，Outbox 向 Workflow 发出 `RunPaused`，向 UserInteraction 发出 `RunStateChanged`；PAUSED 开始计 `maxPauseSeconds` |
+| `pauseRun` | UserInteraction | 运行为 RUNNING，且有开启中的输入（否则 `REQUEST_CONFLICT`） | 进入 PAUSING；Execution 按并发类别收敛在途尝试（[Execution](Execution.md) 第 4e 节）；在途为 0 时进入 PAUSED，Outbox 向 Workflow 发出 `RunPaused`，向 UserInteraction 发出 `RunStateChanged`；PAUSED 开始计 `maxPauseSeconds` |
 | `resumeRun({ steer? })` | UserInteraction | 运行为 PAUSED（否则 `REQUEST_CONFLICT`） | `steer` 带内容时先经 `Execution.storeUserInput` 存正文；进入 RUNNING；Outbox 向 Workflow 发出 `RunResumed`（带 `steer` 的 `inputId`、`contentRef`、`targetAgentRunId?`）；保留在队列中的尝试依次派发 |
 | `interruptRun` | UserInteraction | 运行为 RUNNING、PAUSING 或 PAUSED（其余 `REQUEST_CONFLICT`；已在 INTERRUPTING 时无效果地接受） | `interrupt(USER_ABORT)` |
-| `steerRun({ target?, input })` | UserInteraction | 运行为 RUNNING 且有开启中的 Turn（PAUSING、PAUSED 时由 `resumeRun` 携带，其余状态 `REQUEST_CONFLICT`）；`target` 若给出，必须是本运行的 AgentRun | 存正文；Outbox 向 Workflow 发出 `HumanAnswered(kind: 'steer')`（带 `targetAgentRunId?`，不带 `turnId`，不开启 Turn） |
-| 暂停超时、Turn 超时（Core 内部的计时） | — | — | `interrupt(PAUSE_TIMEOUT)`、`interrupt(TURN_TIMEOUT)` |
+| `steerRun({ target?, input })` | UserInteraction | 运行为 RUNNING 且有开启中的输入（PAUSING、PAUSED 时由 `resumeRun` 携带，其余状态 `REQUEST_CONFLICT`）；`target` 若给出，必须是本运行的 AgentRun | 存正文；Outbox 向 Workflow 发出 `HumanAnswered(kind: 'steer')`（带 `targetAgentRunId?`，不开启新的输入） |
+| 暂停超时、输入超时（Core 内部的计时） | — | — | `interrupt(PAUSE_TIMEOUT)`、`interrupt(INPUT_TIMEOUT)` |
 
-**`interrupt(reason)`**：`reason` 为 `MEMORY_PRESSURE`、`USER_ABORT`、`TURN_TIMEOUT`、`PAUSE_TIMEOUT`。处理顺序固定：
+**`interrupt(reason)`**：`reason` 为 `MEMORY_PRESSURE`、`USER_ABORT`、`INPUT_TIMEOUT`、`PAUSE_TIMEOUT`。处理顺序固定：
 
 1. 运行进入 INTERRUPTING；Outbox 先向 Workflow 发出 `RunInterrupted(reason)`，随后向 UserInteraction 发出 `RunStateChanged(INTERRUPTING)`；
 2. 取消待答复的授权询问（`AuthorizationResolved(CANCELLED)`）与人类请求：向 Workflow 发出 `HumanCancelled { nodeId, humanRequestId, reason }`，向 UserInteraction 发出 `HumanResolved(CANCELLED)`；
 3. 取消在途与排队的尝试，全部以 `INTERRUPTED(ABORTED)` 交付（Execution 第 4e 节）；
 4. 此后拒绝 `registerAgentRun` 与除 `message-publish` 之外的 `submitUnit`（`RUN_BLOCKED`），放行 `endAgentRun`、`requestHuman(prompt)`、`closeRun`；
-5. Workflow 收敛节点后，按运行的形态结束：Turn-chat 请求下一个 `HUMAN(prompt)`，在途为 0 时 Kernel 以 `ABORTED` 结束本 Turn，运行进入 AWAITING_INPUT（运行保持打开）；Orchestration `closeRun(CANCELLED | TIMEOUT)`，运行进入 CONVERGING；`MEMORY_PRESSURE` 仍是 `closeRun(INTERRUPTED)`（第 5c 节）；
+5. Workflow 收敛节点后，按运行的形态结束：Turn-chat 请求下一个 `HUMAN(prompt)`，在途为 0 时 Kernel 以 `ABORTED` 结束这次输入的工作，运行进入 AWAITING_INPUT（运行保持打开）；Orchestration `closeRun(CANCELLED | TIMEOUT)`，运行进入 CONVERGING；`MEMORY_PRESSURE` 仍是 `closeRun(INTERRUPTED)`（第 5c 节）；
 6. `interruptBackstopMs` 内 Workflow 没有结束时，Kernel 自己关闭运行（规则不变）。
 
-`TurnClosed` 的原因增加 `ABORTED`；一个 Turn 以 `ABORTED` 或 `TIMEOUT` 结束后，属于它的 `submitUnit` 一律以 `NO_OPEN_TURN` 拒绝。
+`InputSettled` 的原因有 `ABORTED`；一次输入的工作以 `ABORTED` 或 `TIMEOUT` 结束后，属于它的 `submitUnit` 一律以 `NO_OPEN_INPUT` 拒绝。
 
 **计时**（`session/wall-clocks.ts` 已按"等待人类、等待授权不计时"的规则计 AgentRun 的墙钟，暂停复用同一判断）：
-- **Turn 超时** `turnTimeoutSeconds`（Turn-chat 缺省 1800；Orchestration 运行整体是一个 Turn，缺省 3600）：从 Turn 开启计起；PAUSING 与 PAUSED 的时间不计；全部工作都在等用户的时间不计（没有已派发的尝试、没有排队或等待调用机会的尝试，且至少有一个待答复的人类请求或授权询问；挂起在授权询问上的尝试不算已派发）。到点 `interrupt(TURN_TIMEOUT)`。
+- **输入超时** `inputTimeoutSeconds`（缺省 1800）；Mission 运行用 `orchestrationTimeoutSeconds`（缺省 14400，它是长任务）：从这次输入开启计起；PAUSING 与 PAUSED 的时间不计；全部工作都在等用户的时间不计（没有已派发的尝试、没有排队或等待调用机会的尝试，且至少有一个待答复的人类请求或授权询问；挂起在授权询问上的尝试不算已派发）。到点 `interrupt(INPUT_TIMEOUT)`。
 - **暂停上限** `maxPauseSeconds`（缺省 1800）：从进入 PAUSED 计起，到点 `interrupt(PAUSE_TIMEOUT)`。
 - Core 在每次处理消息的末尾重新判断，只为最早可能到点的计时设一个定时器，与 AgentRun 墙钟共用同一个定时器。
 - 授权询问与人类请求本身不超时。
@@ -247,11 +247,11 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 | INTERRUPTING | `RUN_BLOCKED`（`message-publish` 除外） | 取消，不再受理新的 |
 | AWAITING_INPUT、CONVERGING、CLOSED | 与 RUNNING 相同 | 与 RUNNING 相同 |
 
-- **局部询问**：`requestHuman(ask | confirm | review)` 只阻塞附属的调用方 AgentRun，运行仍是 RUNNING；它的请求不要求静止，不结束 Turn，也不引起 AWAITING_INPUT。每个局部询问带 `attachedAgentRunId`（发起 `ask_user` 的 AgentRun）。Kernel 只区分开放输入与局部询问两类（M2Design 第 4.2 节）。
-- **答复校验**：Kernel 不解释答复；`answerHuman` 对局部询问只检查 `humanRequestId` 待答复。字段是否符合 `answerSchema` 由 UserInteraction 先行检查、Workflow 最终校验（[Workflow](../Module/Workflow.md) 第 7b 节）。
-- **审计**：`RUN_PAUSED`、`RUN_RESUMED`、`RUN_INTERRUPTED`（原因）、局部询问的请求与取消都写审计；暂停时长记入 Turn 的用量摘要，不计入墙钟。
+- **局部询问**：`requestHuman(ask | confirm | review)` 只阻塞附属的调用方 AgentRun，运行仍是 RUNNING；它的请求不要求静止，不结束这次输入的工作，也不引起 AWAITING_INPUT。每个局部询问带 `attachedAgentRunId`（发起 `ask_user` 的 AgentRun）。Kernel 只区分开放输入与局部询问两类（M2Design 第 4.2 节）。
+- **答复校验**：Kernel 不解释答复；`answerHuman` 对局部询问只检查 `humanRequestId` 待答复。字段是否符合询问的 `fields` 由 UserInteraction 先行检查、Workflow 最终校验（[Workflow](../Module/Workflow.md) 第 7b 节）。
+- **记录**：暂停、继续与中止（原因）由 Workflow 记进 Session 日志（`RUN_PAUSED`、`RUN_RESUMED`、`RUN_INTERRUPTED`）；暂停的时间不计入墙钟与输入的计时。
 - **不变量**：4（PAUSED 时在途尝试数为 0）与 18（AWAITING_INPUT 时没有 ACTIVE 的 AgentRun 且在途为 0）原样成立；新增：INTERRUPTING 之后的 `submitUnit` 一律 `RUN_BLOCKED`；`runEpoch` 不因暂停与中止前进。
-- 测试：`run-control.test.ts`（状态转移与准入表，纯函数）、`session-actor.test.ts`（暂停到 PAUSED 的时序、暂停超时、Turn 超时与"等用户时冻结"、中止后回到 AWAITING_INPUT 与 Turn 的 ABORTED）、`run-work.test.ts`（中止时询问被取消、局部询问不要求静止）。
+- 测试：`run-control.test.ts`（状态转移与准入表，纯函数）、`session-actor.test.ts`（暂停到 PAUSED 的时序、暂停超时、输入超时与"等用户时冻结"、中止后回到 AWAITING_INPUT 与输入的 ABORTED）、`run-work.test.ts`（中止时询问被取消、局部询问不要求静止）。
 
 ## 5f. 网页能力：`web.search` 与 `web.fetch`
 
@@ -320,17 +320,17 @@ M2Design 第 7.7 节。Core 为运行增加控制状态 `INTERRUPTING` 与一个
 
 - 测试：`external-read.test.ts`（拒绝名单、授权目录的各种形状、符号链接、数据目录、判定与询问）、`run-work.test.ts`（询问一次、范围与输入的改写、无法读取不询问、暂停与重新计数、用户拒绝的计数）、`external-read-exit`（X1–X3：三个工具、秘密文件、链接、系统路径、工作区、拒绝、暂停与继续）。
 
-## 6. Turn 与人类请求
+## 6. 输入与人类请求
 
-| 消息 | 检查 | 动作 |
+| 请求 | 检查 | 动作 |
 |---|---|---|
-| `REQUEST_HUMAN(prompt)` | 运行为 RUNNING；没有 ACTIVE 的 AgentRun；没有在途尝试 | 结束开启中的 Turn（如有；`closeTurnLedger`，`TurnClosed(COMPLETED)`）；记录待答复的请求；Outbox 向 UserInteraction 发出 `HumanRequest`；运行进入 AWAITING_INPUT |
-| `HUMAN_ANSWER` | 运行为 AWAITING_INPUT；`humanRequestId` 待答复 | `Execution.storeUserInput`；分配 `turnId`，`openTurnLedger`；Outbox 向 Workflow 发出 `HumanAnswered`，向 UserInteraction 发出 `HumanResolved(ANSWERED)`；运行回到 RUNNING |
+| `requestHuman(prompt)` | 运行为 RUNNING；没有 ACTIVE 的 AgentRun；没有在途尝试 | 结束开启中的输入（如有；`closeInputLedger`，`InputSettled(COMPLETED)`）；记录待答复的请求；Outbox 向 UserInteraction 发出 `HumanRequest`；运行进入 AWAITING_INPUT |
+| `answerHuman`（开放输入） | 运行为 AWAITING_INPUT；`humanRequestId` 待答复 | `Execution.storeUserInput`；拍这条输入的 checkpoint，`openInputLedger`；Outbox 向 Workflow 发出 `HumanAnswered`（带 `checkpointId`），向 UserInteraction 发出 `HumanResolved(ANSWERED)`；运行回到 RUNNING |
 | 新建 Session 或 `startRun` 的第一条输入 | 运行刚开启（`RunStart(initialInput: true)`） | 同上，`origin = 'initial'`，没有 `humanRequestId` |
 
-- `openTurnLedger` 总是开启 Turn。正常情况下运行级余额足够：上一个 Turn 中 `BudgetView.run` 已按"Turn 结束时的余额"告知 WRAP_UP，
+- `openInputLedger` 总是开启。正常情况下运行级余额足够：上一次输入中 `BudgetView.run` 已按"这次输入结束时的余额"告知 WRAP_UP，
   Workflow 会以 `closeRun(BUDGET)` 结束运行而不是请求下一个开放输入（[Monitor](Monitor.md) 第 3.1 节）。份额仍不足 `minShare(main)` 时
-  （防御性情况），Turn 账本状态直接为 WRAP_UP，Workflow 让 main 只做收尾调用，额度不足以收尾时以降级回复结束，然后报告结束（M2Design 第 7.3 节）。
+  （防御性情况），输入的账本状态直接为 WRAP_UP，Workflow 让 main 只做收尾调用，额度不足以收尾时以降级回复结束，然后报告结束（M2Design 第 7.3 节）。
 - `answerHuman` 以 `inputId` 去重：同一 `inputId` 重复提交返回第一次的响应。
 
 ## 6a. 上下文压缩
@@ -352,24 +352,30 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 - 压缩进行期间，该对象不会有新的模型调用：触发它的组装被挂起，Workflow 在收到这次组装的结果之前不会提交下一次 `model-call`。
 - 同一对象同一时刻至多一次压缩；同一轮中至多因自动触发压缩一次，之后重新提交的组装照常执行（M2Design 第 9.6 节"不循环"）；
   溢出触发按 `overflowTargets` 依次缩小目标（第 n 次溢出之后以第 n 个为目标），三次之后不再压缩。
-- 压缩不改变运行控制状态与 Turn；它占用的时间计入 AgentRun 的墙钟。
-- **压缩进行中的其他操作**：`/compact` 进行中收到 `HUMAN_ANSWER` 时照常开启 Turn，main 的第一次 `context-assemble` 挂起到压缩结束；进行中收到 `compactContext`、`undoTurns`、Fork、切换或关闭 Session 时，先取消这次压缩（取消摘要尝试，按失败处理，不写回摘要），再处理该请求。
+- 压缩不改变运行控制状态与当前输入；它占用的时间计入 AgentRun 的墙钟。
+- **压缩进行中的其他操作**：`/compact` 进行中收到开放输入的答复时照常开启下一次输入，main 的第一次 `context-assemble` 挂起到压缩结束；进行中收到 `compactContext`、`undo`、Fork、切换或关闭 Session 时，先取消这次压缩（取消摘要尝试，按失败处理，不写回摘要），再处理该请求。
 - **SubAgent**：对象为 `AGENT_RUN`，额度从它自己的账本支出；额度不足以写摘要时按统一收尾路径进入最后一轮，以 `finish_subagent` 结束（M2Design 第 7.3 节）。
 
 ## 7. 审计
 
-条目公共字段与 M1 Core 第 7 节相同，增加 `sessionId`。M1 的条目类型全部保留（`RUN_TIMEOUT` 相关的除外），M2 新增：
+条目写在 Session 目录的 `kernel-core/audit.jsonl`，公共字段与 M1 Core 第 7 节相同，增加 `sessionId`。条目类型：
 
 | type | 时机 |
 |---|---|
-| `SESSION_OPENED`、`SESSION_CREATED`、`SESSION_CLOSED`、`SESSION_DELETED` | Session 生命周期 |
-| `SESSION_COMMAND_FAILED` | Workflow 回复 `FAILED` |
-| `TURN_OPENED`、`TURN_CLOSED` | Turn 的开启与结束，附用量 |
-| `HUMAN_REQUESTED`、`HUMAN_ANSWERED` | 只记录 `humanRequestId`、`inputId` 与产物引用，不记录正文 |
-| `INSTRUCTIONS_TRUSTED` | 追加信任记录 |
-| `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED` | 询问与回答，附能力与资源键；`AGENTS.md` 的写入附内容的 SHA |
-| `WORKSPACE_REVERTED`、`UNDO_CANCELLED` | 回退的结果，附 Turn、是否强制、外部修改的文件、兜底快照 |
-| `COMPACTION_STARTED`、`COMPACTION_ENDED`、`COMPACTION_FAILED` | 压缩的开始、生效与失败，附触发、对象、修剪的条目数、范围、摘要请求的方式、用量与失败原因 |
+| `SANDBOX_PROBED` | 打开 Session 时探测沙盒的结果 |
+| `AUTHORIZATION_ASKED` | 一个询问发出，附能力（含 `budget.extend`、`tasks.extend`） |
+| `COMMAND_AUTO_APPROVED`、`COMMAND_READ_ONLY` | 没有询问就放行的命令：条目覆盖的，只读命令行（第 5b 节） |
+| `EXTERNAL_READ` | 放行一次工作区之外的读取（第 5h 节） |
+| `BUDGET_EXTENDED`、`TASK_QUOTA_EXTENDED` | 输入的额度、运行的子任务数被追加，附追加的量与是谁决定的（`USER`、`CONFIGURED`） |
+| `UNIT_REPORTED`、`UNIT_NOT_DELIVERED`、`STALE_FACT` | UnitReport 交付；没能交付的 Unit；迟到的执行事实 |
+| `SETTLEMENT_ANOMALY`、`CONFLICTING_SETTLEMENT`、`ACTUAL_EXCEEDED_ESTIMATE` | 账本结算的异常（Monitor 第 3 节） |
+| `MODEL_FAILED` | 模型调用失败，附原因 |
+| `PROTECTED_PATH_CREATED` | 命令在受保护的路径下建了文件 |
+| `ARTIFACT_NOT_INHERITED` | Fork 时有产物没能继承 |
+| `COMPACTION_STARTED`、`COMPACTION_ENDED`、`COMPACTION_FAILED`、`COMPACTION_SUMMARY_PROBLEM` | 压缩的开始、生效与失败，附触发、对象、修剪的条目数、范围、摘要请求的方式、用量与失败原因；摘要不合格 |
+| `SHUTDOWN_REQUESTED` | 系统按请求停止 |
+
+Session 的生命周期、人类请求与答复、checkpoint 与回退由 Workflow 记进 Session 日志（Interface/Persistence 第 2 节），审计不重复记录；信任记录写在系统级的 `trusted-instructions.jsonl`。
 
 ## 8. 配置
 
@@ -378,7 +384,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | `KernelConfig.repositoryRoot` | Core | 组合根写入 |
 | `KernelConfig.provider`、`repositoryExclusions`、`convergenceMarginMs` | Core | 与 M1 相同 |
 | `KernelConfig.preset` | Core | `standard`；`readonly` 由 CLI 参数设置（M2Design 第 5.2 节） |
-| `KernelConfig.turnTimeoutSeconds`、`orchestrationTimeoutSeconds`、`maxPauseSeconds` | Core | 1800、3600（Orchestration 运行整体是一个 Turn）、1800（第 5e 节） |
+| `KernelConfig.inputTimeoutSeconds`、`orchestrationTimeoutSeconds`、`maxPauseSeconds` | Core | 1800、14400（Mission 运行）、1800（第 5e 节） |
 | `KernelConfig.pauseDrainMs` | Execution | 5000：暂停时 READ 的排空时间（Execution 第 4e 节） |
 | `KernelConfig.compaction` | Core | `triggerRatio` 0.9、`keepRatio` 0.15、`pruneMinBytes` 8192、`pruneHeadBytes` 4096、`pruneTailBytes` 1024、`summaryMaxTokens` 16384、`overflowTargets` [0.85, 0.7, 0.5]、`summaryFallbackTargets` [0.85, 0.7, 0.5, 0.35]、`summaryReasoningEffort` `none`（摘要请求不思考；摘要请求的思考强度，启动时按所用模型的 `effortMapping` 校验，不合法时拒绝启动） |
 
@@ -389,7 +395,7 @@ Core 是压缩过程（M2Design 第 9.6 节）的组织者：
 | 2：Lease 只在 Core 内存中；授权只由人类签发 | 架构测试：Lease 类型不导出；单元测试：信任记录不产生任何执行权限 |
 | 11：授权与检查出错时一律拒绝；询问一直等到用户回答 | 单元测试：询问没有计时器，待答复期间 Unit 保持挂起；收敛时询问以 `CANCELLED` 结束；拒绝后同一 AgentRun 不再询问，下一个 AgentRun 可以询问 |
 | 13：HUMAN 节点的答复不产生授权 | 单元测试：`answerHuman` 不改变任何授权记录 |
-| 18：Turn 由 Kernel 依据开放输入开启与结束 | 见 [Interaction](Interaction.md) 第 10 节 |
+| 18：一次输入的工作由 Kernel 依据开放输入开启与结束 | 见 [Interaction](Interaction.md) 第 10 节 |
 | 判定顺序 | 属性测试：能力上限只能收窄；上限之外与写入范围之外从不询问；极危险级从不复用条目；判定出错时拒绝 |
 | 20：只有用户信任过的确切内容的 `AGENTS.md` 标明为项目指令 | 单元测试：内容变化后 `trusted: false` 并重新询问；`readonly` 预设下不询问 |
-| 28：修剪与摘要只在确认后生效，不动用 F | 状态机测试：没有 `ackCompaction` 时挂起的组装照常执行；额度不足时只修剪、不写摘要；压缩期间该对象没有模型调用；`/compact` 进行中收到 `undoTurns` 时先取消且不写回；SubAgent 额度不足时进入收尾 |
+| 28：修剪与摘要只在确认后生效，不动用 F | 状态机测试：没有 `ackCompaction` 时挂起的组装照常执行；额度不足时只修剪、不写摘要；压缩期间该对象没有模型调用；`/compact` 进行中收到 `undo` 时先取消且不写回；SubAgent 额度不足时进入收尾 |

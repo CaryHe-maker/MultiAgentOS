@@ -19,7 +19,7 @@ export interface RunBudget {
   readonly runTokenLimit: number;
   readonly inputTokenLimit: number;
   /**
-   * The share of a call's input the ledgers count it at (M2Design 7.3, rule 7): most of a call's
+   * The share of a call's input the ledgers count it at (M2Design 7.3, rule 10): most of a call's
    * input is the cached prefix of the one before, which costs a fiftieth, so counting every call at
    * its whole input limit kept tokens back that were never spent. 1 (the whole input) when absent.
    */

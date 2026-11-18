@@ -90,7 +90,7 @@ export interface ExecutionConfig {
   readonly cancelGraceMs: number;
   readonly pauseDrainMs: number;
   readonly convergenceMarginMs: number;
-  /** The share of a call's input its reservation counts (M2Design 7.3, rule 7); 1 when absent. */
+  /** The share of a call's input its reservation counts (M2Design 7.3, rule 10); 1 when absent. */
   readonly reserveShare?: number;
 }
 
@@ -190,7 +190,7 @@ const RESERVED_INPUT_SHARE = 1.05;
 /**
  * Room for the estimate to be low, up to the input limit: the ledger keeps exactly a limit's worth
  * for the next call and the final one, and those reservations must always succeed. The input is
- * counted at `reserveShare`, as the ledgers count the limits (M2Design 7.3, rule 7).
+ * counted at `reserveShare`, as the ledgers count the limits (M2Design 7.3, rule 10).
  */
 export const reservedTokens = (
   inputTokens: number,

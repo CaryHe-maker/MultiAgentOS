@@ -38,7 +38,7 @@ interface LogRecordBase {
   at: string;               // 写入时间
   type: LogRecordType;
   workflowRunId?: string;   // 属于某个运行的记录必填
-  turnId?: string;          // 属于某个 Turn 的记录必填
+  turnId?: string;          // 只有 checkpoint 取代 Turn 之前写的记录带（Orchestration D8）；新记录不带
 }
 ```
 
@@ -53,9 +53,10 @@ interface LogRecordBase {
 | `SESSION_STARTED` | `formatVersion: 1`、`repositoryRoot`、`definitionsDigest`、`definitionVersions`（Agent、Unit、Tool、Model、Prompt 与模板的 `id@version` 列表） |
 | `WORKSPACE_BOUND` | `repositoryRoot`（现在工作的文件夹）、`previousRoot`；Session 级记录。Session 在别的文件夹里被打开时由 Workflow 追加，早于这次打开开启的运行；此后和文件夹绑定的东西从这里重新开始：读后才能改的基准、项目指令、快照与撤销的范围；对话与产物照旧（M2Design 第 2.3 节）。当前文件夹是最后一条 `WORKSPACE_BOUND`，没有则是 `SESSION_STARTED.repositoryRoot` |
 | `WORKFLOW_RUN_STARTED` | `mode`、`templateRef?`（与 `RunStart` 相同：`ORCHESTRATION` 时必填）、`preset`、`initialInput` |
+| `WORKFLOW_RUN_RESUMED` | `templateRef`、`checkpointId`、`preset`：上次进程留下的长任务以原来的 id 从这个 checkpoint 继续（Orchestration 第 7.6 节） |
 | `WORKFLOW_RUN_ENDED` | `closeReason`（含 `PROCESS_EXITED`、`FORKED`） |
-| `TURN_STARTED` | `promptNodeId`、`template?` |
-| `TURN_ENDED` | `reason`（含 `PROCESS_EXITED`）、`usage?` |
+| `INPUT_SETTLED` | `checkpointId`、`reason`（`COMPLETED`、`ABORTED`、`TIMEOUT`、`BUDGET`、`RUN_CLOSED`、`PROCESS_EXITED`）、`usage?`、`changedFileCount?`：一次输入以来的工作停下了（Orchestration 第 7.1 节） |
+| `TURN_STARTED`、`TURN_ENDED` | checkpoint 取代 Turn 之前写的记录，只读取，不再写 |
 | `GRAPH_EXTENDED` | `revision`、`source: 'TEMPLATE' \| 'CHAT_GROWTH' \| 'LOOP' \| 'SPAWN'`、`nodes`、`edges` |
 | `NODE_STARTED` | `nodeId`、`path` |
 | `NODE_RESUMED` | `nodeId`、`call`（`toolCallId`、`delegationId`）：这次派发的调用回来了，节点不再 WAITING；此前调用的结果由唤醒边的前驱的结果推出 |
@@ -78,17 +79,20 @@ interface LogRecordBase {
 | `REFERENCES_REGISTERED` | `referenceId`（`ref_N`，N 为本 Session 已登记的交接数加一，只从日志推出）、`from: { agentRunId, label }`、`to`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`items: { toolCallId, tool, ref }[]`（最多 21 项；`ref` 指向完整输出，没被截断时是预览）；一个 AgentRun 交给另一个 AgentRun 的材料，`read_output` 读取 `ref_N/toolCallId` 的唯一依据，只追加不改（M2Design 第 3.7 节 0a） |
 | `TOOL_RESULTS_PRUNED` | `compactionId`、`target`、`items: { requestId, toolCallId, prunedRef, readableRef, omittedBytes }[]`（`prunedRef` 为修剪后的结果，长期保留；`readableRef` 为 `read_output` 可读回的引用：截断过的为 `fullRef`，否则为原预览） |
 | `CONTEXT_COMPACTED` | `compactionId`、`target`（`{ kind: 'MAIN' }` 或 `{ kind: 'AGENT_RUN', agentRunId }`）、`fromSeq`、`toSeq`、`keptSeqs`（范围内原样保留的条目的 `seq`：`PINNED` 条目与 Kernel 选出的用户消息，M2Design 第 9.6 节）、`summaryRef`、`summaryInput: { mode: 'PREFIX' \| 'TEXT'; omittedEntries: number }`、`usage` |
-| `CONTEXT_COMPACTION_REVOKED` | `compactionId`、`reason: 'TURN_REVERTED'`；只撤销该次压缩的摘要，`TOOL_RESULTS_PRUNED` 不受影响 |
+| `CONTEXT_COMPACTION_REVOKED` | `compactionId`、`reason: 'ROLLED_BACK'`（旧日志为 `TURN_REVERTED`）；只撤销该次压缩的摘要，`TOOL_RESULTS_PRUNED` 不受影响 |
 | `AUTHORIZATION_REQUESTED`、`AUTHORIZATION_DECIDED` | `questionId`、`capability`、资源键摘要、`resolution?`；不进入上下文，重放时不恢复授权 |
 | `LOG_TAIL_REPAIRED` | `truncatedBytes` |
-| `STALE_UNITS_SETTLED` | `requestIds`、`turnIds`、`workflowRunIds` |
-| `WORKSPACE_REVERTED` | `revertedTurnIds`、`forced`、`externalFiles`、`backupSnapshot?` |
+| `STALE_UNITS_SETTLED` | `requestIds`、`turnIds?`（旧日志）、`workflowRunIds` |
+| `CHECKPOINT_REQUESTED` | `checkpointId`、`kind`（`ROOT_SPAWN`、`HUMAN_ANSWER`、`TEMPLATE`）、`label`、`triggerToolCallId?`（Orchestration 第 7.2、7.3 节） |
+| `CHECKPOINT_TAKEN` | `checkpointId`、`outcome`（`TAKEN`、`SKIPPED`）、`snapshot?`、`heldUnits` |
+| `ROLLED_BACK` | `checkpointId`、`label`、`cutSeq`、`fromSeq`、`cancelledMissionIds`、`files`、`undo?`（`/undo`：打开这个 checkpoint 的输入一起取回）、`resumed?`（进程停下后在新的进程里从它继续）、`forced?`、`externalFiles?`；投影从触发它的调用起换成一条说明（Orchestration 第 7.5 节） |
+| `WORKSPACE_REVERTED` | checkpoint 取代 Turn 之前的回退记录（`revertedTurnIds`、`forced`、`externalFiles`、`backupSnapshot?`），只读取，由 `ROLLED_BACK` 取代 |
 | `WORKSPACE_DIVERGED` | `files` |
 | `SESSION_FORKED` | `fromSessionId`、`fromSeq` |
-| `TODOS_UPDATED` | `agentRunId`、`source: { modelTurnRequestId, toolCallId }`、`counts` |
 | `RUN_PAUSED` | 无附加字段 |
 | `RUN_RESUMED` | `steerInputId?`（继续时附加了说明；说明本身是 `HUMAN_ANSWERED(kind: steer)`） |
-| `RUN_INTERRUPTED` | `reason`（`MEMORY_PRESSURE`、`USER_ABORT`、`TURN_TIMEOUT`、`PAUSE_TIMEOUT`） |
+| `RUN_INTERRUPTED` | `reason`（`MEMORY_PRESSURE`、`USER_ABORT`、`INPUT_TIMEOUT`、`PAUSE_TIMEOUT`；旧日志另有 `TURN_TIMEOUT`） |
+| `SEGMENT_YIELDED`、`MISSION_WOKEN`、`MISSION_TIMER_DUE`、`MISSION_ENDED`、`MISSION_MESSAGE`、`MESSAGE_UNANSWERED`、`PLAN_REGISTERED`、`JOB_STARTED`、`JOB_READ`、`JOB_ENDED` | 任务的休眠与唤醒、消息、计划与后台命令，见 [Orchestration](../Orchestration.md) 第 9.1 节 |
 
 - M2Design 第 10.2 节的 `UNIT_COMPLETED` 带结构化输出与 ArtifactRef。`UNIT_SUBMITTED` 不复制工具参数，只指向 `MODEL_TURN` 中的工具调用；
   工具调用的参数正文由 `model-call` 的输出产物保存。这样先写日志、再提交（第 10.3 节写入规则第 1、2 条）不需要额外的产物写入。
@@ -129,9 +133,10 @@ interface SessionIndexLine {
   repositoryRoot: string;      // 现在工作的文件夹：新建时来自 Kernel 的 Session 命令，换文件夹打开后由 WORKSPACE_BOUND 更新；`/sessions` 用它分组
   createdAt: string;
   lastActiveAt: string;
-  turnCount: number;
+  inputCount?: number;         // 用户输入的条数；checkpoint 取代 Turn 之前写的行是 turnCount
+  turnCount?: number;
   titleRef?: ArtifactRef;
-  fork?: { fromSessionId: string; fromTurnCount: number };
+  fork?: ForkOrigin;           // Interface/InteractionKernel 第 3.2 节
   status: 'ACTIVE' | 'DELETED';
 }
 ```
@@ -194,16 +199,22 @@ interface ArtifactOwnerLine {
 
 ```ts
 type SnapshotIndexLine =
+  | { kind: 'CHECKPOINT'; checkpointId: string; ckpKind: 'INPUT' | 'ROOT_SPAWN' | 'HUMAN_ANSWER' | 'TEMPLATE';
+      label: string; snapshot?: string; turnId?: string; at: string }   // INPUT：用户的一条输入；其余是运行中的切面（Orchestration 第 7.2 节）
+  | { kind: 'SETTLED'; snapshot?: string; at: string }               // 运行静止时（等用户或结束）的工作区：最近一个 checkpoint 的区间到这里结束
+  | { kind: 'ROLLED_BACK_TO'; checkpointId: string; inclusive?: boolean; forced?: boolean; backupSnapshot?: string; at: string }
+                                                                      // 回到一个 checkpoint，之后的作废；inclusive（/undo）连它本身也取回
+  | { kind: 'EPOCH'; repositoryRoot: string; at: string }
+  // checkpoint 取代 Turn 之前写的行，只读取：
   | { kind: 'TURN_STARTED'; turnId: string; turnSeq: number; viewId: 'main'; startSnapshot?: string; at: string }
   | { kind: 'TURN_ENDED'; turnId: string; endSnapshot?: string;
       changedFiles: { path: string; change: 'ADDED' | 'MODIFIED' | 'DELETED' }[]; at: string }
-  | { kind: 'EPOCH'; repositoryRoot: string; at: string }
   | { kind: 'REVERTED'; revertedTurnIds: string[]; forced: boolean; backupSnapshot?: string; at: string };
 ```
 
-`EPOCH` 在 Session 于另一个文件夹里被打开时追加（M2Design 第 2.3 节）：它之前的 Turn 拍的是旧文件夹，此后不能回退也不能比较改动，读取索引时丢弃；这些行留在文件里，快照对象留在影子仓库中，没有任何东西再读它们。重复追加无害（打开中途崩溃后再来一次）。
+`EPOCH` 在 Session 于另一个文件夹里被打开时追加（M2Design 第 2.3 节）：它之前的 checkpoint 拍的是旧文件夹，此后不能回退也不能比较改动，读取索引时丢弃；这些行留在文件里，快照对象留在影子仓库中，没有任何东西再读它们。重复追加无害（打开中途崩溃后再来一次）。
 
-没有 `TURN_ENDED` 的 Turn 是进程退出或停机留下的（M2Design 第 4.6 节）。
+最后一个 checkpoint 之后没有 `SETTLED` 的，是进程退出或停机留下的（M2Design 第 4.6 节）。
 
 ### 4.5 退出请求的来源
 

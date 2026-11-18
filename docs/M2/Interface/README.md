@@ -45,7 +45,9 @@
 | 字段 | 前缀 | 生成者 | body | 说明 |
 |---|---|---|---|---|
 | `sessionId` | `ses` | Gateway（`startSession`、`startRun`） | ULID | 一个 Session；取代 M1 Envelope 中未使用的 `workSessionId` |
-| `turnId` | `trn` | Core | ULID | 一个 Turn |
+| `turnId` | `trn` | Core | ULID | checkpoint 取代 Turn 之前的日志中的一个 Turn；新记录不再有 |
+| `checkpointId` | `ckp` | Core（用户输入）、Workflow（运行中的切面） | ULID | 一个 checkpoint（Orchestration 第 7 节）；一次输入的工作以它命名 |
+| `missionScopeId` | `msc` | Workflow | 任务路径 SHA-256 的前 32 位 | 一个任务（Orchestration 第 3.2、8.1 节） |
 | `nodeId` | `nod` | Workflow | 节点路径 SHA-256 的前 32 位小写十六进制 | 节点路径见 [M2Design](../M2Design.md) 第 3.2 节 |
 | `unitRunId` | `unr` | Workflow | UnitRun 路径 SHA-256 的前 32 位 | 同上 |
 | `requestId`（提交 Unit 时） | `req` | Workflow | 提交路径 SHA-256 的前 32 位 | 其他请求的 `requestId` 仍为 ULID |

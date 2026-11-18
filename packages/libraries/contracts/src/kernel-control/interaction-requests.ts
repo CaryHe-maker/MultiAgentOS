@@ -157,9 +157,8 @@ export const ListCheckpointsRequestSchema = closed(
 export type ListCheckpointsRequest = Static<typeof ListCheckpointsRequestSchema>;
 
 /**
- * One line of `/checkpoints`: an input of the user (`INPUT`) or a checkpoint inside a run, with what
- * its stretch changed (Orchestration 7.4).
- * it; `changedFiles` is how many files its stretch changed, when that is known.
+ * One line of `/checkpoints`: an input of the user (`INPUT`) or a checkpoint inside a run
+ * (Orchestration 7.4); `changedFiles` is how many files its stretch changed, when that is known.
  */
 export const CheckpointListSchema = closed(
   {

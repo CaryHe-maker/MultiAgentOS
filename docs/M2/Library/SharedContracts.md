@@ -45,7 +45,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 | `kernel.unit.ScheduleWakeRequest.v1`、`WakeDue.v1` | `kernel-unit/workflow-syscalls.ts`、`workflow-events.ts` | 休眠任务的定时唤醒（[Orchestration](../Orchestration.md) 第 8.5 节） |
 | `kernel.unit.ControlJobRequest.v1`、`JobControlContent.v1`、`JobEnded.v1`；`kernel.execution.JobControlRequest.v1`、`JobControlResult.v1`、`JobEndedFact.v1` | `kernel-unit/workflow-syscalls.ts`、`workflow-events.ts`、`kernel-execution/supervisor-requests.ts` | 后台命令的读取、停止与结束（[Orchestration](../Orchestration.md) 第 6.5 节） |
 | `kernel.unit.ReportSessionCommandRequest.v1`、`ReportSessionListRequest.v1` | `kernel-unit/session-replies.ts` | WorkflowKernel 第 2.3 节 |
-| `kernel.unit.WorkflowInboxEvent.v1`（含 `RunStart`、`UnitReport`、`HumanAnswered`、`TurnClosed`、`RunClosed`） | `kernel-unit/workflow-events.ts` | WorkflowKernel 第 3.1 节 |
+| `kernel.unit.WorkflowInboxEvent.v1`（含 `RunStart`、`UnitReport`、`HumanAnswered`、`InputSettled`、`RunClosed` 与长任务的事件） | `kernel-unit/workflow-events.ts` | WorkflowKernel 第 3.1 节 |
 | `kernel.unit.BudgetView.v1`、`kernel.unit.TurnUsage.v1` | `kernel-unit/budget-state.ts` | 同上 |
 | `kernel.unit.MessagePublishInput.v1`、`MessagePublishOutput.v1` | `kernel-unit/message-publish.ts` | [Kernel/Execution](../Kernel/Execution.md) 第 5 节 |
 | `kernel.unit.UnitInput.v1`、`UnitOutput.v1` | `kernel-unit/unit-io.ts` | 各 Unit 输入输出的联合，增加 `repository-list`、`message-publish` |
@@ -71,7 +71,7 @@ M1 的规则全部保留（归档的 [M1 SharedContracts](../../History/M1/Libra
 | `kernel.execution.ExecutionRequest.v1` | `kernel-execution/execution-request.ts` | `limits`（`ExecutionLimits`，嵌套）增加预览上限 `preview: { maxBytes, maxLines }`（M2Design 第 8.2 节） |
 | `kernel.execution.ExecutionResult.v1`、`ExecutionFact.v1` | `kernel-execution/execution-fact.ts` | 带 `sessionId`，增加 `REPOSITORY_LIST`；工具结果分为预览 `artifact` 与截断时的 `fullOutput`；模型结果带 `reasoning`；模型的 `FAILED` 带 `retryAfterMs`（Kernel/Execution 第 3、4a 节） |
 | `kernel.execution.ModelProgress.v1`、`kernel.control.ModelStream.v1` | `kernel-execution/model-progress.ts`、`kernel-control/model-stream.ts` | 流式模型调用的旁路消息（[Console](../Console.md) 第 4 节）：思考的片段、答案开始写了的信号与流的结束，Supervisor 到 Kernel 核心、再到 UserInteraction；没有 `eventId` 与 `seq`，不进日志，来不及送达就丢弃；`kind` 为 `REASONING`（思考，带 `delta`）、`ANSWER`（模型开始调用 `answer` 工具，即回复，不带正文）、`TOOL`（正在写某个工具的调用：`name`，参数 `path` 写完整后再带 `target`）、`CONTEXT`（main 的上下文用了多少：`used`、`limit`，为 Kernel 每次组装 main 的下一次调用、且这次组装不需要压缩时发出，`callId` 是那次组装的执行）或 `END`。`ModelToolSpec` 与工具定义各增加可选的 `answer`：这个工具就是给使用者的答案 |
-| `kernel.execution.AssembleExecutorInput.v1` | `kernel-execution/execution-request.ts` | 增加段（ExecutorSet 第 6.1 节）、条目的 `turnId`、`seq` 与类别（`PINNED`、`NORMAL`）；工具结果带 `status`、`reasonCode`，没有预览时的文字由 Executor 写 |
+| `kernel.execution.AssembleExecutorInput.v1` | `kernel-execution/execution-request.ts` | 增加段（ExecutorSet 第 6.1 节）、条目的 `seq` 与类别（`PINNED`、`NORMAL`、`INHERITED`）；工具结果带 `status`、`reasonCode`，没有预览时的文字由 Executor 写 |
 | `context.ContextPack.v1` | `context/context-pack.ts` | 增加 `elidedEntries`（只在收尾调用的保险中出现），取代 `elidedRequestIds` |
 | `executor.RetentionNotice.v1` | `executor/retention.ts` | 预览的截断说明：策略、单位、上限、保留量、省略量、完整输出是否也被截断（超过 `maxFullOutputBytes`）（ExecutorSet 第 4 节） |
 

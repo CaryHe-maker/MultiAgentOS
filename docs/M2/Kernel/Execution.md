@@ -182,23 +182,23 @@ DELETED 的 Session 即使残留了归属文件也不参与标记。回收失败
 属性：影子目录的 info/attributes 关闭 text、eol、ident、filter 与编码转换，快照保存磁盘上的原始字节
 ```
 
-- Turn 开启时拍开始快照，写入索引；结束时拍结束快照，以 `git diff-tree` 算出改动过的文件，追加到索引（`SnapshotIndexLine`，Interface/Persistence 第 4.4 节）。
+- 每个 checkpoint 拍一个快照（`checkpoint`，用户的每条输入一个，长任务中另有派生前、答复后的，Orchestration 第 7.2 节），写入索引；运行静止时（等用户或结束）拍一个结束快照（`settle`），以 `git diff-tree` 算出这次输入以来改动过的文件（`SnapshotIndexLine` 的 `CHECKPOINT`、`SETTLED`，Interface/Persistence 第 4.4 节）。
 - 影子仓库关闭 gc（`gc.auto=0`）；快照只被快照索引引用，随 Session 目录删除。
-- 快照失败时 Turn 照常进行，但在索引中记为没有快照：这个 Turn 不能回退，`/undo` 说明原因。写入与回退依赖 git，启动探测见 M2Design 第 4.6 节。
+- 快照失败时工作照常进行，但在索引中记为没有快照：不能回到这个 checkpoint，`/undo` 说明原因。写入与回退依赖 git，启动探测见 M2Design 第 4.6 节。
 - 拍摄读文件内容，只在静止点进行，读取结束后不持有任何状态。
-- **换文件夹（`EPOCH`）**：Session 在另一个文件夹里被打开并经用户确认后（M2Design 第 2.3 节），Execution 在索引追加 `EPOCH { repositoryRoot }`，内存里此前的 Turn 清空。此后：回退只面对新文件夹的 Turn，旧文件夹的 Turn 不在其内；打开时的改动检测没有可比较的快照，不报告；新文件夹的第一次拍摄没有上一个快照，不继承旧文件夹的树。快照库和索引的旧内容原样留着（作废而不删除）。追加 `EPOCH` 先于把 Session 引用改为本进程的文件夹，所以两者之间崩溃后下次打开会再追加一次，结果相同。
+- **换文件夹（`EPOCH`）**：Session 在另一个文件夹里被打开并经用户确认后（M2Design 第 2.3 节），Execution 在索引追加 `EPOCH { repositoryRoot }`，内存里此前的 checkpoint 清空。此后：回退只面对新文件夹的 checkpoint，旧文件夹的不在其内；打开时的改动检测没有可比较的快照，不报告；新文件夹的第一次拍摄没有上一个快照，不继承旧文件夹的树。快照库和索引的旧内容原样留着（作废而不删除）。追加 `EPOCH` 先于把 Session 引用改为本进程的文件夹，所以两者之间崩溃后下次打开会再追加一次，结果相同。
 
 ## 6c. 回退
 
-Execution 提供 `planUndo`、`applyUndo`、`diffTurn`，由 Core 发起（Core 第 5a.5 节）。步骤与 M2Design 第 4.6 节相同：
+工作区快照（`session/workspace-snapshots.ts`）提供 `planUndo`（`/undo`：回到最近一个 checkpoint 之前，`ALL` 为第一个之前）、`planRewind`（暂停时回到第 N 个 checkpoint）、`applyRollBack`、`listCheckpoints`、`diffCheckpoint`、`diffLatest`，由 Core 发起（Core 第 5a.5 节）。步骤与 M2Design 第 4.6 节相同：
 
-1. **范围**：被回退各 Turn 改动过的文件的并集；目标为第一个改它的 Turn 的开始快照，目标中不存在时删除；
-2. **检查**：比较当前内容与最后改它的 Turn 的结束快照；没有结束快照的 Turn 按"开始快照与下一个 Turn 的开始快照之间的差异"计算，它就是最后一个时全部按外部修改处理；
-3. **兜底**：强制时先拍一个快照，引用写入回退记录；
-4. **写入**：逐个文件写入前再比较一次；不一致时停止，已写入的文件按兜底快照恢复，返回 `UNDO_FILE_CHANGED`；写入用同一套原子写入，保留文件权限；
-5. **记录**：向快照索引追加 `{ revertedTurnIds, forced, backupSnapshot? }`。
+1. **范围**：目标 checkpoint 之后改动过的文件；目标为那个 checkpoint 的快照，目标中不存在时删除；
+2. **检查**：比较当前内容与最近的快照（结束快照，或之后最近的 checkpoint）；没有可比较的快照的文件按外部修改处理；
+3. **兜底**：先拍一个快照，引用写入回退记录；
+4. **写入**：逐个文件写入前再比较一次；不一致时停止，已写入的文件按兜底快照恢复，回退以 `FILE_CHANGED` 取消（`UndoCancelled`）；写入用同一套原子写入，保留文件权限；
+5. **记录**：向快照索引追加 `ROLLED_BACK_TO { checkpointId, inclusive, forced, backupSnapshot? }`（`inclusive`：`/undo` 把这个 checkpoint 本身也取回），之后的 checkpoint 作废。
 
-Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn。切换或打开 Session 时，比较当前工作区与最后一个 Turn 的结束快照，差异作为 `divergedFiles` 与 `WorkspaceDiverged` 告知（M2Design 第 2.3 节 Session 第 6 条）。
+Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 checkpoint。切换或打开 Session 时，比较当前工作区与最后的结束快照，差异作为 `divergedFiles` 与 `WorkspaceDiverged` 告知（M2Design 第 2.3 节 Session 第 6 条）。
 
 ## 6d. Fork 的产物继承
 
@@ -208,7 +208,7 @@ Fork 不复制快照：新 Session 的 `/undo`、`/diff` 只覆盖自己的 Turn
 
 压缩过程（M2Design 第 9.6 节）中，Core 请 Execution 估算规模、修剪工具结果、组装并执行摘要请求：
 
-- **估算**（`estimateAssembly`）：取条目中该对象最近一次模型轮带的实测用量（`MODEL_TURN.usage` 的输入与输出 token，Workflow 随条目交来）与它对应的 `headDigest`；
+- **估算**（`estimateContext`，`contracts` 的 `context/compaction-estimate.ts`）：取条目中该对象最近一次模型轮带的实测用量（`MODEL_TURN.usage` 的输入与输出 token，Workflow 随条目交来）与它对应的 `headDigest`；
   与本次组装的 `headDigest` 相同、且其后没有修剪后的条目或摘要条目时，估算 = 实测输入 + 实测输出 + 其后新增条目的字节估算；否则全部按字节估算（M1 的 `estimatePackTokens`）。
   额度预留不用这个估算，仍用字节估算（Monitor 第 3.4 节）。
 - **修剪**（第 4.5 步）：按 Core 给出的候选（保留区之前、预览超过 `pruneMinBytes`、尚未修剪的 `NORMAL` 工具结果）读出预览正文，作为 Kernel 内部尝试交给 `CONTEXT_PRUNE` Executor（Kernel 自己的执行种类，ExecutorSet 第 6.4 节）；

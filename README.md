@@ -1,52 +1,54 @@
 # MultiAgentOS
 
-MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执行系统，目标平台为 Ubuntu LTS，规范版本为 24.04。
-长期文档定义概念、职责与安全边界，各 MVP 再明确实现和验收。
+MultiAgentOS 是面向软件工程与知识工作的多 Agent 编排与执行系统。它像操作系统管理进程一样管理 Agent：模型只提出动作，由 Kernel 统一授权、调度、执行与计费；一个目标可以由一组 Agent 并行完成，也可以在对话中一步步推进，每一步都能回退。
 
-## 快速开始
+> **版本**：M2 V1.1（2026-11-19）　**平台**：Ubuntu 24.04 LTS，或 Windows 上的 WSL2　**模型**：DeepSeek（`deepseek-flash`）
 
-当前版本 **M2 V1.1**，有两种模式：
+## 功能
 
-- **Turn-chat**（`mas`）：在一个本地仓库上持续对话，Agent（chat）可以读、写、运行命令（在沙盒中）、联网；把一件独立的事交给子任务（`subagent` 从它的提示开始，`subagent_fork` 从这段对话开始），把一个大目标交给 Mission；Session 可以保存、切换、回退、Fork 和继续，长对话自动压缩；写入、命令与联网都先询问。
-- **Mission**：把一个目标作为长任务做到交付。根任务规划、把可以并行的部分派给子任务（worker、lead、explorer 与专家），子任务之间可以发消息、等待彼此，检查结果后交付。两个入口：
-  - 在对话里用 `/mission <目标>`（chat 也可以自己决定）：chat 把目标写成任务要求交出去（Mission 不看这段对话），然后由 **Mission 代替 chat 工作，直到它结束**。期间活动区的根就是 Mission；你写的话、暂停后 `/continue` 带的说明都交给它；它问的问题由你回答，答完它接着做。它交付时，答复直接作为这一轮的回答显示给你；之后你再写话，chat 带着 Mission 的结果接着谈。Mission 拿 chat 这一轮能借出的全部额度，不够时像平时一样问你要不要追加，结束时没用完的还给对话。
-  - `mas run "<目标>"`：给脚本与评测的入口，中途不等用户，结束后退出。
+- **两种模式，同一个系统**
+  - **Turn-chat**（`mas`）：在一个本地仓库上持续对话。Agent 可以读、检索、写与编辑、运行命令（在沙盒中）、联网；把一件独立的事交给子任务（`subagent` 从它的提示开始，`subagent_fork` 从这段对话开始），把多部分的大目标交给 Mission。
+  - **Mission**：把一个目标作为长任务做到交付。根任务规划，把可以并行的部分派给子任务（worker、lead、explorer 与专家），子任务之间可以发消息、等待彼此，检查结果后交付。在对话里用 `/mission <目标>`（chat 也可以自己决定）：Mission 代替 chat 工作直到它结束，期间你写的话交给它、它问的问题由你回答，它的答复就是这一轮的回答，之后 chat 带着它的结果接着谈；`mas run "<目标>"` 是给脚本与评测的入口，结束后退出。
+- **安全**：命令在 bubblewrap 沙盒里运行；写入、命令、联网、读工作区之外的文件第一次需要时都先询问，拒绝绑定提出请求的 Agent；并行的子任务写入范围两两不相交，由 Kernel 强制；仓库里的 `AGENTS.md` 只有用户信任过的确切内容才当作项目指令。
+- **额度**：运行、每次输入、每个任务三级账本；子任务开账时只拿最小份额、按需逐级向上补，不够时问用户要不要追加，结束时余额立即返还。
+- **会话**：Session 保存在本地，可以切换、Fork、继续；每条输入是一个 checkpoint，`/undo` 回到它之前、`/diff` 看它改了什么；长任务暂停时可以回到运行中的 checkpoint，进程退出后可以从最近的 checkpoint 续跑；长对话自动压缩上下文。
+- **可重建**：会话状态是只追加日志的投影，重复消息、迟到结果、进程崩溃都有确定的处理；跨模块的数据都经过运行时 Schema 校验。
 
-以下在 Ubuntu 24.04 上执行，需要 Node.js 24（`>=24.19.0 <25`）、pnpm 11.25.0 与 DeepSeek 的 API key。
+## 安装
+
+需要 Node.js `>=24.19.0 <25`、pnpm `11.25.0` 与 DeepSeek 的 API key；可选 ripgrep（有 `rg` 时检索更快）。**不支持 Windows 原生**：命令的沙盒只有 Linux 有，在 Windows 上请在 WSL2 里运行。
 
 ```bash
-# 1. 安装与构建（在 MultiAgentOS 目录下）
-sudo apt-get install -y ripgrep          # 可选，有 rg 时检索更快
+sudo apt-get install -y ripgrep          # 可选
 pnpm install --frozen-lockfile
 pnpm run build
-
-# 2. 提供 API key（只从环境变量或本目录下不入库的 .env 读取）
-export DEEPSEEK_API_KEY=<你的 key>
-
-# 3. 进入对话；--repo 是要处理的仓库，缺省为当前目录
-node apps/control-plane/dist/bin.js --repo /home/me/projects/my-app
-
-# 或者把一个目标作为长任务一直做到完成，结束后退出
-node apps/control-plane/dist/bin.js run --repo /home/me/projects/my-app "给登录失败加上清楚的错误信息，并补上测试"
-
-# 查看一个对话的时间线
-node apps/control-plane/dist/bin.js log --repo /home/me/projects/my-app
+export DEEPSEEK_API_KEY=<你的 key>      # 只从环境变量或本目录下不入库的 .env 读取
+alias mas='node /path/to/MultiAgentOS/apps/control-plane/dist/bin.js'
 ```
 
-第一次需要读仓库时，终端会询问是否允许；`/help` 列出 `/mission`、`/new`、`/resume`、`/sessions`、`/undo`、`/compact` 等指令。完整说明见 [M2Usage](docs/M2/M2Usage.md)。
+## 使用
 
-## M2 V1.1 相对 V1.0
+```bash
+mas --repo /home/me/projects/my-app                 # 进入对话；--repo 缺省为当前目录，--readonly 只允许安全级能力
+mas run --repo /home/me/projects/my-app "给登录失败加上清楚的错误信息，并补上测试"   # 一个长任务做到完成，结束后退出
+mas log --repo /home/me/projects/my-app             # 查看一个对话的时间线
+```
 
-- **chat 按单 Agent 的写法重写**：系统提示与全部工具说明按 DeepSeek Harness 的风格与长度用本项目自己的话写，思考要简短；派生改为一次一个子任务的 `subagent`、`subagent_fork`（以 `chat-sub` 运行）与 `mission`（Orchestration D112、D113）。
-- **Mission 可以从对话里用**：`/mission <目标>`（D114），Mission 代替 chat 工作到它结束、拿 chat 这一轮的全部额度（D115）。
-- **派生时额度不够先问用户**：`mission`、`subagent`、`run_subagents` 借不到初始份额时，先问要不要追加，同意就派出，拒绝才拒绝这次调用（D115）。
-- **工具更快、结果不变**：检索与列目录共用一份文件集合，命令前后的扫描并行、同一文件的摘要只算一次；在一万个文件的仓库上每次检索与每条命令的固定开销减少一半以上。
-- **`kernel.sandbox.unisolatedWrites`**：本身就是隔离环境的机器（评测容器）可以放开未隔离命令的写入范围（D79）。
-- Mission 的规划、派生与检查规则没有改（仍是基线1.2），下面的大任务成绩是 V1.0 测的，V1.1 没有在大任务上重跑；小任务成绩是 V1.1 测的。
+对话里常用的指令（`/help` 列出全部）：
+
+| 指令 | 作用 |
+|---|---|
+| `/mission <目标>` | 把一个大目标交给 Mission |
+| `/new`、`/sessions`、`/resume <n>`、`/fork` | 新建、列出、打开、分叉对话 |
+| `/undo`、`/diff`、`/checkpoints`、`/rewind #N` | 回退文件改动、看差异、列出 checkpoint、暂停时回到第 N 个 |
+| `/steer [@任务] <说明>`、`/continue [说明]` | 运行中插话；暂停（Ctrl+C）后继续 |
+| `/compact`、`/recover`、`/exit` | 压缩上下文、续跑上次中断的长任务、退出 |
+
+配置（`MULTIAGENTOS_CONFIG`）、数据目录与全部指令见 [M2Usage](docs/M2/M2Usage.md)。
 
 ## 实验结果
 
-两种模式都与 DeepSeek Harness（`dsh`，单 Agent）对照：同一模型 `deepseek-flash`、同一镜像、同一判分、同一时间上限，每道各跑一次。`dsh` 用 `read_image` 看图的题（mas 没有图片输入）与 `dsh` 取了这道题自己的测试或参考解的题不计分（[TaskSet](docs/M2/TaskSet.md) 第 7 节）。
+两种模式都与 DeepSeek Harness（`dsh`，单 Agent）对照：同一模型 `deepseek-flash`、同一镜像、同一判分、同一时间上限，每道各跑一次。`dsh` 用 `read_image` 看图的题（mas 没有图片输入）与 `dsh` 取了这道题自己的测试或参考解的题不计分（[TaskSet](docs/M2/TaskSet.md) 第 7 节）。大任务的成绩是 V1.0 测的（Mission 的规划、派生与检查规则在 V1.1 中没有改，仍是基线1.2），小任务的成绩是 V1.1 测的。
 
 ### Mission：大任务
 
@@ -119,12 +121,12 @@ Execution -> Supervisor -> Executor 子进程运行 ExecutorSet 中的 Executor
 - 跨模块数据经过运行时 Schema 校验，大对象通过 ArtifactRef 传递。
 - 重复消息、迟到结果、进程崩溃和未知副作用必须有确定的处理语义。
 
-完整设计从 [Architecture 指南](docs/Architecture/README.md) 开始阅读。文档更新不表示对应能力已经实现。
+- Workflow 决定业务推进与验收，Kernel 负责授权、调度、执行、资源与监管；每类领域状态只有一个写入 Owner。
+- 模型只提出动作，不能绕过 Kernel 直接执行工具；Lease 只存在于 Core，授权只由人类签发。
+- Executor 在子进程中运行，只返回物理执行事实，不判断任务是否成功。
+- 跨模块数据经过运行时 Schema 校验，契约由 Schema 快照守护，大对象通过 ArtifactRef 传递。
 
-## 当前交付范围
-
-M1（只读仓库分析）已发布，文档归档在 [History/M1](docs/History/M1/README.md)。当前版本 M2 V1.1：范围与设计见 [M2Design](docs/M2/M2Design.md)，编排见 [Orchestration](docs/M2/Orchestration.md)，
-使用见 [M2Usage](docs/M2/M2Usage.md)，限制见 [M2Limitations](docs/M2/M2Limitations.md)。不应将架构文档中的长期能力理解为已经交付。
+设计从 [M2 文档](docs/M2/README.md) 开始读：[M2Design](docs/M2/M2Design.md)（总体设计）、[Orchestration](docs/M2/Orchestration.md)（长任务与决定记录）、各模块与接口文档；长期架构见 [Architecture](docs/Architecture/README.md)（长期文档不表示对应能力已经实现）。
 
 ## 仓库结构
 
@@ -156,37 +158,31 @@ docs/
   Style.md              工程协作规范
 ```
 
-## 开发环境
-
-以下是仓库现有工程环境；项目规范平台为 Ubuntu 24.04 LTS。
-
-- Node.js `24.19.0`，允许 `>=24.19.0 <25`
-- pnpm `11.25.0`
-- TypeScript `6.0.3`
+## 开发
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm run build
-pnpm run check
+pnpm run check        # 格式、lint、类型检查与全部测试
+pnpm run gate:phase   # 冻结的系统测试（Ubuntu 24.04；每次发布前必须通过，任何测试被跳过都算失败）
+pnpm run eval         # 评测体系；真实模型需要 --yes 与请求预算
 ```
 
-**支持的平台只有 Linux（规范版本 Ubuntu 24.04 LTS）和 Windows 上的 WSL2（Ubuntu 24.04）。M2 不适配 Windows 原生**：命令的沙盒是 bubblewrap，只有 Linux 有，Windows 原生没有，按设计拒绝运行命令；符号链接、进程、实例锁等也按 Linux 的语义实现。在 Windows 上请进入 WSL2 里运行与开发（`scripts/wsl-gate.sh` 可以在 WSL 里检查某个提交）。最终验收在 Ubuntu 24.04 LTS 上执行。
-检索在系统中有 `rg`（ripgrep）时使用它，否则使用内置扫描；本地运行全部测试需要安装 ripgrep，
-Ubuntu 上为 `sudo apt-get install -y ripgrep`。
+Node.js `24.19.0`、pnpm `11.25.0`、TypeScript `6.0.3`；本地跑全部测试需要 ripgrep。在 Windows 上开发时，`scripts/wsl-gate.sh <提交> [补丁]` 在 WSL 的克隆里跑完整检查。精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)，代码、文档、Commit、分支与 Pull Request 的规则见 [Style](docs/Style.md)；合并到 `main` 与 `feat/*` 的变更都经过 Pull Request。
 
-`pnpm run gate:phase` 在 Ubuntu 24.04 上运行冻结的系统测试（每次发布前必须通过，任何测试被跳过都算失败）；`pnpm run eval` 是评测体系（[Evaluation](docs/M2/Evaluation.md)），真实模型的评测需要 `--yes` 与请求预算。
+## 已知限制
 
-精确依赖见 [Dependencies](docs/Requirements/Dependencies.md)。代码、文档、Commit、分支与 Pull Request 规则见 [Style](docs/Style.md)。
+- 只接入了 DeepSeek；没有图片输入。
+- Mission 比单 Agent 快，但更贵（大任务约 1.6 倍）；同一版本在同一道题上的拆分方式有随机性。
+- 沙盒没有 CPU 与内存总量限制；使用者自己写的工作流模板、`/run` 没有做。
 
-## 文档入口
+完整清单见 [M2Limitations](docs/M2/M2Limitations.md)。
 
-- [总文档索引](docs/README.md)
-- [Architecture 指南](docs/Architecture/README.md)
-- [整体架构](docs/Architecture/Overall.md)
-- [协议架构](docs/Architecture/Protocol.md)
-- [运行实例](docs/Architecture/Instance.md)
-- [M2 文档](docs/M2/README.md)
-- [M1 归档](docs/History/M1/README.md)
-- [M2 历史（开发过程中的旧计划与实测）](docs/History/M2/README.md)
+## 版本
 
-所有合并到 `feat/M2` 或 `main` 的变更都必须通过 Pull Request。
+| 版本 | 日期 | 内容 |
+|---|---|---|
+| **M2 V1.1** | 2026-11-19 | chat 按单 Agent 的写法重写，派生改为 `subagent`、`subagent_fork` 与 `mission`；`/mission <目标>`，Mission 代替 chat 工作到它结束、拿 chat 这一轮的全部额度；派生时额度不够先问用户；工具的固定开销减半，结果不变；`kernel.sandbox.unisolatedWrites`（[Orchestration](docs/M2/Orchestration.md) D112–D115） |
+| M2 V1.0 | 2026-11-18 | Turn-chat 与 Mission（Mission 基线1.2）两种模式：写入、命令与沙盒、联网、checkpoint 与回退、Session、上下文压缩、多 Agent 长任务 |
+| M1 | 2026-10-25 | 只读的仓库分析（文档归档在 [History/M1](docs/History/M1/README.md)） |
+

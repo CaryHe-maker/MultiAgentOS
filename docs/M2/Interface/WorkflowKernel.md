@@ -1,7 +1,7 @@
 # Workflow 与 Kernel 的接口
 
-> 状态：已实现；发布前再与代码核对一次。约定见 [Interface](README.md)。
-> major 1 冻结之前可以原地增加字段。
+> 状态：已实现，与 `packages/libraries/contracts`（`ports.ts` 的 `WorkflowGatewayPort`、`kernel-unit`、`kernel-session`）一致。约定见 [Interface](README.md)。
+> major 1 的 Schema 由快照守护（`contracts:snapshot`，SharedContracts 第 2、4 节）：快照冻结之前可以原地修改，冻结之后只能增加可选字段。
 
 ## 1. 范围
 
@@ -11,11 +11,12 @@ Workflow 只持有 `WorkflowGatewayPort`；Gateway 以 `Envelope.producer = 'wor
 | 方向 | 内容 |
 |---|---|
 | Workflow → Kernel | AgentRun 登记与结束、Unit 提交、运行结束报告、人类请求、读取项目文件、Session 命令的回复 |
-| Workflow → Kernel | 委派保留与返还 |
+| Workflow → Kernel | 委派保留与返还；交接结果的保留 |
+| Workflow → Kernel | 任务：定时唤醒、checkpoint、停下一个 AgentRun、回溯后重开或关闭任务、收回问题与开放输入、后台命令 |
 | Kernel → Workflow，Session 级 | 打开、新建、关闭 Session（Fork 为 2） |
 | Kernel → Workflow，系统级 | Session 列表查询、删除未打开的 Session |
-| Kernel → Workflow，运行级 | 运行开始、Unit 结果、人类答复、Turn 结束、运行结束 |
-| Kernel → Workflow，运行级 | 工作区回退与差异 |
+| Kernel → Workflow，运行级 | 运行开始、Unit 结果、人类答复、一次输入的工作结束、运行结束 |
+| Kernel → Workflow，运行级 | 回到 checkpoint、工作区差异、checkpoint 完成、定时到点、后台命令结束、派生等待的回答 |
 | Kernel → Workflow，运行级 | 暂停、继续、中止、人类请求取消 |
 | Workflow → Kernel | 待办进度（`updateActivity`，只用于界面） |
 | Kernel → Workflow，运行级 | 运行中插话（`HumanAnswered(kind: steer)`） |
@@ -39,7 +40,17 @@ interface WorkflowGatewayPort {
   reserveDelegation(request: ReserveDelegationRequest, context: BoundaryContext): Promise<DelegationReserved | SyscallRejected>;
   releaseDelegation(request: ReleaseDelegationRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
   retainArtifacts(request: RetainArtifactsRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 第 2.2 节
-  // reportCompactionSource、ackCompaction（第 2.4 节）
+  reportCompactionSource(request: ReportCompactionSourceRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;   // 第 2.4 节
+  ackCompaction(request: AckCompactionRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  // 任务（第 2.6 节）
+  scheduleWake(request: ScheduleWakeRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  takeCheckpoint(request: TakeCheckpointRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  haltAgentRun(request: HaltAgentRunRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  restoreMission(request: RestoreMissionRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  closeMission(request: CloseMissionRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  withdrawQuestion(request: WithdrawQuestionRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  withdrawOpenInput(request: WithdrawOpenInputRequest, context: BoundaryContext): Promise<SyscallAck | SyscallRejected>;
+  controlJob(request: ControlJobRequest, context: BoundaryContext): Promise<JobControlContent | SyscallRejected>;
 }
 ```
 
@@ -59,13 +70,16 @@ interface RegisterAgentRunRequest {
   agentRef: PinnedDefinitionRef;   // kind = 'AGENT'
   effort: ThinkingEffort;          // 必须在 Agent 定义允许的范围内；AgentRun 的思考强度只在这里给出，Unit 输入中没有
   workspaceViewId: 'main';         // M2Design 第 6.5 节
-  display: { label: string };      // ≤80，只用于界面
+  display: { label: string; standsIn?: true };   // label ≤80，只用于界面；standsIn：代替调用方工作的 Mission（Orchestration D115）
   requestedCapabilities: string[]; // 不超出能力上限，否则 CAPABILITY_NOT_SUBSET（Kernel/Core 第 5a.1 节）
+  offeredCapabilities?: string[];  // 工具按哪些能力提供：继承调用者上下文的任务提供调用者的工具，超出自己上限的调用被拒（Orchestration D35）
+  inputLimit?: number;             // 比 Agent 自己更小的单次输入上限（D100），只能收窄
   writeRoots: string[];            // 相对仓库根目录；main 为 ['.']；没有 workspace.write 时为空
   // SubAgent 带 parentAgentRunId、delegationId、taskName（三项同有同无，Kernel/Core 第 5d 节）
   parentAgentRunId?: string;
   delegationId?: string;           // 前缀 dlg，Core 生成
   taskName?: string;
+  mission?: { missionId: string; parentMissionId?: string };   // 它是哪个任务的一段（Orchestration 第 8.1 节）；任务的第一段开启它的 MissionScope
 }
 
 
@@ -106,12 +120,13 @@ interface EndAgentRunRequest {
   sessionId: string;
   workflowRunId: string;
   agentRunId: string;
+  missionContinues?: boolean;      // 这一段去等待、任务还在（Orchestration 第 4.1 节）：MissionScope 连同账本与写入范围保留；没有时任务随它结束
+  keepsQuestions?: boolean;        // 这一段去等自己问题的答复（ask_user 作为休眠）：问题在 AgentRun 结束后仍然有效，答复唤醒任务
 }
 
 type CloseRunRequest =
-  | { requestId: string; sessionId: string; workflowRunId: string; outcome: 'COMPLETED'; resultRef?: ArtifactRef }
-  | { requestId: string; sessionId: string; workflowRunId: string; outcome: 'FAILED'; failure: RunFailure }   // failure.source = 'WORKFLOW'
-  | { requestId: string; sessionId: string; workflowRunId: string; outcome: 'BUDGET' | 'CANCELLED' | 'TIMEOUT'; resultRef?: ArtifactRef };
+  | { requestId: string; sessionId: string; workflowRunId: string; outcome: 'COMPLETED' | 'BUDGET' | 'CANCELLED' | 'TIMEOUT' | 'INTERRUPTED'; resultRef?: ArtifactRef }
+  | { requestId: string; sessionId: string; workflowRunId: string; outcome: 'FAILED'; failure: RunFailure };   // failure.source = 'WORKFLOW'
 ```
 
 - `CloseRunRequest.resultRef`：运行发布的结果：Mission 运行中 `output: true` 节点的回复
@@ -131,13 +146,14 @@ interface RequestHumanRequest {
   question?: string;               // 局部询问必填（≤1000）
   fields?: HumanField[];           // 至多 8 个
   reviewRef?: ArtifactRef;         // kind = review 必填
+  askedAgain?: boolean;            // 回溯到答复之前后再问一次（Orchestration 第 7.5 节）：问的 AgentRun 已结束，它的任务休眠到答复
+}
 
 interface HumanField { name: string; type: 'text' | 'textarea' | 'select' | 'multiselect' | 'confirm'; label: string; options?: string[]; required?: boolean }
-}
 ```
 
 - `kind = 'prompt'` 是开放输入：Kernel 检查没有 ACTIVE 的 AgentRun 与在途 UnitAttempt，不满足时以 `AGENT_RUN_ACTIVE` 拒绝；
-  受理时结束当前 Turn（M2Design 第 2.3 节），运行进入 AWAITING_INPUT。
+  受理时上一次输入的工作结束（`InputSettled`，M2Design 第 2.3 节），运行进入 AWAITING_INPUT。
 - Workflow 在追加 `HUMAN_REQUESTED` 之后才发出本请求（M2Design 第 10.3 节写入规则第 1 条）。
 
 ```ts
@@ -149,17 +165,15 @@ interface ReadProjectFileRequest {
 }
 
 type ProjectFileContent =
-  | { requestId: string; outcome: 'ACCEPTED'; path: 'AGENTS.md'; exists: false }
-  | { requestId: string; outcome: 'ACCEPTED'; path: 'AGENTS.md'; exists: true; ref: ArtifactRef; sha256: string; trusted: boolean }
-  | { requestId: string; outcome: 'ACCEPTED'; path: string; exists: false }                                       // 模板文件
-  | { requestId: string; outcome: 'ACCEPTED'; path: string; exists: true; ref: ArtifactRef; sha256: string; text: string };  // 模板文件
+  | { requestId: string; outcome: 'ACCEPTED'; path: string; exists: false }
+  | { requestId: string; outcome: 'ACCEPTED'; path: string; exists: true; ref: ArtifactRef; sha256: string; trusted: boolean };
 ```
 
 - `AGENTS.md` 不返回正文，Workflow 只把引用交给 `context-assemble`；`trusted` 的判定与询问见 M2Design 第 9.5 节。
   询问进行中时本请求挂起，直到用户回答；询问不超时，运行收敛时本请求以 `RUN_BLOCKED` 结束。
 - 文件超过 64 KiB 时照常存为产物；截断只发生在上下文组装中。
 
-- **用户正文只以引用传递**（M2Design 第 7.5 节）：Kernel 发给 Workflow 的事件不带用户输入的正文，Workflow 也没有读取正文的通道；需要目标文字的 Unit 输入写 `objectiveRef` 或 `goalRef`，由 Execution 解析。没有例外。
+- **用户正文只以引用传递**（M2Design 第 7.5 节）：Kernel 发给 Workflow 的事件不带用户输入的正文，Workflow 也没有读取正文的通道；需要用户正文的 Unit 输入只写它的引用（`contentRef`），由 Execution 解析。没有例外。
 
 ### 2.3 Session 命令的回复
 
@@ -173,9 +187,10 @@ interface ReportSessionCommandRequest {
   sessionId: string;                // 命令所针对的 Session
   commandId: string;                // 前缀 scm，来自事件
   result:
-    | { command: 'OPEN'; outcome: 'READY'; lastTurnId?: string; turnCount: number; titleRef?: ArtifactRef }
+    | { command: 'OPEN'; outcome: 'READY'; inputCount: number; titleRef?: ArtifactRef;
+        interrupted?: { workflowRunId: string; templateRef: DefinitionRef; checkpointId: string; label: string; spentTokens: number } }   // 上次进程留在中途的长任务（Orchestration 第 7.6 节）
     | { command: 'CREATE'; outcome: 'READY' }
-    | { command: 'FORK'; outcome: 'READY'; inheritedArtifacts: ArtifactRef[]; fromTurnCount: number }   // 复制的日志中出现的全部产物引用；原 Session 的 Turn 数，用于 SessionOpened.fork
+    | { command: 'FORK'; outcome: 'READY'; inheritedArtifacts: ArtifactRef[]; fromInputCount: number }   // 复制的日志中出现的全部产物引用；原 Session 的输入数，用于 SessionOpened.fork
     | { command: 'CLOSE' | 'DELETE'; outcome: 'DONE' }
     | { command: 'OPEN' | 'CREATE' | 'FORK' | 'CLOSE' | 'DELETE'; outcome: 'FAILED'; failure: SessionCommandFailure };
 }
@@ -193,11 +208,12 @@ interface ReportSessionListRequest {
 
 interface SessionListEntry {
   sessionId: string;
+  repositoryRoot: string;           // 最后工作的文件夹
   createdAt: string;
   lastActiveAt: string;
-  turnCount: number;
+  inputCount: number;
   titleRef?: ArtifactRef;           // 第一条 prompt 的正文；Kernel 读取前 80 个字符作为标题
-  fork?: { fromSessionId: string; fromTurnCount: number };
+  fork?: ForkOrigin;                // InteractionKernel 第 3.2 节
   status: 'ACTIVE' | 'DELETED';
 }
 ```
@@ -216,7 +232,7 @@ interface ReportCompactionSourceRequest {
   sessionId: string;
   workflowRunId: string;
   compactionId: string;              // 来自 CompactionSourceQuery
-  entries: ContextHistoryEntry[];    // 该对象当前的投影条目，与 context-assemble 输入中的历史条目同一结构（带 seq、turnId、类别）；
+  entries: ContextHistoryEntry[];    // 该对象当前的投影条目，与 context-assemble 输入中的历史条目同一结构（带 seq、类别）；
                                      // 模型轮条目另带 measured: { inputTokens, outputTokens, headDigest }（来自 MODEL_TURN.usage 与该轮 CONTEXT_ASSEMBLED）
 }
 
@@ -242,12 +258,50 @@ interface UpdateActivityRequest {
   sessionId: string;
   workflowRunId: string;
   agentRunId: string;                 // 必须是 ACTIVE 的 AgentRun
-  todos: { total: number; done: number; current?: string };   // total ≤30；current ≤80 个字符，为进行中的一项
+  todos?: { total: number; completed: number; current?: string };   // total ≤30；current ≤80 个字符，为进行中的一项
+  step?: { toolName: string; argsSummary: string };   // 一次不运行 Unit 的控制调用（send_message、sleep、run_subagents……），界面像一个完成的工具一样显示
+  phase?: 'AWAITING_GRANT';           // 只有 Workflow 知道的等待：向上级申请更多轮次（D91）
 }
 ```
 
 - 与 `display` 相同，只用于界面：Kernel 不做任何判断，把 `todos` 原样放进该 AgentRun 之后的 ActivityEvent（M2Design 第 3.5 节）；不写审计，不计入额度与工具次数。
-- Workflow 在追加 `TODOS_UPDATED` 之后才发出本请求。
+- Workflow 在追加 `TODOS_UPDATED` 之后才发出带 `todos` 的请求。
+
+### 2.6 任务的请求
+
+长任务的机制见 [Orchestration](../Orchestration.md) 第 4–8 节。
+
+```ts
+interface ScheduleWakeRequest {      // seconds 之后唤醒一个休眠的任务；到点时 Kernel 发 WakeDue；定时不跨运行
+  requestId: string; sessionId: string; workflowRunId: string;
+  missionId: string; timerId: string; seconds: number;   // 1..3600
+}
+interface TakeCheckpointRequest {    // Kernel 扣住新的写入与前台命令，等在途的完成后拍快照，以 CheckpointTaken 回答（Orchestration 第 7.3 节）
+  requestId: string; sessionId: string; workflowRunId: string;
+  checkpointId: string; kind: 'ROOT_SPAWN' | 'HUMAN_ANSWER' | 'TEMPLATE'; label: string;   // 用户的每条输入另有自己的 checkpoint
+}
+interface HaltAgentRunRequest {      // 取消一个 AgentRun 排队与在途的工作（它的任务被停下或被父任务打断）；每个 Unit 以 INTERRUPTED(ABORTED) 回答
+  requestId: string; sessionId: string; workflowRunId: string; agentRunId: string;
+}
+interface RestoreMissionRequest {    // 回溯到它结束之前：任务重新打开、休眠，有份额的从父任务重新借出（至多父任务还能借的）
+  requestId: string; sessionId: string; workflowRunId: string; missionId: string; tokens?: number;
+}
+interface CloseMissionRequest {      // 关闭一个不会再醒的休眠任务：写入范围交还，份额未用部分还给父任务
+  requestId: string; sessionId: string; workflowRunId: string; missionId: string;
+}
+interface WithdrawQuestionRequest {  // 收回一个没有人再等的局部询问（问的任务被停下，或回溯后要重新问）
+  requestId: string; sessionId: string; workflowRunId: string; humanRequestId: string;
+}
+interface WithdrawOpenInputRequest { // chat 的 main 在等用户时，工作的后台命令结束了：收回开放输入，开启一份没有用户输入的工作，以 checkpointId 命名（Orchestration 第 4.4 节）
+  requestId: string; sessionId: string; workflowRunId: string; humanRequestId: string; checkpointId: string;
+}
+interface ControlJobRequest {        // 读取或停止任务的后台命令（Orchestration 第 6.2 节）；Workflow 记着它属于哪个任务、上次读到哪里
+  requestId: string; sessionId: string; workflowRunId: string;
+  jobKey: string; action: 'READ' | 'STOP'; offset?: number; maxBytes?: number;
+}
+```
+
+- `withdrawOpenInput` 在运行已不再等这个请求（用户刚好答复了）时被拒，通知随那次答复交给 main。
 
 ## 3. Kernel → Workflow
 
@@ -257,9 +311,21 @@ interface UpdateActivityRequest {
 
 ```ts
 type KernelToWorkflowEvent =
-  | RunStart | UnitReport | HumanAnswered | TurnClosed | RunClosed;
-  | WorkspaceReverted | WorkspaceDiverged;   // 字段见 InteractionKernel 第 3 节；WorkspaceDiverged 为 { type, files: string[] }
-  | RunPaused | RunResumed | RunInterrupted | HumanCancelled;
+  | RunStart | UnitReport | HumanAnswered | InputSettled | RunClosed
+  | CheckpointRolledBack | WorkspaceDiverged   // CheckpointRolledBack 的字段见 InteractionKernel 第 3.1 节；WorkspaceDiverged 为 { type, files: string[] }
+  | RunPaused | RunResumed | RunInterrupted | HumanCancelled
+  | CheckpointTaken | WakeDue | JobEnded | DelegationDecided
+  | CompactionSourceQuery | ToolResultsPruned | ContextCompacted;   // 第 3.4 节
+interface CheckpointTaken {          // checkpoint 拍好了或放弃了（Orchestration 第 7.3 节）；heldUnits 是被扣住、拍快照时还没运行的尝试
+  type: 'CheckpointTaken'; checkpointId: string; outcome: 'TAKEN' | 'SKIPPED'; snapshot?: string; heldUnits: string[];
+}
+interface WakeDue { type: 'WakeDue'; missionId: string; timerId: string }
+interface JobEnded {                 // 后台命令结束（Orchestration 第 6.4 节）；属于哪个任务由 Workflow 记着
+  type: 'JobEnded'; jobKey: string; exit: JobExit; durationMs: number; totalBytes: number; tail: string;
+}
+interface DelegationDecided {        // 用户回答了派生调用在等的问题：更多子任务（D62）或更多额度（D115）；等待的调用重做
+  type: 'DelegationDecided'; granted: boolean;
+}
 interface RunPaused { type: 'RunPaused' }
 interface RunResumed {
   type: 'RunResumed';
@@ -267,12 +333,12 @@ interface RunResumed {
 }
 interface RunInterrupted { type: 'RunInterrupted'; reason: InterruptReason }
 interface HumanCancelled { type: 'HumanCancelled'; humanRequestId: string; nodeId: string; reason: InterruptReason }   // 运行中止时待答复的局部询问被取消
-  // CompactionSourceQuery、ToolResultsPruned、ContextCompacted（第 3.4 节）
 
 interface RunStart {
   type: 'RunStart';
   mode: 'CHAT' | 'ORCHESTRATION';
   templateRef?: DefinitionRef;       // ORCHESTRATION 时必填（mission）；CHAT 是代码中的生长规则，不得有
+  resumed?: { checkpointId: string; files: number; backupSnapshot?: string };   // ORCHESTRATION：上次进程留下的长任务以原来的 id 从这个 checkpoint 继续，运行处于暂停（Orchestration 第 7.6 节）
   preset: 'standard' | 'readonly';
   initialInput: boolean;             // true：Kernel 随后以 HumanAnswered(origin: 'initial') 交来第一条输入（startSession、startRun）；
                                      // false：没有初始输入，由 Workflow 请求开放输入（openSession，包括额度结束后的继续）
@@ -294,39 +360,39 @@ interface UnitReport {
   fullRef?: ArtifactRef;             // 只在预览截断了内容时给出：完整输出，7 天后过期；不进入投影，只作为 read_output 的输入（M2Design 第 8.2 节）
   reasoningRef?: ArtifactRef;        // 只用于 model-call：模型返回了思考内容时给出（ExecutorSet 第 7 节）
   usage?: TokenUsage;                // 只用于 model-call：provider 数出的输入、输出与缓存命中；Workflow 写进 `MODEL_TURN.usage`
-  quota?: 'TOOL_UNITS' | 'WALL_CLOCK';   // 只在 reasonCode = 'QUOTA_EXHAUSTED' 时给出：触顶的上限（Kernel/Monitor 第 3 节）；Workflow 据此设置 wrapUpReason
+  quota?: 'TOOL_UNITS' | 'WALL_CLOCK' | 'MEMORY';   // 只在 reasonCode = 'QUOTA_EXHAUSTED' 时给出：触顶的上限（Kernel/Monitor 第 3 节）；Workflow 据此设置 wrapUpReason
   budget: BudgetView;
   changedFiles?: string[];           // 写入工具改动的文件
 }
 
 interface BudgetView {               // M2Design 第 7.3 节：三级账本各自的状态
   agentRun: BudgetState;
-  turn: BudgetState;
-  run: BudgetState;                  // 按"本 Turn 现在结束时运行级账本的余额"判定（Kernel/Monitor 第 3.1 节）
+  input: BudgetState;                // 用户最近一条输入以来的工作的账本
+  run: BudgetState;                  // 按"这次输入的工作现在结束时运行级账本的余额"判定（Kernel/Monitor 第 3.1 节）
 }
 
 interface HumanAnswered {
   type: 'HumanAnswered';
-  kind: 'prompt' | 'ask' | 'confirm' | 'review' | 'steer';   // 局部询问的答复与运行中插话 'steer'（带 targetAgentRunId?，没有时为本 Turn 的 main；不带 turnId，不开启 Turn）
-  origin: 'initial' | 'requested';
+  kind: 'prompt' | 'ask' | 'confirm' | 'review' | 'steer';   // 局部询问的答复与运行中插话 'steer'（带 targetAgentRunId?；不开启新的工作）
+  origin?: 'initial' | 'requested';  // steer 没有
   humanRequestId?: string;           // origin = 'requested' 时必填
   inputId: string;                   // 前缀 inp，UserInteraction 分配；用于去重
   contentRef: ArtifactRef;           // 用户输入的正文，由 Execution 写入
-  turnId: string;                    // 开放输入的答复开启 Turn（M2Design 第 2.3 节）
-  template?: DefinitionRef;          // Turn-chat 中以 /run 发起时，本 Turn 的主体模板
+  checkpointId?: string;             // 只有 prompt：这条输入之前拍的 checkpoint，它开启的工作就是这一段（Orchestration 第 7.2 节）
+  delegateTo?: string;               // 只有 prompt：用户要这条输入交给哪个派生工具（/mission，D114）
 }
 
-interface TurnClosed {
-  type: 'TurnClosed';
-  turnId: string;
+interface InputSettled {             // 一次输入以来的工作停下了（Orchestration 第 7.1 节）：运行等下一条输入，或关闭
+  type: 'InputSettled';
+  checkpointId: string;
   reason: 'COMPLETED' | 'ABORTED' | 'TIMEOUT' | 'BUDGET' | 'RUN_CLOSED';
-  usage: TurnUsage;
+  usage: InputUsage;
   startSnapshot?: string;            // 快照失败时没有
   endSnapshot?: string;
   changedFileCount?: number;
 }
 
-interface TurnUsage {
+interface InputUsage {
   inputTokens: number;
   outputTokens: number;
   unknownTokens: number;             // 未知消耗，按预留额计入
@@ -449,10 +515,13 @@ type ContextHistoryEntry = EntryBase & (
   | { kind: 'TOOL_RESULT'; toolCallId: string; toolName: string; status: 'OK' | 'REJECTED' | 'FAILED' | 'INTERRUPTED'; outputRef?: ArtifactRef; reasonCode?: ReasonCode }   // outputRef 只能是预览，不得是 fullRef
   | { kind: 'FEEDBACK'; text: string; toolCallId?: string }   // 没有执行的工具调用的回答，≤1000
   | { kind: 'PROJECT_INSTRUCTIONS'; path: string; ref: ArtifactRef; trusted: boolean }   // AGENTS.md，PINNED，追加在读取它的位置（M2Design 第 9.5 节）
+  | { kind: 'TASK' | 'SUBAGENT_RESULT' | 'HUMAN_ANSWER' | 'MESSAGE' | 'PLAN' }   // 任务的目标、子任务的结果、询问的答复、任务之间的消息、计划（字段见 Module/Workflow 第 8.3 节）
+  | { kind: 'SUMMARY' }                            // 压缩的摘要（M2Design 第 9.6 节）
   | { kind: 'NOTE'; text: string }                 // 运行时上下文、中断与修复的说明，≤2000
+  | { kind: 'SWITCH'; text: string }               // 换了工作文件夹的说明，≤8000（M2Design 第 2.3 节）
 );
 
-interface EntryBase { seq: number; turnId?: string; category: 'PINNED' | 'NORMAL' }
+interface EntryBase { seq: number; category: 'PINNED' | 'NORMAL' | 'INHERITED' }   // INHERITED：任务开始时继承的调用者上下文，原样保留，不修剪、不摘要（D100）
 
 interface ContextAssembleInput {
   final: boolean;                                  // 必须等于 status.final
@@ -464,7 +533,8 @@ type WrapUpReason =                                // 下一次模型调用为�
   | 'BUDGET_WRAP_UP'                               // BudgetView 为 WRAP_UP
   | 'TOOL_UNIT_LIMIT' | 'WALL_CLOCK_LIMIT'         // QUOTA_EXHAUSTED 的 quota 为 TOOL_UNITS、WALL_CLOCK
   | 'REPEATED_INTENT' | 'CONSECUTIVE_ERRORS'       // Workflow 的业务熔断（M2Design 第 3.4 节）
-  | 'CONTEXT_LIMIT' | 'NO_PROGRESS' | 'ROUND_LIMIT' | 'REGENERATION_LIMIT';
+  | 'CONTEXT_LIMIT' | 'NO_PROGRESS' | 'ROUND_LIMIT' | 'REGENERATION_LIMIT'
+  | 'MEMORY_LIMIT';                                // 内存压力（Kernel/Core 第 5c 节）
 ```
 
 `GRAPH_EXTENDED` 的 `nodes`、`edges` 见 [Persistence](Persistence.md) 第 2.3 节。
@@ -488,12 +558,13 @@ type WrapUpReason =                                // 下一次模型调用为�
 | 原因码 | 出现位置 | 含义 |
 |---|---|---|
 | `AGENT_RUN_ACTIVE` | `SyscallRejected`（`requestHuman`） | 开放输入只能在静止时请求 |
-| `NO_OPEN_TURN` | `SyscallRejected`（`registerAgentRun`、`submitUnit`） | 没有开启中的 Turn，或尝试属于已结束的 Turn |
+| `NO_OPEN_INPUT` | `SyscallRejected`（`registerAgentRun`、`submitUnit`） | 没有开启中的输入工作，或尝试属于已经结束的那次输入 |
 | `SESSION_COMMAND_UNKNOWN` | `SyscallRejected`（`reportSessionCommand`） | `commandId` 不存在或已回复 |
 | `SESSION_QUERY_UNKNOWN` | `SyscallRejected`（`reportSessionList`） | `queryId` 不存在或已回复 |
 | `USER_DECLINED` | `SyscallRejected`（`readProjectFile`） | 用户拒绝了 `repo.read`，项目文件读不到（Kernel/Core 第 5.2 节）；Unit 被拒时走 UnitReport |
 | `PROJECT_FILE_FORBIDDEN` | `SyscallRejected`（`readProjectFile`） | 路径不在白名单内（Schema 已拒绝时由 Gateway 返回 `INVALID_REQUEST`） |
-
+| `BUDGET_INSUFFICIENT`、`BUDGET_ASKED` | `SyscallRejected`（`reserveDelegation`） | 借不出这些任务的份额；正在问用户追加（D115） |
+| `TASK_QUOTA_ASKED`、`TASK_QUOTA_REACHED` | `SyscallRejected`（`reserveDelegation`） | 子任务数到了上限：正在问用户；用户不再允许（D62） |
 | `QUOTA_EXHAUSTED` | UnitReport（`REJECTED`） | 该 AgentRun 的工具次数或墙钟已触顶（`quota` 说明是哪一项）；后续的非收尾 Unit 都以它拒绝，Workflow 进入收尾（Kernel/Monitor 第 3 节） |
 | `ARTIFACT_EXPIRED` | UnitReport（`REJECTED`） | 引用的正文已过保留期（M2Design 第 10.1 节，按登记时间判断）；只出现在 `read_output` 的 UnitReport 中，Workflow 把它作为工具结果交给模型，说明完整输出已过期删除；出现在其他 Unit 中时视为内部错误 |
 | `CONTEXT_COMPACTED` | UnitReport（`context-assemble`，`REJECTED`） | 组装期间完成了压缩，须以新的投影重新提交 |
@@ -512,5 +583,5 @@ M1 的 `AGENT_RUN_ACTIVE` 原本用于"已有 ACTIVE 的 AgentRun 时再次登�
 | `ADMISSION_CHECK_FAILED` | UnitReport（`REJECTED`） | 判定过程本身出错，一律拒绝 |
 | `FILE_CHANGED` | UnitReport（`REJECTED`） | `baseSha` 或 `expectAbsent` 不成立：文件在读取之后被改动 |
 | `EDIT_NO_MATCH`、`EDIT_NOT_UNIQUE` | UnitReport（`REJECTED`） | `oldString` 没有匹配，或匹配不唯一 |
-| `UNDO_NOT_AVAILABLE`、`NOTHING_TO_UNDO`、`UNDO_UNKNOWN` | `SyscallRejected`（`undoTurns`、`confirmUndo`、`diffTurns`） | 不在 AWAITING_INPUT、没有可回退的 Turn、`undoId` 不存在 |
+| `UNDO_NOT_AVAILABLE`、`NOTHING_TO_UNDO`、`UNDO_UNKNOWN` | `SyscallRejected`（UserInteraction 的 `undo`、`confirmUndo`、`diff`） | 不在 AWAITING_INPUT、没有可回退的 checkpoint、`undoId` 不存在 |
 
