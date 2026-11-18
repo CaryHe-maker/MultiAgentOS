@@ -551,6 +551,7 @@ function checkAgent(
     ...[
       body.actions.todos,
       body.actions.spawn,
+      ...(body.actions.delegate ?? []),
       body.actions.askUser,
       body.actions.sleep,
       body.actions.message,
@@ -575,6 +576,8 @@ function checkAgent(
   }
   const endTools = new Set<string>();
   for (const end of body.actions.end) {
+    if (end.byText === true && end.then !== 'FINISH_SUBAGENT')
+      report(origin, 'AGENT_INVALID', 'byText is for a FINISH_SUBAGENT end only');
     const toolKey = `${end.toolRef.id}@${end.toolRef.version}`;
     if (endTools.has(toolKey))
       report(origin, 'AGENT_INVALID', `end tool ${end.toolRef.id} is declared twice`);
@@ -649,8 +652,33 @@ function checkSpawn(
   report: (origin: string, code: CatalogIssueCode, message: string) => void,
 ): void {
   const spawns = body.capabilities.includes('agent.spawn');
-  if (spawns !== (body.actions.spawn !== undefined))
-    report(origin, 'AGENT_INVALID', 'agent.spawn and actions.spawn go together');
+  const starts = body.actions.spawn !== undefined || body.actions.delegate !== undefined;
+  if (spawns !== starts)
+    report(origin, 'AGENT_INVALID', 'agent.spawn and actions.spawn or actions.delegate go together');
+  // A tool that starts one subtask (Orchestration D112): a control tool, no two with the same
+  // name. One that runs a template's step (D113) takes MissionArgs and starts the Agent the
+  // template's owner is; any other takes DelegateArgs and starts an Agent that may be started.
+  const delegateNames = new Set<string>();
+  for (const each of body.actions.delegate ?? []) {
+    const tool = get('TOOL', each.toolRef);
+    const contract = each.template === undefined ? 'workflow.DelegateArgs.v1' : 'workflow.MissionArgs.v1';
+    if (tool !== undefined && (tool.purpose !== 'CONTROL' || contractOf(tool.parametersContract) !== contract))
+      report(origin, 'AGENT_INVALID', `delegate tool ${each.toolRef.id} must be CONTROL with ${contract}`);
+    if (tool !== undefined && delegateNames.has(tool.modelName))
+      report(origin, 'AGENT_INVALID', `two delegate tools are named ${tool.modelName}`);
+    if (tool !== undefined) delegateNames.add(tool.modelName);
+    if (each.template !== undefined) {
+      const template = get('TEMPLATE', each.template);
+      if (template === undefined)
+        report(origin, 'AGENT_INVALID', `delegate template ${each.template.id} is missing`);
+      else if (template.owner?.agent.id !== each.agent)
+        report(origin, 'AGENT_INVALID', `delegate template ${each.template.id} is not owned by ${each.agent}`);
+      continue;
+    }
+    const started = get('AGENT', { id: each.agent, version: body.version });
+    if (started !== undefined && started.spawnable === undefined)
+      report(origin, 'AGENT_INVALID', `delegate agent ${each.agent} is not spawnable`);
+  }
   if (body.actions.spawn !== undefined) {
     const tool = get('TOOL', body.actions.spawn.toolRef);
     if (
@@ -807,6 +835,7 @@ export class DefinitionCatalog {
       ...agent.actions.end.map((end) => end.toolRef),
       ...(agent.actions.todos === undefined ? [] : [agent.actions.todos.toolRef]),
       ...(agent.actions.spawn === undefined ? [] : [agent.actions.spawn.toolRef]),
+      ...(agent.actions.delegate ?? []).map((each) => each.toolRef),
       ...(agent.actions.askUser === undefined ? [] : [agent.actions.askUser.toolRef]),
       ...(agent.actions.sleep === undefined ? [] : [agent.actions.sleep.toolRef]),
       ...(agent.actions.message === undefined ? [] : [agent.actions.message.toolRef]),

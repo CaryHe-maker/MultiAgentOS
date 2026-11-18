@@ -69,14 +69,30 @@ export function completionResponse(
 }
 
 export type ScriptedAgent =
-  'main' | 'lead' | 'explorer' | 'worker' | 'planner' | 'code-viewer' | 'unknown';
+  | 'main'
+  | 'lead'
+  | 'explorer'
+  | 'worker'
+  | 'chat-sub'
+  | 'mission'
+  | 'planner'
+  | 'code-viewer'
+  | 'unknown';
 
 /** Which Agent a request is for, from the tools it offers (M2Design 3.9). */
-export function agentOfTools(names: ReadonlySet<string>): ScriptedAgent {
+export function agentOfTools(
+  names: ReadonlySet<string>,
+  /** The text of the request: a chat-sub and a Mission started from chat are told by it (D112, D113). */
+  text = '',
+): ScriptedAgent {
   // A lead returns a result like any task and may start tasks of its own (Orchestration 9.4).
-  if (names.has('finish_subagent'))
+  if (names.has('finish_subagent')) {
+    if (text.includes('You are a subagent')) return 'chat-sub';
     return names.has('run_subagents') ? 'lead' : names.has('write_file') ? 'worker' : 'explorer';
-  if (names.has('run_subagents')) return 'main';
+  }
+  // The Agent of a Turn-chat starts subtasks with subagent, subagent_fork and mission (D112).
+  if (names.has('subagent')) return 'main';
+  if (names.has('run_subagents')) return text.includes('The goal you own:') ? 'mission' : 'main';
   if (names.has('handoff_to_code_viewer')) return 'planner';
   if (names.has('finish_analysis')) return 'code-viewer';
   return 'unknown';

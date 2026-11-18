@@ -1,0 +1,17 @@
+schemaVersion: v1
+kind: TOOL
+id: run-command
+version: v0.2.0
+description: Model-facing command execution, served by the run-command unit. Turn-chat text.
+purpose: UNIT
+modelName: run_command
+modelDescription: >-
+  Run a bash command in the repository and return its exit code and output. Each call runs in a fresh shell; pass workdir instead of cd. It runs in a sandbox without network; network true asks the user for internet. timeoutMs defaults to 120000, at most 600000; a command still running then moves to the background. runInBackground starts a long command and returns its job id at once. Long output is cut in the middle; read_output reads the rest.
+parametersContract:
+  kind: contract
+  id: executor.RunCommandArgs
+  version: v1
+riskClass: HIGH
+sideEffect: EXTERNAL
+isIdempotent: false
+contentStatus: FINAL

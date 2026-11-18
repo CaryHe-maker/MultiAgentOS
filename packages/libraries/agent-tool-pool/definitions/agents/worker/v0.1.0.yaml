@@ -78,6 +78,7 @@ actions:
       version: v0.1.0
 spawnable:
   defaultShare: 1200000
+  staggered: true
 capabilities:
   - repo.read
   - workspace.write

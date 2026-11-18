@@ -203,11 +203,16 @@ export const WorkflowConfigSchema = closed(
     maxSubagentsPerCall: count(1),
     maxDependencyDepth: count(),
     /**
-     * Experiment (stagger): workers of one run_subagents call that start with the same context
-     * start one first; the others wait for its first model reply, at most this many milliseconds,
-     * so they find its prefix in the provider's cache. 0 or absent: all start at once.
+     * Workers of one run_subagents call that start with the same context start one first; the
+     * others wait for its first model reply, at most this many milliseconds, so they find its
+     * prefix in the provider's cache (Orchestration D104). 0 or absent: all start at once.
      */
     staggerWorkersMs: Type.Optional(count()),
+    /**
+     * The Agent a Turn-chat runs (Orchestration D112): `chat` when absent. `main` runs a
+     * Turn-chat with the Agent of Mission's root, which starts its tasks with `run_subagents`.
+     */
+    chatAgent: Type.Optional(Type.String({ pattern: '^[a-z][a-z0-9-]{0,39}$' })),
   },
   'platform.config.WorkflowConfig.v1',
 );

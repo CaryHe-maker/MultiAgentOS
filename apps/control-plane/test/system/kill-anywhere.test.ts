@@ -80,7 +80,8 @@ describe('a process killed between any two records of the log', () => {
         const before = await lines(await logFile(dataDir));
 
         const provider = scriptedChat(reply('resumed'));
-        const chat = await openChat({ dataDir, repository, provider });
+        // The task machinery, through a Turn-chat of Mission's root (D112).
+        const chat = await openChat({ dataDir, repository, provider, chatAgent: 'main' });
         open.push(chat);
         await until(() => chat.printed('NOTICE').length > 0, 'the welcome');
         if ((await readdir(join(dataDir, 'sessions')).catch(() => [])).length > 0) {

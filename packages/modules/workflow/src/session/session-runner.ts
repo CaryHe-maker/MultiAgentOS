@@ -27,7 +27,7 @@ import {
   type WakeCondition,
   type RunSubagentsArgs,
   type SpawnRequest,
-  type SubagentTask,
+  type SpawnTask,
   type SpawnNode,
   type KernelToWorkflowEvent,
   type PinnedDefinitionRef,
@@ -159,7 +159,7 @@ export interface SessionRunnerDeps {
   readonly newAgentRunId?: () => string;
 }
 
-/** The Agent of a Turn-chat; Mission's root is the Agent its template names (main). */
+/** The Agent of a Turn-chat unless configured (D112); Mission's root is the Agent its template names. */
 const CHAT_AGENT = 'chat';
 /** The id the root task of a Turn-chat is named by (Orchestration 3.2). */
 const CHAT_TEMPLATE = 'chat';
@@ -176,7 +176,7 @@ const MAX_OPEN_REQUESTS = 3;
 /** What one `job_output` reads at most: it must fit the answer of the call. */
 const JOB_READ_BYTES = 12_000;
 /** The deepest level of the MissionTree: three levels (Orchestration 3.6). */
-const MAX_MISSION_DEPTH = 2;
+const MAX_MISSION_DEPTH = 3;
 /**
  * What a specialist asks for: more than any Agent's largest share, so the Kernel grants the
  * largest (twice the default of a lead). A caller's own figure is not taken: a specialist sized
@@ -889,7 +889,7 @@ export class SessionRunner {
   }
 
   #mainRef(): DefinitionRef {
-    const { id, version } = this.#binding(CHAT_AGENT).ref;
+    const { id, version } = this.#binding(this.#deps.config.chatAgent ?? CHAT_AGENT).ref;
     return { id, version };
   }
 
@@ -905,9 +905,12 @@ export class SessionRunner {
    */
   #bindingAt(agentId: string, depth: number, commands = true): AgentBinding {
     let binding = this.#binding(agentId);
-    if (depth >= MAX_MISSION_DEPTH && binding.definitions.spawnTool !== undefined) {
+    const starts =
+      binding.definitions.spawnTool !== undefined || binding.definitions.delegateTools !== undefined;
+    if (depth >= MAX_MISSION_DEPTH && starts) {
       const definitions: AgentDefinitions = { ...binding.definitions };
       delete (definitions as { spawnTool?: unknown }).spawnTool;
+      delete (definitions as { delegateTools?: unknown }).delegateTools;
       binding = {
         ...binding,
         requestedCapabilities: binding.requestedCapabilities.filter(
@@ -1719,15 +1722,15 @@ export class SessionRunner {
         scope.missionId === undefined
           ? undefined
           : replyRefusal(owedReplies(this.#records, scope.missionId, { agentRunId }), answered),
-      // An answer written as text ends the run as its reply when nothing is left to wait for (D97).
-      // Only when nothing is left that it could be early for: it is the root, no subtask of it
-      // runs or waits to start, no request to it is unanswered, and none of its background
-      // commands still runs. Otherwise it is sent back as before, and the task goes on.
+      // An answer written as text ends the task when nothing is left to wait for (D97, D112): the
+      // root's as its reply, a subtask's as its result, for an Agent whose end allows it. Only when
+      // nothing is left that it could be early for: no subtask of it runs or waits to start, no
+      // request to it is unanswered, and none of its background commands still runs. Otherwise it
+      // is sent back as before, and the task goes on.
       mayReplyNow: (agentRunId) => {
         if (scope.missionId === undefined) return false;
         const missions = projectMissions(this.#records);
         return (
-          missions.get(scope.missionId)?.parentId === undefined &&
           this.#runningChildren(scope.missionId).length === 0 &&
           owedReplies(this.#records, scope.missionId, { agentRunId }).length === 0 &&
           !jobsHeldBy(this.#records, scope.missionId, missions).some((job) => job.running)
@@ -2465,8 +2468,11 @@ export class SessionRunner {
         `Not yet: subtasks you started are still running (${running.map((each) => each.name).join(', ')}). Call sleep with until children: you are woken as each one ends; finish when all have ended.`,
       );
     switch (action) {
+      // The root of a template run as a subtask (D113) replies to its caller: the reply is its result.
       case 'PUBLISH_REPLY':
-        return this.#publishReply(workflowRunId, active, ending.source);
+        return active.task === undefined
+          ? this.#publishReply(workflowRunId, active, ending.source)
+          : this.#finishSubagent(workflowRunId, active, ending);
       case 'FINISH_SUBAGENT':
         return this.#finishSubagent(workflowRunId, active, ending);
     }
@@ -2567,6 +2573,30 @@ export class SessionRunner {
         ...(handed.referenceId === undefined ? {} : { referenceId: handed.referenceId }),
       }),
       ending.source.modelOutputRef,
+    );
+    return this.#advance(workflowRunId);
+  }
+
+  /**
+   * A subtask that answered in text (D112): its text is its result, read from its model output
+   * (the caller is shown it whole up to the length of a report). Nothing runs below it and nothing
+   * waits for it, or the answer would not have been taken (`mayReplyNow`).
+   */
+  async #finishWithText(
+    workflowRunId: string,
+    active: ActiveAgent,
+    source: { readonly modelTurnRequestId: string; readonly modelOutputRef: ArtifactRef },
+  ): Promise<void> {
+    const seenCheck =
+      active.lastCheck === undefined ? undefined : commandOfCall(this.#records, active.lastCheck);
+    const outcome = finishedOutcome({}, active.changed, seenCheck);
+    await this.#endAgentRun(workflowRunId, active, 'ENDED');
+    await this.#endNode(
+      workflowRunId,
+      active.nodeId,
+      'SUCCEEDED',
+      resultOf(outcome),
+      source.modelOutputRef,
     );
     return this.#advance(workflowRunId);
   }
@@ -2756,7 +2786,10 @@ export class SessionRunner {
       case 'ENDED':
         return this.#runEndAction(ending.tool.action, workflowRunId, active, ending);
       case 'REPLIED':
-        return this.#publishReply(workflowRunId, active, ending.source);
+        // A subtask's answer written as text is its result (D112).
+        return active.task === undefined
+          ? this.#publishReply(workflowRunId, active, ending.source)
+          : this.#finishWithText(workflowRunId, active, ending.source);
       case 'SPAWN':
         return this.#onSpawn(workflowRunId, active, ending);
       case 'ASK':
@@ -2884,12 +2917,32 @@ export class SessionRunner {
         ),
       );
     const isRoot = projectMissions(this.#records).get(active.missionId)?.parentId === undefined;
-    const requested = splitAsLead(ending.arguments as RunSubagentsArgs);
+    const delegate = ending.delegate;
+    const requested =
+      delegate === undefined
+        ? splitAsLead(ending.arguments as RunSubagentsArgs)
+        : this.#delegated(workflowRunId, active, delegate, ending.arguments);
+    // A template's step started as a subtask (D113) is told its step as the template tells it.
+    const step = delegate?.template === undefined ? undefined : this.#ownerStep(delegate.template.id);
+    const first = requested.tasks[0];
+    const steps = new Map<string, { readonly guide?: string; readonly inputLimit?: number }>(
+      step === undefined || first === undefined
+        ? []
+        : [
+            [
+              first.name,
+              {
+                ...(step.guide === undefined ? {} : { guide: step.guide }),
+                ...(step.inputLimit === undefined ? {} : { inputLimit: step.inputLimit }),
+              },
+            ],
+          ],
+    );
     // A specialist (fixer, reviewer, ...) is a lead that follows the playbook of the template that
     // names it (Orchestration 3.9, D39). Only the root's spawn tool offers one (D93): the
     // specialist and its tasks take the two levels below it.
     const specialists = new Map<string, NonNullable<SpawnNode['specialist']>>();
-    const tasks: SubagentTask[] = [];
+    const tasks: SpawnTask[] = [];
     for (const task of requested.tasks) {
       const template = this.#specialists.get(task.agent);
       if (template?.playbook === undefined) {
@@ -2969,7 +3022,19 @@ export class SessionRunner {
     const readable = readableArtifacts(this.#records, active.state.agentRunId);
     const spawnContext = {
       rules: this.#deps.config,
-      agents: this.#spawnable,
+      agents:
+        delegate?.template === undefined
+          ? this.#spawnable
+          : new Map([
+              ...this.#spawnable,
+              [
+                delegate.agent,
+                {
+                  writes: true,
+                  allowedEfforts: this.#binding(delegate.agent).allowedEfforts,
+                },
+              ],
+            ]),
       callerRoots: this.#callerRoots(workflowRunId, active),
       readable: (artifactId: string) => readable.has(artifactId),
     };
@@ -3075,7 +3140,10 @@ export class SessionRunner {
     // task that is a worker, explorer or lead.
     const inherit = new Map<string, { readonly as: string; readonly runAs: string }>();
     for (const task of checked.plan.tasks) {
-      if (phaseInherits !== undefined)
+      if (delegate !== undefined) {
+        if (delegate.context === 'inherit')
+          inherit.set(task.name, { as: task.agent, runAs: task.agent });
+      } else if (phaseInherits !== undefined)
         inherit.set(task.name, { as: phaseInherits, runAs: active.agentId });
       // A worker, explorer or lead starts with its caller's context, which holds what the
       // caller read and its call (D56, D58); a specialist and a task taken up again do not.
@@ -3138,7 +3206,64 @@ export class SessionRunner {
       continued,
       inherit,
       { notStarted, cut: ending.cut ?? [] },
+      steps,
     );
+  }
+
+  /**
+   * The one task a tool that starts one subtask asks for (Orchestration D112): named `sub-N` (a
+   * template's step `mission-N`) by the first number none of the caller's tasks has; its prompt is
+   * its goal; it may change only the paths it names, and a template's step the caller's own (D113).
+   */
+  #delegated(
+    workflowRunId: string,
+    active: ActiveAgent,
+    delegate: NonNullable<Extract<AgentEnding, { kind: 'SPAWN' }>['delegate']>,
+    argumentsOf: unknown,
+  ): SpawnRequest {
+    const args = (argumentsOf ?? {}) as {
+      readonly description?: string;
+      readonly prompt?: string;
+      readonly goal?: string;
+      readonly writeScope?: readonly string[];
+    };
+    const prefix = delegate.template === undefined ? 'sub' : 'mission';
+    const taken = new Set(
+      childrenOf(projectMissions(this.#records), active.missionId).map((each) => each.name),
+    );
+    let number = 1;
+    while (taken.has(`${prefix}-${String(number)}`)) number += 1;
+    const text = args.prompt ?? args.goal ?? '';
+    const step = delegate.template === undefined ? undefined : this.#ownerStep(delegate.template.id);
+    return {
+      tasks: [
+        {
+          name: `${prefix}-${String(number)}`,
+          agent: delegate.agent,
+          role: (args.description ?? text.split('\n')[0] ?? prefix).slice(0, 80),
+          goal: step === undefined ? text : `${step.goal}\n\nThe goal you own:\n${text}`,
+          writeScope:
+            delegate.template === undefined
+              ? [...(args.writeScope ?? [])]
+              : [...this.#callerRoots(workflowRunId, active)],
+        },
+      ],
+    };
+  }
+
+  /** The step of a template's owner: its goal, guide and input limit (Orchestration 3.5, D113). */
+  #ownerStep(
+    templateId: string,
+  ): { readonly goal: string; readonly guide?: string; readonly inputLimit?: number } | undefined {
+    const node = this.#deps.templates
+      .get(templateId)
+      ?.nodes.find((each) => each.kind === 'AGENT' && each.role === 'owner');
+    if (node === undefined || node.kind !== 'AGENT') return undefined;
+    return {
+      goal: node.goal ?? '',
+      ...(node.guide === undefined ? {} : { guide: node.guide }),
+      ...(node.inputLimit === undefined ? {} : { inputLimit: node.inputLimit }),
+    };
   }
 
   /** Asks the Kernel to lend the shares of all the tasks, or none (M2Design 7.3, rule 2). */
@@ -3215,6 +3340,8 @@ export class SessionRunner {
       notStarted: [],
       cut: [],
     },
+    /** A template's step started as a task (D113): its guide and input limit, by task name. */
+    steps: ReadonlyMap<string, { readonly guide?: string; readonly inputLimit?: number }> = new Map(),
   ): Promise<void> {
     const call = { toolCallId, delegationId: reserved.delegationId };
     const shares = new Map(reserved.shares.map((share) => [share.name, share]));
@@ -3228,12 +3355,15 @@ export class SessionRunner {
       { nodeId: active.nodeId, call, missionId },
       tasks.map((task) => {
         const inherits = inherit.get(task.name);
+        const step = steps.get(task.name);
         return {
           name: task.name,
           // A task of a phase runs as the caller's Agent (same prompt, tools and cache, D35); a task
           // that asked for the context runs as its own (D53).
           agentRef: this.#refOf(inherits?.runAs ?? task.agent),
           goal: task.goal,
+          ...(step?.guide === undefined ? {} : { guide: step.guide }),
+          ...(step?.inputLimit === undefined ? {} : { inputLimit: step.inputLimit }),
           dependsOn: task.dependsOn ?? [],
           spawn: {
             ...spawnNodeOf(task, shares.get(task.name)),

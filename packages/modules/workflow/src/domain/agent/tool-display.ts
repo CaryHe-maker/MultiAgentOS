@@ -102,7 +102,12 @@ export function controlLineOf(
     case 'VIEW_TASKS':
       return line(definitions.viewTasksTool, '');
     case 'SPAWN':
-      return line(definitions.spawnTool, controlSummaryOf('SPAWN', ending.arguments));
+      return ending.delegate === undefined
+        ? line(definitions.spawnTool, controlSummaryOf('SPAWN', ending.arguments))
+        : line(
+            { toolName: ending.delegate.toolName },
+            String((ending.arguments as { description?: unknown } | null)?.description ?? ''),
+          );
     case 'SLEEP':
       return line(definitions.sleepTool, controlSummaryOf('SLEEP', ending.arguments));
     case 'STOP':

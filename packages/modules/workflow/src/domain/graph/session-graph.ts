@@ -126,6 +126,9 @@ export interface SpawnTaskSpec {
   readonly name: string;
   readonly agentRef: DefinitionRef;
   readonly goal: string;
+  /** A template's step started as a task (D113): the guide and input limit its template gives. */
+  readonly guide?: string;
+  readonly inputLimit?: number;
   readonly dependsOn: readonly string[];
   readonly spawn: NonNullable<GraphNodeRecord['spawn']>;
 }
@@ -154,6 +157,8 @@ export function spawnRevision(
       kind: 'AGENT',
       agentRef: task.agentRef,
       goal: task.goal,
+      ...(task.guide === undefined ? {} : { guide: task.guide }),
+      ...(task.inputLimit === undefined ? {} : { inputLimit: task.inputLimit }),
       spawn: task.spawn,
       mission: {
         id: childMissionId(caller.missionId, caller.call.toolCallId, task.name),

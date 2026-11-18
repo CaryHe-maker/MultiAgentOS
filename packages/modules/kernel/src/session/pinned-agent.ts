@@ -70,6 +70,10 @@ export function pinnedAgentOf(
     agent.actions.spawn === undefined || !requested.includes('agent.spawn')
       ? undefined
       : toolOf(agent.actions.spawn.toolRef);
+  // The tools that each start one subtask go with `agent.spawn` as `run_subagents` does (D112).
+  const delegates = !requested.includes('agent.spawn')
+    ? []
+    : (agent.actions.delegate ?? []).flatMap((each) => toolOf(each.toolRef) ?? []);
   // `ask_user` needs no capability: any Agent that declares it offers it (M2Design 3.4).
   const ask =
     agent.actions.askUser === undefined ? undefined : toolOf(agent.actions.askUser.toolRef);
@@ -97,6 +101,7 @@ export function pinnedAgentOf(
     ...unitTools,
     ...(todos === undefined ? [] : [todos]),
     ...(spawn === undefined ? [] : [spawn]),
+    ...delegates,
     ...(ask === undefined ? [] : [ask]),
     ...taskTools,
     ...ends.map((end) => end.tool),

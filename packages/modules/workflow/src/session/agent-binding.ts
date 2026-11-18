@@ -82,6 +82,7 @@ export function agentBindingOf(
         parameters: registry.resolveContract(tool.parametersContract),
         allowedInFinal: end.allowedInFinal,
         action: end.then,
+        ...(end.byText === true ? { byText: true } : {}),
       };
     }),
     onDegraded: agent.actions.onDegraded,
@@ -94,6 +95,21 @@ export function agentBindingOf(
               toolOf(agent.actions.spawn.toolRef).parametersContract,
             ),
           },
+        }),
+    // Tools that each start one subtask need `agent.spawn` too (Orchestration D112).
+    ...(agent.actions.delegate === undefined || !requestedCapabilities.includes('agent.spawn')
+      ? {}
+      : {
+          delegateTools: agent.actions.delegate.map((each) => {
+            const tool = toolOf(each.toolRef);
+            return {
+              toolName: tool.modelName,
+              parameters: registry.resolveContract(tool.parametersContract),
+              agent: each.agent,
+              context: each.context,
+              ...(each.template === undefined ? {} : { template: each.template }),
+            };
+          }),
         }),
     ...(agent.actions.askUser === undefined
       ? {}

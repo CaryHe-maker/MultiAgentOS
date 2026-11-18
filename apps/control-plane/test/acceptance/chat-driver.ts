@@ -120,6 +120,11 @@ export interface ChatOptions {
   readonly reportSystemFault?: SystemFaultReporter;
   /** A real run's key; scripted runs use a key that goes nowhere. */
   readonly credentials?: { apiKeyFor(provider: string): string | undefined };
+  /**
+   * The Agent the Turn-chat runs (`workflow.chatAgent`, D112): `main`, Mission's root, for a case
+   * of the task machinery that starts its tasks with run_subagents.
+   */
+  readonly chatAgent?: string;
 }
 
 export interface Chat {
@@ -169,10 +174,14 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
   globalThis.fetch = options.provider.fetch;
   let system: System;
   try {
-    const config = (options.configure ?? ((each) => each))({
+    const configured = (options.configure ?? ((each) => each))({
       ...defaultSystemConfig(),
       dataDir: options.dataDir,
     });
+    const config =
+      options.chatAgent === undefined
+        ? configured
+        : { ...configured, workflow: { ...configured.workflow, chatAgent: options.chatAgent } };
     system = await composeSystem({
       config,
       repositoryRoot: await realpath(options.repository),
@@ -235,7 +244,11 @@ export async function openChat(options: ChatOptions): Promise<Chat> {
 
 /** Which Agent a request is for, from the tools it offers (M2Design 3.9). */
 export function agentOfRequest(request: ChatRequest): ScriptedAgent {
-  return agentOfTools(new Set((request.tools ?? []).map((each) => each.function.name)));
+  return agentOfTools(
+    new Set((request.tools ?? []).map((each) => each.function.name)),
+    request.messages.map((message) => textOf(message)).join('
+'),
+  );
 }
 
 /**
@@ -258,7 +271,12 @@ export type RoutedTurn =
  */
 export function scriptedAgents(
   scripts: Readonly<
-    Partial<Record<'main' | 'lead' | 'explorer' | 'worker' | 'summary', readonly RoutedTurn[]>>
+    Partial<
+      Record<
+        'main' | 'lead' | 'explorer' | 'worker' | 'chat-sub' | 'mission' | 'summary',
+        readonly RoutedTurn[]
+      >
+    >
   >,
   /** Worker scripts by task, for a case where two workers say different things. */
   tasks: Readonly<Record<string, readonly RoutedTurn[]>> = {},

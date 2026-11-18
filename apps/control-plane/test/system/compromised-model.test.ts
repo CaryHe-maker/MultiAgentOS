@@ -60,7 +60,9 @@ async function chatOn(
     await mkdir(join(repository, name, '..'), { recursive: true });
     await writeFile(join(repository, name), content);
   }
+  // The task machinery, through a Turn-chat of Mission's root (D112).
   const chat = await openChat({
+    chatAgent: 'main',
     dataDir,
     repository,
     provider,

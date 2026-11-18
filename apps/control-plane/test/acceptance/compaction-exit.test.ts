@@ -808,7 +808,7 @@ describe('L12: a SubAgent compacts its own context', () => {
         ],
         summary: Array.from({ length: 8 }, () => text(SUMMARY)),
       });
-      const { chat, dataDir } = await chatOn(provider);
+      const { chat, dataDir } = await chatOn(provider, { chatAgent: 'main' });
       await chat.say('have the three files read');
       expect(chat.printed('REPLY')).toEqual(['the explorer is done']);
       const compacted = (await logOf(dataDir)).filter(

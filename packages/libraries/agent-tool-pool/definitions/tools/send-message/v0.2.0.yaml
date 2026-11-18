@@ -1,0 +1,17 @@
+schemaVersion: v1
+kind: TOOL
+id: send-message
+version: v0.2.0
+description: Control tool that sends a message to other tasks along the task tree. Turn-chat text.
+purpose: CONTROL
+modelName: send_message
+modelDescription: >-
+  Send a message to your subtasks (to children or one by name). It reaches them at their next step; an answer, if any, comes as a message.
+parametersContract:
+  kind: contract
+  id: workflow.SendMessageArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL

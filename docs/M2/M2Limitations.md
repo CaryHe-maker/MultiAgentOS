@@ -1,6 +1,6 @@
 # MultiAgentOS M2 已知限制
 
-> 适用于 M2 V1.0。已经决定"不做"的设计取舍见 [M2Design](M2Design.md) 第 14.2 节；实测数据见 [experiments](experiments.md) 与 [TaskSet](TaskSet.md)。
+> 适用于 M2 V1.1。已经决定"不做"的设计取舍见 [M2Design](M2Design.md) 第 14.2 节；实测数据见 [experiments](experiments.md) 与 [TaskSet](TaskSet.md)。
 
 ## 1. 平台
 
@@ -31,7 +31,7 @@
 
 ## 5. 功能
 
-16. Turn-chat 的派生沿用 `run_subagents`（与 Mission 的根任务相同的工具），没有按单 Agent 的写法优化；Turn-chat 不能把一个目标交给 Mission 去做（只能用 `mas run`）。
+16. Turn-chat 的结果文字（命令的退出码、截断、错误）仍是本系统自己的写法，只有系统提示与工具说明按单 Agent 的写法改写（Orchestration D112）。
 17. 使用者自己写的工作流模板、条件边、有界循环、`/run` 没有做；仓库里的 `.multiagentos/workflows/` 不读取。
 18. 控制台：授权与工作区的部分改进（[Console](Console.md) 第 2.2 节）、并行等待的记录与收益度量、抓取缓存、白底终端的配色没有做。
 19. 协议注册表里有一批只登记、从不使用的"暂不支持"引用族（检查点、恢复、人工审阅等，SharedContracts 3.9 为长期架构预留），不进入任何产品路径。

@@ -66,9 +66,11 @@ async function chatOn(
   options: Partial<ChatOptions> = {},
 ): Promise<Chat> {
   const own = options.configure ?? ((each: SystemConfig) => each);
+  // The task machinery, through a Turn-chat of Mission's root (D112).
   const chat = await openChat({
     ...place,
     provider,
+    chatAgent: 'main',
     ...options,
     configure: (config) => asking(own(config)),
   });

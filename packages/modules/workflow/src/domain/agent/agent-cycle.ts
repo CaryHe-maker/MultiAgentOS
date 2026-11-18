@@ -63,6 +63,8 @@ export interface AgentDefinitions {
   readonly todoTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `run_subagents`: a control tool whose call the task graph answers, instead of ending the AgentRun. */
   readonly spawnTool?: { readonly toolName: string; readonly parameters: Schema };
+  /** Tools that each start one subtask, answered like `run_subagents` (Orchestration D112). */
+  readonly delegateTools?: readonly DelegateTool[];
   /** `ask_user`: the same shape, answered by the user through a HUMAN node (M2Design 3.4). */
   readonly askTool?: { readonly toolName: string; readonly parameters: Schema };
   /** `sleep`: ends the segment; the runner checks what it waits for (Orchestration 4.1). */
@@ -89,6 +91,20 @@ export interface EndTool {
   readonly parameters: Schema;
   readonly allowedInFinal: boolean;
   readonly action: EndAction;
+  /** It may also be reached by an answer written as text, when nothing is left to wait for (D112). */
+  readonly byText?: boolean;
+}
+
+/**
+ * A tool that starts one subtask (Orchestration D112): the subtask runs as `agent`, from a new
+ * context or from the caller's; with `template`, as that template's step (D113).
+ */
+export interface DelegateTool {
+  readonly toolName: string;
+  readonly parameters: Schema;
+  readonly agent: string;
+  readonly context: 'fresh' | 'inherit';
+  readonly template?: { readonly id: string; readonly version: string };
 }
 export interface AgentConfig {
   readonly repeatedIntent: {
@@ -107,6 +123,8 @@ export interface AgentConfig {
   readonly regenerationLimit: number;
   /** Experiment (stagger): how long sibling workers wait for the first one's reply; 0 = never. */
   readonly staggerWorkersMs?: number;
+  /** The Agent a Turn-chat runs (Orchestration D112); `chat` when absent. */
+  readonly chatAgent?: string;
 }
 
 type Pending =
@@ -240,6 +258,8 @@ export type AgentEnding =
       readonly kind: 'SPAWN';
       readonly arguments: unknown;
       readonly source: ControlSource;
+      /** The tool that starts one subtask, when it was not `run_subagents` (D112). */
+      readonly delegate?: Omit<DelegateTool, 'parameters'>;
       /** The tasks taken out of the call and what was set right in it (D56). */
       readonly notes?: readonly string[];
       /** The tasks whose goal the graph holds cut; the call holds it whole. */
@@ -911,6 +931,7 @@ function parametersOf(definitions: AgentDefinitions, name: string): unknown {
   return [
     definitions.todoTool,
     definitions.spawnTool,
+    ...(definitions.delegateTools ?? []),
     definitions.askTool,
     definitions.sleepTool,
     definitions.messageTool,
@@ -960,7 +981,9 @@ function handleModel(
   ];
   // An answer written as text, where a reply would end the run now, is that reply (D97): the
   // model ends a turn the way every main loop lets it, instead of writing it a second time.
-  const replyTool = state.definitions.endTools.find((tool) => tool.action === 'PUBLISH_REPLY');
+  const replyTool = state.definitions.endTools.find(
+    (tool) => tool.action === 'PUBLISH_REPLY' || tool.byText === true,
+  );
   if (
     calls.length === 0 &&
     // Only a reply the model ended itself: one cut off by the length limit, stopped by a content
@@ -1088,7 +1111,20 @@ function soleControlOf(
   calls: readonly ModelToolCall[],
 ): SoleControl | undefined {
   const spawn = state.spawnWithdrawn ? undefined : state.definitions.spawnTool;
+  const delegates = state.spawnWithdrawn ? [] : (state.definitions.delegateTools ?? []);
   for (const call of calls) {
+    // A tool that starts one subtask goes with ordinary calls as run_subagents does (D112).
+    const delegate = delegates.find((each) => each.toolName === call.toolName);
+    if (delegate !== undefined) {
+      const { parameters, ...named } = delegate;
+      return {
+        call,
+        parameters,
+        allowedInFinal: false,
+        ending: (source) => ({ kind: 'SPAWN', arguments: call.arguments, source, delegate: named }),
+        inline: true,
+      };
+    }
     const tool = state.definitions.endTools.find((each) => each.toolName === call.toolName);
     if (tool !== undefined)
       return {
@@ -1365,7 +1401,9 @@ function actOn(
       // A withdrawn run_subagents stays in the request, so the cached prefix holds (D102), and a
       // call of it is refused here.
       records.push(
-        state.spawnWithdrawn && call.toolName === state.definitions.spawnTool?.toolName
+        state.spawnWithdrawn &&
+          (call.toolName === state.definitions.spawnTool?.toolName ||
+            (state.definitions.delegateTools ?? []).some((each) => each.toolName === call.toolName))
           ? feedback(state, 'TOOL_REJECTED', call.toolCallId, SPAWN_WITHDRAWN)
           : feedback(state, 'UNKNOWN_TOOL', call.toolCallId),
       );

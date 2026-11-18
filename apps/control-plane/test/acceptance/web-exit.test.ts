@@ -454,7 +454,7 @@ describe('A (web): what is asked, and what is not', () => {
           ],
         },
       );
-      const { chat } = await chatOn(provider);
+      const { chat } = await chatOn(provider, { chatAgent: 'main' });
       await chat.say('have both look at the page');
 
       expect(webQuestions(chat)).toHaveLength(1);

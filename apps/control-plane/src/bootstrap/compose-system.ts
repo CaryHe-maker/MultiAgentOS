@@ -150,7 +150,7 @@ function forNamespaces(
   return Object.freeze(limited);
 }
 
-/** The Agent of a Turn-chat, and the Agents that run the root of a WorkflowRun. */
+/** The Agent of a Turn-chat unless configured (D112), and the Agents that run a WorkflowRun's root. */
 const CHAT_AGENT = 'chat';
 const ROOT_AGENTS = [CHAT_AGENT, 'main'] as const;
 
@@ -294,7 +294,7 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       compactionAgent: compactionAgentFrom(catalog, registry, {
         preset,
         commands: commandsOffered,
-        agentId: CHAT_AGENT,
+        agentId: config.workflow.chatAgent ?? CHAT_AGENT,
       }),
       agentShare: agentShareFrom(catalog),
       ...(compactionPrompt === undefined ? {} : { compactionPrompt }),

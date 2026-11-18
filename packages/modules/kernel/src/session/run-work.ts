@@ -740,7 +740,7 @@ export class RunWork {
   }
 
   #maxMissionDepth(): number {
-    return this.#deps.maxMissionDepth ?? 2;
+    return this.#deps.maxMissionDepth ?? 3;
   }
 
   /** The tasks above `missionId` and itself, nearest first. */

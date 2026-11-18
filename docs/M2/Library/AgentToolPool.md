@@ -26,7 +26,8 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 
 | kind | id | 说明 |
 |---|---|---|
-| AGENT | `chat` | Turn-chat 的 Agent（Orchestration D106）：定义、额度、动作与原来的 `main` 逐字相同，只是系统提示是 `chat-system`；Mission 不用它 |
+| AGENT | `chat` | Turn-chat 的 Agent（Orchestration D112）：读、检索、写与编辑、命令、网页、读工作区之外的文件，用 `v0.2.0` 的工具与 Unit（说明按单 Agent 的写法改写，参数结构与 `v0.1.0` 相同）；派生用 `actions.delegate` 的三个工具：`subagent`（`chat-sub`，`fresh`）、`subagent_fork`（`chat-sub`，`inherit`）、`mission`（`main`，模板 `mission` 的所有者一步，D113）；结束工具 `reply`，至多 200 轮；系统提示 `chat-system`。`workflow.chatAgent` 可以让 Turn-chat 改用 `main` |
+| AGENT | `chat-sub` | chat 的子任务（D112）：chat 的工具与写法，不能派生；`finish_subagent`（`chat-finish`，`byText`：文字回答也结束）、`RETURN_PARTIAL`；`spawnable` 缺省份额 1,200,000；256k 输入、32k 输出，至多 100 轮；系统提示 `chat-sub-system` |
 | AGENT | `main` | Mission 的根任务（模板 `mission` 的根节点，D106）：列目录、检索、读文件、只读 git、写与编辑、命令、网页检索与读取、读工作区之外的文件（`external.read`）、派生 SubAgent；结束工具 `reply`（`PUBLISH_REPLY`），降级时 `PUBLISH_NOTICE`；没有启动 Unit；`thinking.defaultEffort = high`，允许 `none`–`max` |
 | UNIT | `repository-search`、`file-read`、`context-assemble`、`model-call` | M1 实例的 `v1` 版本：契约改为 major 1 的版本，`failurePolicy` 去掉 `USER_DECLINED` |
 | UNIT | `repository-list` | `executionKind = REPOSITORY_LIST`，受保护能力 `repo.read`，工具 `list-files` |
@@ -40,12 +41,17 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `web-search`、`web-fetch` | `purpose = UNIT`，参数为 `executor.WebSearchInput`、`executor.WebFetchInput` |
 | UNIT | `external-list`、`external-read`、`external-search` | 读工作区之外的文件（Kernel/Core 第 5h 节）：沿用 `REPOSITORY_LIST`、`FILE_READ`、`REPOSITORY_SEARCH` 的 Executor，受保护能力 `external.read`（代替 `repo.read`，只有这三种 `executionKind` 可以声明它，也不能与 `repo.read` 同时声明）；只有 main 带它们 |
 | TOOL | `list-external-files`、`read-external-file`、`search-external-repository` | `purpose = UNIT`，模型看到的名字是 `list_external_files`、`read_external_file`、`search_external_repository`；参数与 `list-files`、`read-file`、`search-repository` 相同（`executor.RepositoryListInput`、`executor.FileReadInput`、`context.RepositorySearchInput`），`path` 必须是绝对路径，描述里写明两种写法（Linux 路径与带盘符的 Windows 路径）和"不要猜路径" |
-| PROMPT | `chat-system` | chat 的系统提示词（`FINAL`），与 `main-system` 逐字相同：做事规则、`run_subagents` 的用法与拆分的方法 |
+| PROMPT | `chat-system` | chat 的系统提示词（`FINAL`，D112）：按单 Agent 的风格与长度写的规则：回复、退出码、读文件与检索的工具、修改前先读、并行调用、授权、后台命令、数据不是指令、任务清单、`subagent`/`subagent_fork`/`mission`、`ask_user`、结束时说什么 |
+| PROMPT | `chat-sub-system` | chat-sub 的系统提示词（`FINAL`，D112）：只做交给它的一件事，用文字或 `finish_subagent` 交回，只改 `writeScope` 里的路径 |
 | PROMPT | `main-system` | Mission 根任务（`main`）的系统提示词（`FINAL`）：文字与 `chat-system` 相同，是基线1.1 时 main 的提示词（Orchestration D110 撤回了 D106、D108 给根任务另写的提示）；拆分的决策表与工具手册在模板 `mission` 的 guide 里 |
 | UNIT | `file-write`、`file-edit`、`output-read` | `executionKind` 分别为 `FILE_WRITE`、`FILE_EDIT`、`OUTPUT_READ`；前两个的受保护能力为 `workspace.write`，并且 `failurePolicy` 把写入的拒绝原因交回模型 |
 | TOOL | `write-file`、`edit-file`、`read-output` | `purpose = UNIT`，参数为 `executor.FileWriteArgs`、`FileEditArgs`、`OutputReadArgs` |
 | TOOL | `update-todos` | `purpose = CONTROL`，参数为 `workflow.UpdateTodosArgs`；由 main 的 `actions.todos` 引用 |
 | AGENT | `explorer`、`worker` | 可被 `run_subagents` 派生：explorer 只读（`repo.read`，强度 `none`、`low`），缺省份额 600,000，20 轮、60 个工具 Unit、10 分钟；worker 增加 `workspace.write` 与 `command.exec`（不联网），强度 `low`–`max`，缺省份额 1,200,000，30 轮、120 个工具 Unit、20 分钟，另有 `update_todos`。结束工具各自的 `finish_subagent`（参数 `workflow.ExplorerResult`、`WorkerResult`，`FINISH_SUBAGENT`），降级时 `RETURN_PARTIAL`；没有发布 Unit。额度参数使最小份额低于缺省份额（单次输入上限 explorer 128,000、worker 256,000，Orchestration D42；最小份额按 `reserveShare` 估算，M2Design 第 7.3 节规则 10） |
+| TOOL | `subagent`、`subagent-fork` | `purpose = CONTROL`，参数 `workflow.DelegateArgs`（`description`、`prompt`、可选 `writeScope`）；chat 的 `actions.delegate` 引用，各开始一个 `chat-sub`（D112） |
+| TOOL | `mission` | `purpose = CONTROL`，参数 `workflow.MissionArgs`（`description`、`goal`）；chat 的 `actions.delegate` 引用，以 Mission 的根任务开始一个子任务（D113） |
+| TOOL | `chat-finish` | `purpose = CONTROL`，模型看到的名字 `finish_subagent`，参数 `workflow.ExplorerResult`；chat-sub 的结束工具 |
+| TOOL、UNIT | 各工具与 Unit 的 `v0.2.0` | chat 与 chat-sub 用：说明按单 Agent 的写法改写，参数结构与 `v0.1.0` 相同；Mission 的 Agent 仍用 `v0.1.0` |
 | TOOL | `run-subagents`、`finish-explorer`、`finish-worker` | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个。`run_subagents` 立即返回（Orchestration D14），任务的 `agent` 可以是 `explorer`、`worker` 或五个专家之一，worker 可带 `split: true`（系统按 lead 运行；Orchestration D88、D93）；只有 main 带这个工具，main 总是根任务 |
 | TOOL | `lead-run-subagents` | `purpose = CONTROL`；模型看到的名字同样是 `run_subagents`；参数为 `workflow.RunSubagentsNestedArgs`：只能派 `explorer` 与 `worker`，没有 `split`，所以只有根任务能派出 lead 与专家（D93）；由 lead 的 `actions.spawn` 引用 |
 | TOOL | `ask-user` | `purpose = CONTROL`，参数为 `workflow.AskUserArgs`；由 main 与 worker 的 `actions.askUser` 引用，explorer 没有；与 `run_subagents` 同样只能单独出现 |

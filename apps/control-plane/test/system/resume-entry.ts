@@ -29,7 +29,8 @@ const provider = scriptedAgents(
     ],
   },
 );
-const chat = await openChat({ dataDir, repository, provider });
+// The task machinery, through a Turn-chat of Mission's root (D112).
+const chat = await openChat({ dataDir, repository, provider, chatAgent: 'main' });
 const template = chat.system.templateRef('mission');
 if (template === undefined) throw new Error('no template mission');
 void chat.console.run(template, 'write the notes');
