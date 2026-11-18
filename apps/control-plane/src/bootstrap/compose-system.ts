@@ -1,51 +1,75 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import {
   DEFAULT_DEFINITIONS_DIRECTORY,
   DefinitionCatalog,
   FileDefinitionSource,
 } from '@multiagentos/agent-tool-pool';
-import { LocalArtifactStore } from '@multiagentos/artifacts';
+import { GlobalArtifactStore } from '@multiagentos/artifacts';
 import {
-  createM1ProtocolRegistry,
-  type CatalogPort,
+  ArtifactOwnerLineSchema,
+  COMPACTION_SECTIONS,
+  COMPACTION_STRICT_SUFFIX,
+  SessionIndexLineSchema,
+  SessionRefLineSchema,
+  TrustedInstructionLineSchema,
+  TrustedWebSearchLineSchema,
+  canonicalJson,
+  commandsOffered as commandsOfferedFor,
+  createProtocolRegistry,
+  newId,
+  sha256Hex,
+  type DefinitionRef,
   type ExecutorRegistry,
-  type LifecyclePort,
+  type PersistenceNamespace,
+  type PinnedDefinitionSet,
   type ProviderCredentials,
+  type SessionPersistencePort,
+  type StoragePath,
   type SystemFault,
   type SystemFaultReporter,
+  type TemplateDefinition,
 } from '@multiagentos/contracts';
-import { createExecutorRegistry } from '@multiagentos/executor-set';
+import {
+  createExecutorRegistry,
+  createCommandAnalyzer,
+  createCommandParser,
+  createShadowFiles,
+  createWorkspaceFiles,
+  readRepositoryText,
+} from '@multiagentos/executor-set';
 import {
   InProcessFabric,
-  catalogWithDeadline,
   createInteractionGatewayPort,
   createWorkflowGatewayPort,
-  persistenceWithDeadline,
   serveInteractionInbox,
+  serveModelStream,
   serveWorkflowInbox,
 } from '@multiagentos/fabric';
 import {
-  createGateway,
-  createKernelCore,
+  createSessionGatewayModule,
+  createSessionKernelCore,
   createSubprocessRunner,
   createSupervisor,
-  type GatewayDeps,
-  type KernelCoreDeps,
-  type KernelCoreModule,
-  type SupervisorDeps,
-  type SupervisorModule,
+  agentShareFrom,
+  compactionAgentFrom,
+  pinAgentFrom,
+  probeLandlock,
+  probeSandbox,
+  type MemorySample,
+  type SandboxProbe,
   type TrackedSubprocessRunner,
 } from '@multiagentos/kernel';
 import { ModuleHost } from '@multiagentos/module-host';
-import { FilePersistence, forPersistenceNamespace } from '@multiagentos/persistence';
+import { FileSessionStore } from '@multiagentos/persistence';
 import {
   createUserInteraction,
-  type TerminalPort,
-  type UserInteractionDeps,
-  type UserInteractionModule,
+  type Console,
+  type ConsoleView,
 } from '@multiagentos/user-interaction';
-import { createWorkflow, type WorkflowDeps, type WorkflowModule } from '@multiagentos/workflow';
-import { assertStartupConfig } from '../config/startup-config.js';
-import { assertSystemConfig, type SystemConfig } from '../config/system-config.js';
+import { agentBindingOf, createWorkflow } from '@multiagentos/workflow';
+import { assertStartupChecks } from '../config/startup-checks.js';
+import { assertSystemConfig, ConfigError, type SystemConfig } from '../config/system-config.js';
 import { createDeferredFaultReporter } from './deferred-fault-reporter.js';
 import { createSystemControl, type ShutdownTimeouts, type StopReport } from './system-control.js';
 
@@ -56,41 +80,26 @@ const MODULE_START_TIMEOUT_MS = 10000;
 /** The whole Supervisor boot; a late completion is not allowed to reopen the system. */
 const BOOT_TIMEOUT_MS = 60000;
 
-/**
- * The factories of everything that is not infrastructure. Their signatures are the seams
- * between the parallel work streams: a test replaces any of them with a fake from
- * `@multiagentos/testing` and runs the rest for real.
- */
-export interface SystemParts {
-  readonly createGateway: (deps: GatewayDeps) => LifecyclePort;
-  readonly createKernelCore: (deps: KernelCoreDeps) => KernelCoreModule;
-  readonly createSupervisor: (deps: SupervisorDeps) => SupervisorModule;
-  readonly createWorkflow: (deps: WorkflowDeps) => WorkflowModule;
-  readonly createUserInteraction: (deps: UserInteractionDeps) => UserInteractionModule;
-  readonly createExecutorRegistry: () => ExecutorRegistry;
-}
-
-export const PRODUCT_PARTS: SystemParts = Object.freeze({
-  createGateway,
-  createKernelCore,
-  createSupervisor,
-  createWorkflow,
-  createUserInteraction,
-  createExecutorRegistry,
-});
-
 export interface ComposeOptions {
   readonly config: SystemConfig;
-  readonly terminal: TerminalPort;
+  /** This process's repository, already resolved with realpath (M2Design 2.3). */
+  readonly repositoryRoot: string;
+  readonly preset: 'standard' | 'readonly';
+  readonly view: ConsoleView;
   readonly credentials: ProviderCredentials;
-  readonly parts?: Partial<SystemParts>;
   /** Defaults to the catalog shipped in `agent-tool-pool/definitions`. */
-  readonly catalog?: CatalogPort;
+  readonly catalog?: DefinitionCatalog;
+  /** Defaults to ExecutorSet; an acceptance test passes scripted ones. */
+  readonly executors?: ExecutorRegistry;
   readonly now?: () => Date;
   /** Deadlines of the shutdown paths; the defaults follow `config.kernel`. */
   readonly timeouts?: Partial<ShutdownTimeouts>;
   /** Local fault diagnostics; defaults to stderr. */
   readonly log?: (line: string) => void;
+  /** What the sandbox probe found; a test gives its own so that it does not depend on the host. */
+  readonly sandboxProbe?: SandboxProbe;
+  /** Where memory is read; a test gives its own so that pressure can be made to order. */
+  readonly memorySample?: () => MemorySample;
   /** The runner owned by the entry so it can kill children even if composition fails. */
   readonly subprocess?: TrackedSubprocessRunner;
   /** Composition-time fault entry; the entry buffers faults until SystemControl is bound. */
@@ -103,38 +112,165 @@ export interface System {
    * fails, everything already started is stopped before this rejects.
    */
   start(): Promise<void>;
-  readonly userInteraction: UserInteractionModule;
-  /** Resolves after a shutdown request stopped every module. */
+  readonly console: Console;
+  /** The built-in template with this id, as `mas run` starts it. */
+  templateRef(id: string): DefinitionRef | undefined;
   whenStopped(): Promise<void>;
   /**
    * Runs one command to its end and resolves with the process exit code only after every
    * module stopped, whether the command returned, threw, or the system faulted meanwhile.
    */
-  run(command: (userInteraction: UserInteractionModule) => Promise<number>): Promise<number>;
-  /** The system fault entry (docs/M1/SystemFaultHandling.md 2); it starts a bounded shutdown. */
+  run(command: (console: Console) => Promise<number>): Promise<number>;
+  /** The system fault entry; it starts a bounded shutdown. */
   reportFault(fault: SystemFault): void;
   shutdown(): Promise<StopReport>;
   /** Synchronous; for the process guards of the entry. */
   killSubprocesses(): void;
 }
 
+/** A view of the store limited to the namespaces of one owner (Interface/Persistence 5). */
+function forNamespaces(
+  store: SessionPersistencePort,
+  owned: readonly PersistenceNamespace[],
+): SessionPersistencePort {
+  const assertOwner = (namespace: PersistenceNamespace): void => {
+    if (!owned.includes(namespace)) throw new Error(`Namespace ${namespace} is not owned here`);
+  };
+  const limited: SessionPersistencePort = {
+    appendLog: <T>(namespace: PersistenceNamespace, path: StoragePath) => {
+      assertOwner(namespace);
+      return store.appendLog<T>(namespace, path);
+    },
+    sessionDirectory: (namespace, sessionId) => {
+      assertOwner(namespace);
+      return store.sessionDirectory(namespace, sessionId);
+    },
+    capabilities: () => store.capabilities(),
+  };
+  return Object.freeze(limited);
+}
+
+/** The Agent of a Turn-chat unless configured (D112), and the Agents that run a WorkflowRun's root. */
+const CHAT_AGENT = 'chat';
+const ROOT_AGENTS = [CHAT_AGENT, 'main'] as const;
+
+/** Field by field the most of the roots' budgets: what the run's ledger must be able to fund. */
+function largestBudget(budgets: readonly AgentBudgetOf[]): AgentBudgetOf {
+  const [first, ...rest] = budgets;
+  if (first === undefined) throw new ConfigError('no root Agent');
+  return rest.reduce(
+    (most, each) => ({
+      perCallInputLimit: Math.max(most.perCallInputLimit, each.perCallInputLimit),
+      maxOutputTokens: Math.max(most.maxOutputTokens, each.maxOutputTokens),
+      finalInputBudget: Math.max(most.finalInputBudget, each.finalInputBudget),
+      finalMaxOutputTokens: Math.max(most.finalMaxOutputTokens, each.finalMaxOutputTokens),
+    }),
+    first,
+  );
+}
+type AgentBudgetOf = PinnedDefinitionSet['agent']['budget'];
+
+/**
+ * The built-ins of this process (Module/Workflow 4): the root Agents `chat` and `main`, the
+ * templates, and every Agent a template names, each at the version the catalog pins.
+ */
+function builtIns(catalog: DefinitionCatalog) {
+  const context = { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' };
+  const templates = catalog
+    .list()
+    .filter((each): each is TemplateDefinition => each.kind === 'TEMPLATE');
+  // The roots: chat runs a Turn-chat, main is the root of the template mission.
+  const roots = ROOT_AGENTS.map((id) => {
+    const found = catalog.latest('AGENT', id);
+    if (found === undefined) throw new ConfigError(`the built-in Agent ${id} is missing`);
+    return found;
+  });
+  // The Agents `run_subagents` may start are built in with the roots, whatever the template (M2Design 3.9).
+  const spawnable = catalog
+    .list()
+    .filter((each) => each.kind === 'AGENT' && each.spawnable !== undefined)
+    .map(({ id, version }) => ({ id, version }));
+  const refs = [
+    ...roots.map(({ id, version }) => ({ id, version })),
+    ...spawnable,
+    ...templates.flatMap((template) =>
+      template.nodes.flatMap((node) => (node.kind === 'AGENT' ? [node.agent] : [])),
+    ),
+  ];
+  const sets = new Map<string, PinnedDefinitionSet>();
+  for (const ref of refs) {
+    const pinned = catalog.pinAgent(ref, context);
+    if (!pinned.ok) throw new ConfigError(`cannot pin Agent ${ref.id}@${ref.version}`);
+    sets.set(ref.id, pinned.value);
+  }
+  const definitions = catalog.list();
+  return {
+    sets,
+    templates: new Map(templates.map((template) => [template.id, template])),
+    definitionsDigest: sha256Hex(canonicalJson(definitions.map((each) => each.digest).sort())),
+    definitionVersions: definitions.map((each) => `${each.id}@${each.version}`).sort(),
+  };
+}
+
 /**
  * The only place that knows several concrete implementations. It builds every module, gives
  * each communication subject its own Fabric client and Port stubs, registers the modules with
- * ModuleHost and hands the host to the Supervisor. Nothing is started here. The returned
- * `System` is the process-level control (`system-control.ts`), not a module.
+ * ModuleHost and hands the host to the Supervisor. Nothing is started here.
  */
 export async function composeSystem(options: ComposeOptions): Promise<System> {
   const config = assertSystemConfig(options.config);
-  const parts: SystemParts = { ...PRODUCT_PARTS, ...options.parts };
   const now = options.now ?? (() => new Date());
-  const registry = createM1ProtocolRegistry();
+  const registry = createProtocolRegistry();
   const catalog =
     options.catalog ??
     (await DefinitionCatalog.load(new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY)));
-  await assertStartupConfig(config, catalog, registry, options.credentials);
+  const builtin = builtIns(catalog);
+  // The instruction of the summary request of a compaction: without the Prompt nothing is compacted.
+  const compactionDefinition = catalog.latest('PROMPT', 'compaction-system');
+  const compactionPrompt =
+    compactionDefinition?.kind === 'PROMPT'
+      ? {
+          instruction: compactionDefinition.template,
+          strictSuffix: COMPACTION_STRICT_SUFFIX,
+          requiredSections: [...COMPACTION_SECTIONS],
+        }
+      : undefined;
+  assertStartupChecks(config.kernel, [...builtin.sets.values()], registry, options.credentials);
+  const rootBudgets = ROOT_AGENTS.map((id) => {
+    const set = builtin.sets.get(id);
+    if (set === undefined) throw new ConfigError(`the built-in Agent ${id} is missing`);
+    return set.agent.budget;
+  });
 
   const subprocess = options.subprocess ?? createSubprocessRunner();
+  // Writes rest on snapshots, and snapshots on git: without it the system only reads (M2Design 4.6).
+  const log = options.log ?? ((line: string) => void process.stderr.write(line));
+  const probe = await subprocess.run('git', ['--version'], {
+    cwd: options.repositoryRoot,
+    signal: new AbortController().signal,
+    maxOutputBytes: 1024,
+    env: {},
+  });
+  const hasGit = probe.exitCode === 0;
+  const preset = hasGit ? options.preset : 'readonly';
+  if (!hasGit && options.preset !== 'readonly')
+    log('git was not found, so this session is read-only: nothing can be written or undone.\n');
+  // Commands run isolated or not at all (M2Design 6.2): the probe decides once for the process.
+  const sandbox = options.sandboxProbe ?? (await probeSandbox(options.repositoryRoot));
+  if (!sandbox.available && preset !== 'readonly')
+    log(`Commands cannot run isolated here (${sandbox.reason}). ${sandbox.hint}
+`);
+  const commandsOffered = commandsOfferedFor(sandbox.available, config.kernel.sandbox.unavailable);
+  // Without a sandbox, Landlock holds what a command writes (D79), unless the configuration says
+  // the machine is itself the isolation. Probed once: the runner uses it, and the Kernel queues a
+  // line of the read-only list as a read only when it holds (D87).
+  const landlock =
+    sandbox.available || config.kernel.sandbox.unisolatedWrites === 'any'
+      ? false
+      : (probeLandlock() ?? false);
+  const analyzeCommand = createCommandAnalyzer(await createCommandParser(), config.kernel.command);
+  const snapshotsOf = (sessionId: string): string =>
+    join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots');
   const internalFaults =
     options.reportSystemFault === undefined ? createDeferredFaultReporter(options.log) : undefined;
   const reportSystemFault: SystemFaultReporter =
@@ -142,48 +278,101 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
 
   try {
     const fabric = new InProcessFabric(registry, now);
-    const artifacts = new LocalArtifactStore(config.dataDir);
-    const persistence = new FilePersistence(config.dataDir);
+    const artifacts = new GlobalArtifactStore(config.dataDir);
+    const persistence = new FileSessionStore(config.dataDir, {
+      'session-index': SessionIndexLineSchema,
+      'session-refs': SessionRefLineSchema,
+      'trusted-instructions': TrustedInstructionLineSchema,
+      'trusted-web-search': TrustedWebSearchLineSchema,
+      'artifact-owners': ArtifactOwnerLineSchema,
+    });
 
-    const kernelCore = parts.createKernelCore({
+    // The interface is built after the Kernel, which may need it before the system is up.
+    const interaction: { console?: Console } = {};
+    const kernelCore = createSessionKernelCore({
       fabric: fabric.client('kernel-core'),
-      catalog,
       artifacts,
-      persistence: forPersistenceNamespace(persistence, 'kernel-core'),
+      persistence: forNamespaces(persistence, ['kernel-core', 'kernel-execution']),
       registry,
+      pinAgent: pinAgentFrom(catalog, registry),
+      compactionAgent: compactionAgentFrom(catalog, registry, {
+        preset,
+        commands: commandsOffered,
+        agentId: config.workflow.chatAgent ?? CHAT_AGENT,
+      }),
+      agentShare: agentShareFrom(catalog),
+      ...(compactionPrompt === undefined ? {} : { compactionPrompt }),
+      mainBudget: largestBudget(rootBudgets),
       config: config.kernel,
+      repositoryRoot: options.repositoryRoot,
+      preset,
+      ...(preset === 'readonly'
+        ? {}
+        : {
+            workspace: {
+              files: createWorkspaceFiles(options.repositoryRoot),
+              git: subprocess,
+              directoryOf: snapshotsOf,
+              shadowOf: (sessionId: string) => createShadowFiles(snapshotsOf(sessionId)),
+            },
+          }),
+      readRepositoryFile: readRepositoryText,
       dataDir: config.dataDir,
+      // Memory ran short and no run is open: leave in control, as the interface does when a run ends.
+      onMemoryNotice: (notice) => interaction.console?.notifyMemory(notice),
+      ...(options.memorySample === undefined ? {} : { memorySample: options.memorySample }),
+      commands: {
+        analyze: analyzeCommand,
+        sandbox: () => (sandbox.available ? 'AVAILABLE' : 'UNAVAILABLE'),
+        ...(landlock === false ? {} : { unisolatedReadOnly: true }),
+        probe: sandbox.available
+          ? { available: true }
+          : { available: false, reason: sandbox.reason },
+      },
       reportSystemFault,
+      diagnostic: log,
       now,
     });
-    const gateway = parts.createGateway({ fabric: fabric.client('gateway'), now });
+    const gateway = createSessionGatewayModule({ fabric: fabric.client('gateway'), now });
 
-    // Workflow and UserInteraction wait for their ports at most this long (M1Interface 14.4);
-    // the Kernel's own clients have no deadline.
+    // Workflow and UserInteraction wait for their ports at most this long; the Kernel's own
+    // clients have no deadline.
     const deadline = { requestTimeoutMs: config.portReturnTimeoutMs };
     const workflowFabric = fabric.client('workflow', deadline);
-    const workflow = parts.createWorkflow({
+    const workflow = createWorkflow({
       gateway: createWorkflowGatewayPort(workflowFabric),
-      catalog: catalogWithDeadline(catalog, config.portReturnTimeoutMs),
-      persistence: persistenceWithDeadline(
-        forPersistenceNamespace(persistence, 'workflow'),
-        config.portReturnTimeoutMs,
+      persistence: forNamespaces(persistence, ['workflow']),
+      agents: new Map(
+        [...builtin.sets].map(
+          ([id, set]) =>
+            [id, agentBindingOf(set, registry, preset, { commands: commandsOffered })] as const,
+        ),
       ),
-      registry,
+      templates: builtin.templates,
+      sandbox: sandbox.available
+        ? { state: 'ISOLATED' }
+        : commandsOffered
+          ? { state: 'UNISOLATED', reason: sandbox.reason }
+          : { state: 'UNAVAILABLE', reason: sandbox.reason },
+      definitionsDigest: builtin.definitionsDigest,
+      definitionVersions: builtin.definitionVersions,
       config: config.workflow,
-      reportSystemFault,
       now,
+      git: inGitWorkTree(options.repositoryRoot),
     });
-    serveWorkflowInbox(workflowFabric, workflow.inbox);
+    serveWorkflowInbox(workflowFabric, workflow.runner);
 
     const interactionFabric = fabric.client('user-interaction', deadline);
-    const userInteraction = parts.createUserInteraction({
+    const userInteraction = createUserInteraction({
       gateway: createInteractionGatewayPort(interactionFabric),
-      terminal: options.terminal,
-      reportSystemFault,
+      view: options.view,
       now,
     });
-    serveInteractionInbox(interactionFabric, userInteraction.inbox);
+    serveInteractionInbox(interactionFabric, userInteraction.console);
+    // The thinking of the model calls, beside the ordered events (Console 4).
+    serveModelStream(interactionFabric, (stream) =>
+      userInteraction.console.handleModelStream(stream),
+    );
 
     const moduleHost = new ModuleHost({
       startTimeoutMs: MODULE_START_TIMEOUT_MS,
@@ -201,14 +390,16 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       moduleHost.register(module);
 
     // The root keeps the runner so that it can end the child processes without the Supervisor.
-    const supervisor = parts.createSupervisor({
+    const supervisor = createSupervisor({
       fabric: fabric.client('supervisor'),
-      executors: parts.createExecutorRegistry(),
+      executors:
+        options.executors ?? createExecutorRegistry({ web: { config: config.kernel.web } }),
       credentials: options.credentials,
       moduleHost,
       config: config.kernel,
       dataDir: config.dataDir,
       subprocess,
+      landlock,
       now,
     });
 
@@ -220,8 +411,10 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       killSubprocesses: () => subprocess.killAll(),
       timeouts: {
         bootMs: BOOT_TIMEOUT_MS,
-        // Twice the convergence backstop of Interaction 6, to leave room for the final events.
-        abortRunsMs: 2 * (config.kernel.cancelGraceMs + config.kernel.convergenceMarginMs),
+        // Twice the convergence backstop of Interaction 6, plus the Session close.
+        abortRunsMs:
+          2 * (config.kernel.cancelGraceMs + config.kernel.convergenceMarginMs) +
+          config.kernel.sessionCloseTimeoutMs,
         stopMs,
         settleMs: stopMs,
         ...options.timeouts,
@@ -231,11 +424,20 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     });
     internalFaults?.bind((fault) => control.reportFault(fault));
 
+    const { console } = userInteraction;
+    interaction.console = console;
     return {
       start: () => control.start(),
-      userInteraction,
+      console,
+      templateRef: (id) => {
+        const template = builtin.templates.get(id);
+        // A pre-orchestrated template runs as a specialist of a long task, never by itself (D39).
+        return template === undefined || template.playbook !== undefined
+          ? undefined
+          : { id, version: template.version };
+      },
       whenStopped: () => supervisor.whenStopped(),
-      run: (command) => control.run(() => command(userInteraction)),
+      run: (command) => control.run(() => command(console)),
       reportFault: (fault) => control.reportFault(fault),
       shutdown: () => control.shutdown(),
       killSubprocesses: () => subprocess.killAll(),
@@ -249,5 +451,16 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
       // The original composition error is more useful than a cleanup failure.
     }
     throw error;
+  }
+}
+
+/**
+ * Whether a folder lies in a git work tree: a `.git` (a folder, or the file of a worktree) in it
+ * or in a folder above it. Only what the model is offered depends on it (git_inspect).
+ */
+export function inGitWorkTree(folder: string): boolean {
+  for (let current = folder; ; current = dirname(current)) {
+    if (existsSync(join(current, '.git'))) return true;
+    if (dirname(current) === current) return false;
   }
 }

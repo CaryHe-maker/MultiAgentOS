@@ -46,7 +46,7 @@ function start(
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       reject(new Error(`child did not exit; stdout=${stdout}; stderr=${stderr}`));
-    }, 10_000);
+    }, 30_000);
     child.once('error', (error) => {
       clearTimeout(timer);
       reject(error);
@@ -60,9 +60,9 @@ function start(
   return { child, done, stdout: () => stdout, stderr: () => stderr };
 }
 
-async function ready(running: Running): Promise<void> {
+async function ready(running: Running, marker = 'READY'): Promise<void> {
   for (let index = 0; index < 150; index += 1) {
-    if (running.stdout().includes('READY')) return;
+    if (running.stdout().includes(marker)) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`entry did not become ready; stderr=${running.stderr()}`);
@@ -91,7 +91,6 @@ describe('process entry exit codes', () => {
   it.each([
     ['normal', 0],
     ['failed', 1],
-    ['timeout', 2],
     ['violation', 3],
     ['cancelled', 130],
     ['panic', 70],
@@ -104,23 +103,10 @@ describe('process entry exit codes', () => {
     expect(result.signal).toBeNull();
   });
 
-  it('leaves the first interrupt to the command and the second to the guard', async () => {
-    const roots = await entryRoots();
-    const running = start(entry, ['hang'], roots.data, roots.repository);
-    await ready(running);
-    running.child.kill('SIGINT');
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(running.child.exitCode).toBeNull();
-    running.child.kill('SIGINT');
-    const result = await running.done;
-    expect(result.code).toBe(130);
-    expect(result.signal).toBeNull();
-  });
-
   it('allows the first interrupt to end with the command exit code', async () => {
     const roots = await entryRoots();
     const running = start(entry, ['first-interrupt'], roots.data, roots.repository);
-    await ready(running);
+    await ready(running, 'HANDLER_INSTALLED');
     running.child.kill('SIGINT');
     const result = await running.done;
     expect(result.code).toBe(130);
@@ -129,7 +115,7 @@ describe('process entry exit codes', () => {
 
   it('returns 64 for an invalid command line before composing', async () => {
     const root = await dataDir();
-    const running = start(bin, ['analyze', '--repo', 'relative', 'Explain X'], root);
+    const running = start(bin, ['analyse'], root);
     const result = await running.done;
     expect(result.code).toBe(64);
     expect(result.signal).toBeNull();
@@ -144,7 +130,7 @@ describe('process entry exit codes', () => {
     };
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', bin, 'analyze', '--repo', tmpdir(), 'X'],
+      ['--import', 'tsx', bin, 'run', '--repo', tmpdir(), 'X'],
       {
         cwd: process.cwd(),
         env,

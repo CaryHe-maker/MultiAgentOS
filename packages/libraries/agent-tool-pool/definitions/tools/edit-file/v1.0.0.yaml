@@ -1,0 +1,20 @@
+schemaVersion: v1
+kind: TOOL
+id: edit-file
+version: v1.0.0
+digest: 36c66a69bf23369bc47862e643b128dc71f6854544634b7b62f741a0188a2515
+description: Model-facing text replacement, served by the file-edit unit.
+purpose: UNIT
+modelName: edit_file
+modelDescription: >-
+  Replace oldString with newString in one repository text file you have read. oldString must
+  occur exactly once unless replaceAll is true; include enough surrounding text to make it unique.
+  The file keeps its line endings.
+parametersContract:
+  kind: contract
+  id: executor.FileEditArgs
+  version: v1
+riskClass: MEDIUM
+sideEffect: WORKSPACE_WRITE
+isIdempotent: false
+contentStatus: FINAL

@@ -12,7 +12,7 @@ function describe(error: unknown): string {
 }
 
 /**
- * The composition root's pre-boot fault entry (`docs/M1/SystemFaultHandling.md` 4).
+ * The composition root's pre-boot fault entry.
  * Configuration, Catalog and factory failures can happen before `SystemControl` exists;
  * buffering them keeps the entry valid instead of installing an empty reporter first.
  */

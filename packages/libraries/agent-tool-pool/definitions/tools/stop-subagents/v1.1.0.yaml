@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: stop-subagents
+version: v1.1.0
+digest: e352138180bfa961fb7e9ba732735a378ccabdabcc3b4425468285244d23a9c9
+description: Control tool that stops subtasks the caller started. Turn-chat text.
+purpose: CONTROL
+modelName: stop_subagents
+modelDescription: >-
+  Stop subtasks you started (names, or all); you get each result as stopped. Call it alone.
+parametersContract:
+  kind: contract
+  id: workflow.StopSubagentsArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL

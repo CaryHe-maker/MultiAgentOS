@@ -1,7 +1,7 @@
 import { Type } from 'typebox';
 import type { ErrorCategory } from './common-schemas.js';
 
-/** Closed enumeration of M1Interface 3.4; each code has exactly one category. */
+/** Closed enumeration of the Interface documents; each code has exactly one category. */
 export const REASON_CODE_CATEGORY = {
   INVALID_REQUEST: 'VALIDATION',
   CALLER_FORBIDDEN: 'POLICY',
@@ -46,16 +46,70 @@ export const REASON_CODE_CATEGORY = {
   PIN_FAILED: 'DEPENDENCY',
   WORKFLOW_INTERNAL: 'INTERNAL',
   KERNEL_INTERNAL: 'INTERNAL',
+  NO_OPEN_INPUT: 'CONFLICT',
+  SESSION_COMMAND_UNKNOWN: 'CONFLICT',
+  SESSION_QUERY_UNKNOWN: 'CONFLICT',
+  PROJECT_FILE_FORBIDDEN: 'POLICY',
+  ARTIFACT_EXPIRED: 'RESOURCE',
+  SESSION_NOT_FOUND: 'VALIDATION',
+  SESSION_IN_USE: 'CONFLICT',
+  WORKSPACE_CHANGE_NOT_CONFIRMED: 'VALIDATION',
+  HUMAN_REQUEST_NOT_PENDING: 'CONFLICT',
+  CONTEXT_OVERFLOW: 'RESOURCE',
+  QUOTA_EXHAUSTED: 'RESOURCE',
+  CAPABILITY_NOT_SUBSET: 'POLICY',
+  CAPABILITY_NOT_GRANTED: 'POLICY',
+  WRITE_OUT_OF_SCOPE: 'POLICY',
+  PROTECTED_PATH: 'POLICY',
+  ADMISSION_CHECK_FAILED: 'POLICY',
+  FILE_CHANGED: 'CONFLICT',
+  EDIT_NO_MATCH: 'VALIDATION',
+  EDIT_NOT_UNIQUE: 'VALIDATION',
+  UNDO_NOT_AVAILABLE: 'CONFLICT',
+  NOTHING_TO_UNDO: 'CONFLICT',
+  UNDO_UNKNOWN: 'CONFLICT',
+  COMMAND_DENIED: 'POLICY',
+  SANDBOX_UNAVAILABLE: 'DEPENDENCY',
+  APPROVAL_MISMATCH: 'INTEGRITY',
+  ENV_ASSERTION_FAILED: 'INTEGRITY',
+  PROTECTED_PATH_CREATED: 'POLICY',
+  NOT_A_GIT_REPOSITORY: 'EXECUTION',
+  MEMORY_PRESSURE: 'RESOURCE',
+  WRITE_SCOPE_CONFLICT: 'CONFLICT',
+  /** The task already has an AgentRun that runs (Orchestration 3.4). */
+  MISSION_BUSY: 'CONFLICT',
+  /** The task has ended: no segment of it registers any more. */
+  MISSION_CLOSED: 'CONFLICT',
+  /** A segment names a parent task the run does not have, or one that has ended. */
+  MISSION_NOT_FOUND: 'VALIDATION',
+  WRITE_SCOPE_DELEGATED: 'CONFLICT',
+  BUDGET_INSUFFICIENT: 'RESOURCE',
+  /** The input cannot lend what the tasks need; the user is asked for more (Orchestration D115). */
+  BUDGET_ASKED: 'RESOURCE',
+  /** The run has started as many tasks as it may; the user is asked for more (D62). */
+  TASK_QUOTA_ASKED: 'RESOURCE',
+  /** The run has started as many tasks as it may, and no more are allowed (D62). */
+  TASK_QUOTA_REACHED: 'RESOURCE',
+  DELEGATION_NOT_FOUND: 'VALIDATION',
+  ADDRESS_FORBIDDEN: 'POLICY',
+  DOMAIN_DENIED: 'POLICY',
+  EXTERNAL_PATH_UNAVAILABLE: 'POLICY',
+  SECRET_IN_REQUEST: 'POLICY',
+  UNSUPPORTED_CONTENT: 'EXECUTION',
+  PAGE_UNAVAILABLE: 'EXECUTION',
+  CONTEXT_COMPACTED: 'RESOURCE',
+  COMPACTION_SUMMARY_INVALID: 'EXECUTION',
+  COMPACTION_UNKNOWN: 'CONFLICT',
 } as const satisfies Record<string, ErrorCategory>;
 
 export type ReasonCode = keyof typeof REASON_CODE_CATEGORY;
 export const REASON_CODES = Object.keys(REASON_CODE_CATEGORY) as ReasonCode[];
 export const ReasonCodeSchema = Type.Unsafe<ReasonCode>(
-  Type.Enum(REASON_CODES, { $id: 'platform.common.ReasonCode.v0' }),
+  Type.Enum(REASON_CODES, { $id: 'platform.common.ReasonCode.v1' }),
 );
 
 /**
- * Where each reason code may appear (the "出现位置" and "产生者" columns of M1Interface 3.4).
+ * Where each reason code may appear.
  * Every Schema that carries a reason code accepts only the codes of its own list.
  */
 
@@ -64,6 +118,7 @@ export const GATEWAY_REJECTED_CODES = [
   'INVALID_REQUEST',
   'CALLER_FORBIDDEN',
   'RUN_NOT_FOUND',
+  'SESSION_NOT_FOUND',
 ] as const satisfies readonly ReasonCode[];
 /** SyscallRejected with `issuer = 'CORE'`. RUN_BLOCKED is listed separately below. */
 export const CORE_REJECTED_CODES = [
@@ -82,14 +137,34 @@ export const CORE_REJECTED_CODES = [
   'INVALID_INPUT',
   'QUESTION_NOT_PENDING',
   'INVALID_ARTIFACT_REF',
+  'NO_OPEN_INPUT',
+  'SESSION_COMMAND_UNKNOWN',
+  'SESSION_QUERY_UNKNOWN',
+  'PROJECT_FILE_FORBIDDEN',
+  'SESSION_NOT_FOUND',
+  'SESSION_IN_USE',
+  'WORKSPACE_CHANGE_NOT_CONFIRMED',
+  'HUMAN_REQUEST_NOT_PENDING',
+  'ARTIFACT_EXPIRED',
+  'USER_DECLINED',
+  'CAPABILITY_NOT_SUBSET',
+  'UNDO_NOT_AVAILABLE',
+  'NOTHING_TO_UNDO',
+  'UNDO_UNKNOWN',
+  'MEMORY_PRESSURE',
+  'WRITE_SCOPE_CONFLICT',
+  'MISSION_BUSY',
+  'MISSION_CLOSED',
+  'MISSION_NOT_FOUND',
+  'DELEGATION_NOT_FOUND',
+  'COMPACTION_UNKNOWN',
+  'BUDGET_ASKED',
+  'TASK_QUOTA_ASKED',
+  'TASK_QUOTA_REACHED',
 ] as const satisfies readonly ReasonCode[];
 export type GatewayRejectedCode = (typeof GATEWAY_REJECTED_CODES)[number];
 export type CoreRejectedCode = (typeof CORE_REJECTED_CODES)[number];
 /** Every reason code a SyscallRejected may carry; RUN_BLOCKED may come from either issuer. */
-export const SYSCALL_REJECTED_CODES = [
-  ...new Set<ReasonCode>([...GATEWAY_REJECTED_CODES, 'RUN_BLOCKED', ...CORE_REJECTED_CODES]),
-];
-
 /** An Executor's `REJECTED` outcome: a normal out-of-bounds request (ExecutorSet 5). */
 export const EXECUTOR_REJECTED_CODES = [
   'OUT_OF_SCOPE',
@@ -98,6 +173,19 @@ export const EXECUTOR_REJECTED_CODES = [
   'INVALID_RANGE',
   'INVALID_QUERY',
   'LIMIT_EXCEEDED',
+  'WRITE_OUT_OF_SCOPE',
+  'PROTECTED_PATH',
+  'FILE_CHANGED',
+  'EDIT_NO_MATCH',
+  'EDIT_NOT_UNIQUE',
+  'APPROVAL_MISMATCH',
+  'ENV_ASSERTION_FAILED',
+  'SANDBOX_UNAVAILABLE',
+  'NOT_A_GIT_REPOSITORY',
+  'ADDRESS_FORBIDDEN',
+  'SECRET_IN_REQUEST',
+  'UNSUPPORTED_CONTENT',
+  'CONTEXT_OVERFLOW',
 ] as const satisfies readonly ReasonCode[];
 /** An Executor's `FAILED` outcome. */
 export const EXECUTOR_FAILED_CODES = [
@@ -106,6 +194,8 @@ export const EXECUTOR_FAILED_CODES = [
   'PROVIDER_AUTH',
   'PROVIDER_ERROR',
   'PROVIDER_TOOL_CHOICE_IGNORED',
+  'PAGE_UNAVAILABLE',
+  'COMPACTION_SUMMARY_INVALID',
   'INTERNAL',
 ] as const satisfies readonly ReasonCode[];
 /** An Executor's `VIOLATION` outcome, and the `failure.code` of a run closed as VIOLATION. */
@@ -124,7 +214,7 @@ export type ExecutorFailedCode = (typeof EXECUTOR_FAILED_CODES)[number];
 export type ViolationCode = (typeof VIOLATION_CODES)[number];
 export type TerminationCode = (typeof TERMINATION_CODES)[number];
 
-/** A UnitReport with `status = 'REJECTED'` (docs/M1/Kernel/Interaction.md 5.4). */
+/** A UnitReport with `status = 'REJECTED'` (Kernel/Interaction 5.4). */
 export const UNIT_REJECTED_CODES = [
   'INVALID_INPUT',
   'INVALID_ARTIFACT_REF',
@@ -132,6 +222,17 @@ export const UNIT_REJECTED_CODES = [
   'BUDGET_WRAP_UP',
   'BUDGET_EXHAUSTED',
   'FINAL_CALL_USED',
+  'ARTIFACT_EXPIRED',
+  'QUOTA_EXHAUSTED',
+  'CAPABILITY_NOT_GRANTED',
+  'ADMISSION_CHECK_FAILED',
+  'COMMAND_DENIED',
+  'PROTECTED_PATH_CREATED',
+  'WRITE_SCOPE_DELEGATED',
+  'DOMAIN_DENIED',
+  'EXTERNAL_PATH_UNAVAILABLE',
+  /** The assembly was held for a compaction that has now taken effect: submit it again (Core 6a). */
+  'CONTEXT_COMPACTED',
   ...EXECUTOR_REJECTED_CODES,
 ] as const satisfies readonly ReasonCode[];
 /** A UnitReport with `status = 'FAILED'`. */
@@ -142,7 +243,19 @@ export const UNIT_FAILED_CODES = [
 export type UnitRejectedCode = (typeof UNIT_REJECTED_CODES)[number];
 export type UnitFailedCode = (typeof UNIT_FAILED_CODES)[number];
 /** Every reason code a UnitReport may carry, and therefore every key of a failurePolicy. */
-export const UNIT_REPORT_CODES = [...UNIT_REJECTED_CODES, ...UNIT_FAILED_CODES] as const;
+
+/** What a definition may decide; a quota and an expired artifact mean the same for every Unit. */
+export const FAILURE_POLICY_CODES = [
+  ...UNIT_REJECTED_CODES.filter(
+    (
+      code,
+    ): code is Exclude<
+      (typeof UNIT_REJECTED_CODES)[number],
+      'QUOTA_EXHAUSTED' | 'ARTIFACT_EXPIRED'
+    > => code !== 'QUOTA_EXHAUSTED' && code !== 'ARTIFACT_EXPIRED',
+  ),
+  ...UNIT_FAILED_CODES,
+];
 
 /** A closed set of reason codes as a Schema whose static type is the union of those codes. */
 export const reasonCodeOf = <const Codes extends readonly ReasonCode[]>(codes: Codes) =>

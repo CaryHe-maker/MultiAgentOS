@@ -1,55 +1,436 @@
+import { COMPACTION_FAILURES, COMPACTION_TRIGGERS } from '../context/compaction.js';
+import { WrapUpReasonSchema } from '../context/history-entry.js';
+import { COMMAND_MAX_CHARS } from '../executor/command.js';
 import { Type, type Static } from 'typebox';
+import { ArtifactRefSchema } from '../platform-common/common-schemas.js';
 import { IdSchemas } from '../platform-common/ids.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
-import { runEndVariants } from './run-outcome.js';
+import { LOCAL_QUESTION_KINDS, localQuestionProperties } from './human-request.js';
+import { runEnd } from './run-outcome.js';
 
-/** `repositoryPath` is the realpath of the repository root; `exclusions` follow M1Interface 3.5. */
-export const AuthorizationRequestSchema = closed(
-  {
-    type: Type.Literal('AuthorizationRequest'),
-    questionId: IdSchemas.questionId,
-    capability: Type.Literal('repo.read'),
-    repositoryPath: text(4096),
-    exclusions: Type.Array(ExclusionRuleSchema),
-    provider: text(64),
-    expiresAt: TimestampSchema,
-  },
-  'kernel.control.AuthorizationRequest.v0',
+export const COMMAND_ANSWER_SCOPES = ['ONCE', 'COMMAND', 'PREFIX', 'DENY'] as const;
+
+/** Why "allow from now on" is not offered for a command line (ExecutorSet 5c). */
+export const UNREUSABLE_REASONS = [
+  'PARSE_ERROR',
+  'DYNAMIC_COMMAND_NAME',
+  'COMMAND_SUBSTITUTION',
+  'PROCESS_SUBSTITUTION',
+  'EVAL',
+  'SHELL_C',
+  'PIPE_TO_SHELL',
+  'HEREDOC_TO_SHELL',
+  'NO_COMMAND',
+  'CRITICAL_COMMAND',
+  'NETWORK',
+  'UNISOLATED',
+] as const;
+
+/** A question waits until the user answers or the run converges; it never times out (M2Design 5.3). */
+const question = {
+  type: Type.Literal('AuthorizationRequest'),
+  questionId: IdSchemas.questionId,
+};
+export const AuthorizationRequestSchema = Type.Union(
+  [
+    closed({
+      ...question,
+      capability: Type.Literal('repo.read'),
+      repositoryPath: text(4096),
+      exclusions: Type.Array(ExclusionRuleSchema),
+      provider: text(64),
+    }),
+    closed({
+      ...question,
+      capability: Type.Literal('project.instructions'),
+      path: text(512),
+      contentRef: ArtifactRefSchema,
+      truncated: Type.Boolean(),
+    }),
+    /** Uncertain level: answered with ALLOW or DENY, for the whole write root. */
+    closed({
+      ...question,
+      capability: Type.Literal('workspace.write'),
+      writeRoot: text(1024),
+      critical: Type.Literal(false),
+    }),
+    /**
+     * A command (Kernel/Core 5b). It shows exactly what will run: the command, where, what it may
+     * write, whether it shares the network or is not isolated. `options` is what may be answered;
+     * a critical or unreusable command offers ONCE and DENY only.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('command.exec'),
+      command: text(COMMAND_MAX_CHARS),
+      workdir: Type.String({ maxLength: 1024 }),
+      writableRoots: Type.Array(text(1024), { minItems: 1 }),
+      network: Type.Boolean(),
+      unisolated: Type.Boolean(),
+      critical: Type.Boolean(),
+      /** The prefixes a PREFIX answer would allow, one for each simple command. */
+      prefixes: Type.Array(text(500)),
+      /** Why only ONCE and DENY are offered; empty when COMMAND and PREFIX are. */
+      unreusable: Type.Array(Type.Enum(UNREUSABLE_REASONS)),
+      /** The critical-command pattern that matched, if any. */
+      matched: Type.Optional(text(200)),
+      approvalDigest: Type.String({ pattern: '^[a-f0-9]{64}$' }),
+      options: Type.Array(Type.Enum(COMMAND_ANSWER_SCOPES), { minItems: 2 }),
+    }),
+    /** The web tools (Kernel/Core 5f): ALLOW or DENY, for the whole run (search) or for a host (fetch). */
+    closed({
+      ...question,
+      capability: Type.Literal('web.search'),
+      queries: Type.Array(text(128), { minItems: 1, maxItems: 5 }),
+      /** Who receives the queries. */
+      provider: text(64),
+    }),
+    closed({
+      ...question,
+      capability: Type.Literal('web.fetch'),
+      url: text(2048),
+      host: text(253),
+    }),
+    /**
+     * The work of this input is about to run out of its token budget (M2Design 7.3, rule 6):
+     * ALLOW adds `add` tokens to it, DENY lets it wrap up with what it has. The Kernel asks, never
+     * the model. `tasks` is how many tasks are at work below the root.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('budget.extend'),
+      used: count(),
+      limit: count(1),
+      add: count(1),
+      tasks: count(),
+    }),
+    /**
+     * The run has started as many subtasks as it may (D62): ALLOW lets it start `add` more, DENY
+     * refuses the call that asked and every later one. The Kernel asks, never the model.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('tasks.extend'),
+      started: count(),
+      limit: count(1),
+      add: count(1),
+    }),
+    /**
+     * Reading a folder outside the workspace (Kernel/Core 5h): ALLOW or DENY, for this run. `root` is
+     * what an answer allows; `path` is what was asked for.
+     */
+    closed({
+      ...question,
+      capability: Type.Literal('external.read'),
+      root: text(4096),
+      path: text(4096),
+      /** Who receives what is read. */
+      provider: text(64),
+    }),
+    /** An `AGENTS.md`: answered with ONCE or DENY, showing the exact content. */
+    closed({
+      ...question,
+      capability: Type.Literal('workspace.write'),
+      path: text(1024),
+      contentRef: ArtifactRefSchema,
+      critical: Type.Literal(true),
+    }),
+  ],
+  { $id: 'kernel.control.AuthorizationRequest.v1' },
 );
 export type AuthorizationRequest = Static<typeof AuthorizationRequestSchema>;
 
+/** CANCELLED only when the run converges or the answer can no longer reach the Kernel. */
 export const AuthorizationResolvedSchema = closed(
   {
     type: Type.Literal('AuthorizationResolved'),
     questionId: IdSchemas.questionId,
-    resolution: Type.Enum(['GRANTED', 'DECLINED', 'TIMED_OUT', 'CANCELLED']),
+    resolution: Type.Enum(['GRANTED', 'DECLINED', 'CANCELLED']),
   },
-  'kernel.control.AuthorizationResolved.v0',
+  'kernel.control.AuthorizationResolved.v1',
 );
 export type AuthorizationResolved = Static<typeof AuthorizationResolvedSchema>;
 
-/** Exactly one per run, the last event sent to UserInteraction; same RunEnd as RunClosed. */
-export const RunFinishedSchema = Type.Union(runEndVariants('RunFinished'), {
-  $id: 'kernel.control.RunFinished.v0',
+const humanRequest = {
+  type: Type.Literal('HumanRequest'),
+  humanRequestId: IdSchemas.humanRequestId,
+};
+/** Open input, or a local question that blocks only the AgentRun it is attached to. */
+export const HumanRequestSchema = Type.Union(
+  [
+    closed({ ...humanRequest, kind: Type.Literal('prompt') }),
+    closed({
+      ...humanRequest,
+      kind: Type.Enum(LOCAL_QUESTION_KINDS),
+      ...localQuestionProperties,
+    }),
+  ],
+  { $id: 'kernel.control.HumanRequest.v1' },
+);
+export type HumanRequest = Static<typeof HumanRequestSchema>;
+
+export const HumanResolvedSchema = closed(
+  {
+    type: Type.Literal('HumanResolved'),
+    humanRequestId: IdSchemas.humanRequestId,
+    /** `WITHDRAWN`: open input taken back because the work goes on without the user (4.4). */
+    resolution: Type.Enum(['ANSWERED', 'CANCELLED', 'WITHDRAWN']),
+  },
+  'kernel.control.HumanResolved.v1',
+);
+export type HumanResolved = Static<typeof HumanResolvedSchema>;
+
+/** External changes stand in the way of an undo; this is not an authorization question. */
+export const UndoConfirmationRequestedSchema = closed(
+  {
+    type: Type.Literal('UndoConfirmationRequested'),
+    undoId: IdSchemas.undoId,
+    files: Type.Array(
+      closed({
+        path: text(4096),
+        change: Type.Enum(['ADDED', 'MODIFIED', 'DELETED', 'UNKNOWN']),
+      }),
+    ),
+  },
+  'kernel.control.UndoConfirmationRequested.v1',
+);
+export type UndoConfirmationRequested = Static<typeof UndoConfirmationRequestedSchema>;
+
+export const UndoCancelledSchema = closed(
+  {
+    type: Type.Literal('UndoCancelled'),
+    undoId: IdSchemas.undoId,
+    reason: Type.Enum(['USER_CANCELLED', 'NEW_INPUT', 'SESSION_CLOSED', 'FILE_CHANGED']),
+  },
+  'kernel.control.UndoCancelled.v1',
+);
+export type UndoCancelled = Static<typeof UndoCancelledSchema>;
+
+/**
+ * The workspace is back at a checkpoint (Orchestration 7.5): `files` were put back, and what they
+ * held before is in `backupSnapshot`.
+ */
+export const CheckpointRolledBackSchema = closed(
+  {
+    type: Type.Literal('CheckpointRolledBack'),
+    checkpointId: IdSchemas.checkpointId,
+    label: text(200),
+    files: Type.Array(text(4096)),
+    backupSnapshot: Type.Optional(text(64)),
+    /**
+     * An undo (`/undo`): the checkpoint itself is taken back too, so the work from it on, the input
+     * that opened it included, is undone. Absent, a rewind: the work goes on from the checkpoint.
+     */
+    undo: Type.Optional(Type.Boolean()),
+    /** Files changed outside the system that the user chose to overwrite. */
+    forced: Type.Optional(Type.Boolean()),
+    externalFiles: Type.Optional(Type.Array(text(4096))),
+  },
+  'kernel.control.CheckpointRolledBack.v1',
+);
+export type CheckpointRolledBack = Static<typeof CheckpointRolledBackSchema>;
+
+export const MessagePublishedSchema = closed(
+  {
+    type: Type.Literal('MessagePublished'),
+    messageRef: ArtifactRefSchema,
+    agentLabel: text(80),
+    kind: Type.Enum(['REPLY', 'DEGRADED_REPLY']),
+    wrapUpReason: Type.Optional(WrapUpReasonSchema),
+  },
+  'kernel.control.MessagePublished.v1',
+);
+export type MessagePublished = Static<typeof MessagePublishedSchema>;
+
+const stateChanged = { type: Type.Literal('RunStateChanged') };
+export const RunStateChangedSchema = Type.Union(
+  [
+    closed({ ...stateChanged, state: Type.Literal('AWAITING_INPUT') }),
+    closed({
+      ...stateChanged,
+      state: Type.Enum(['RUNNING', 'CONVERGING', 'PAUSING', 'PAUSED', 'INTERRUPTING']),
+      /** The checkpoint of the input whose work this is. */
+      checkpointId: Type.Optional(IdSchemas.checkpointId),
+    }),
+  ],
+  { $id: 'kernel.control.RunStateChanged.v1' },
+);
+export type RunStateChanged = Static<typeof RunStateChangedSchema>;
+
+export const ACTIVITY_PHASES = [
+  'ASSEMBLING',
+  'THINKING',
+  'RETRYING',
+  'CALLING_TOOL',
+  'AWAITING_AUTHORIZATION',
+  'QUEUED',
+  /** The AgentRun called `run_subagents` and waits for its tasks. */
+  'WAITING_SUBTASKS',
+  /** The AgentRun called `ask_user` and waits for the answer. */
+  'AWAITING_ANSWER',
+  /** The AgentRun asked its parent for more rounds and waits for the answer (D91). */
+  'AWAITING_GRANT',
+  /** The run is paused: nothing of this AgentRun runs. */
+  'PAUSED',
+  /** Its context is being compacted: nothing of this AgentRun runs until it is done. */
+  'COMPACTING',
+  'WRAPPING_UP',
+  /**
+   * The segment ended and its task sleeps until something wakes it (Orchestration 4): the task is
+   * still there, and the activity area keeps its line until the task ends.
+   */
+  'SLEEPING',
+  'ENDED',
+] as const;
+const activity = {
+  type: Type.Literal('ActivityEvent'),
+  agentRunId: IdSchemas.agentRunId,
+  /** Of a SubAgent: the AgentRun that started it, so the interface can draw the tree. */
+  parentAgentRunId: Type.Optional(IdSchemas.agentRunId),
+  /**
+   * The task the AgentRun is a segment of, and its parent task (Orchestration 3.2): the activity
+   * area draws the tree of tasks, which stays whole while a task sleeps between segments.
+   */
+  missionId: Type.Optional(IdSchemas.missionScopeId),
+  parentMissionId: Type.Optional(IdSchemas.missionScopeId),
+  label: text(80),
+  /**
+   * A task that works in its caller's place until it delivers (Orchestration D115): the activity
+   * area shows it where its caller was, and a message of the user goes to it.
+   */
+  standsIn: Type.Optional(Type.Literal(true)),
+  unit: Type.Optional(
+    closed({
+      unitAttemptId: IdSchemas.unitAttemptId,
+      toolName: text(64),
+      argsSummary: text(80, 0),
+      state: Type.Enum(['QUEUED', 'RUNNING', 'DONE']),
+      /** Only on DONE when the preview was truncated: the full output, readable for 7 days. */
+      fullRef: Type.Optional(ArtifactRefSchema),
+    }),
+  ),
+  /** The progress of `update_todos`, passed through as Workflow gave it. */
+  todos: Type.Optional(
+    closed({
+      total: Type.Integer({ minimum: 0, maximum: 30 }),
+      completed: Type.Integer({ minimum: 0, maximum: 30 }),
+      current: Type.Optional(text(80)),
+    }),
+  ),
+  at: TimestampSchema,
+};
+/** `retry` is present exactly in the RETRYING phase. */
+export const ActivityEventSchema = Type.Union(
+  [
+    closed({
+      ...activity,
+      phase: Type.Literal('RETRYING'),
+      retry: closed({ attempt: count(1), retryAt: TimestampSchema }),
+    }),
+    closed({
+      ...activity,
+      phase: Type.Enum(ACTIVITY_PHASES.filter((phase) => phase !== 'RETRYING')),
+    }),
+  ],
+  { $id: 'kernel.control.ActivityEvent.v1' },
+);
+export type ActivityEvent = Static<typeof ActivityEventSchema>;
+
+/**
+ * The background commands a task has running now (Orchestration 6.1), only for the interface: the
+ * activity area shows how long each has run behind the task's line. Sent when they change; an
+ * empty `startedAt` says there are none any more.
+ */
+export const BackgroundJobsSchema = closed(
+  {
+    type: Type.Literal('BackgroundJobs'),
+    agentRunId: IdSchemas.agentRunId,
+    missionId: Type.Optional(IdSchemas.missionScopeId),
+    /** When each of them started; one moved to the background started when the command did. */
+    startedAt: Type.Array(TimestampSchema, { maxItems: 16 }),
+  },
+  'kernel.control.BackgroundJobs.v1',
+);
+export type BackgroundJobs = Static<typeof BackgroundJobsSchema>;
+
+export const RunFinishedSchema = Type.Union([...runEnd('RunFinished')], {
+  $id: 'kernel.control.RunFinished.v1',
 });
 export type RunFinished = Static<typeof RunFinishedSchema>;
+
+/** A compaction took effect (Workflow has recorded it); only a prune has no summary. */
+export const ContextCompactedSchema = closed(
+  {
+    type: Type.Literal('ContextCompacted'),
+    trigger: Type.Enum(COMPACTION_TRIGGERS),
+    summaryRef: Type.Optional(ArtifactRefSchema),
+    /** Inputs of the user whose work the summary replaced, in part or whole; 0 when only results were cut. */
+    compactedInputs: count(),
+    prunedResults: count(),
+  },
+  'kernel.control.ContextCompacted.v1',
+);
+export type ContextCompacted = Static<typeof ContextCompactedSchema>;
+
+/** A compaction the user or the run asked for did not happen. */
+export const CompactionFailedSchema = closed(
+  {
+    type: Type.Literal('CompactionFailed'),
+    trigger: Type.Enum(COMPACTION_TRIGGERS),
+    reason: Type.Enum(COMPACTION_FAILURES),
+  },
+  'kernel.control.CompactionFailed.v1',
+);
+export type CompactionFailed = Static<typeof CompactionFailedSchema>;
+
+/**
+ * Two calls in a row to read outside the workspace failed, and the run is paused (Kernel/Core 5h).
+ * The paths are what the Agent tried; the user continues with the right one, or stops the run.
+ */
+export const ExternalReadPausedSchema = closed(
+  {
+    type: Type.Literal('ExternalReadPaused'),
+    attempts: Type.Array(
+      closed({
+        path: text(4096),
+        reason: Type.Enum(['UNAVAILABLE', 'DECLINED', 'FAILED']),
+      }),
+      { minItems: 1, maxItems: 8 },
+    ),
+  },
+  'kernel.control.ExternalReadPaused.v1',
+);
+export type ExternalReadPaused = Static<typeof ExternalReadPausedSchema>;
 
 export const KernelToInteractionEventSchema = Type.Union([
   AuthorizationRequestSchema,
   AuthorizationResolvedSchema,
+  HumanRequestSchema,
+  HumanResolvedSchema,
+  MessagePublishedSchema,
+  RunStateChangedSchema,
+  ActivityEventSchema,
+  BackgroundJobsSchema,
   RunFinishedSchema,
+  UndoConfirmationRequestedSchema,
+  UndoCancelledSchema,
+  CheckpointRolledBackSchema,
+  ContextCompactedSchema,
+  CompactionFailedSchema,
+  ExternalReadPausedSchema,
 ]);
 export type KernelToInteractionEvent = Static<typeof KernelToInteractionEventSchema>;
 
 export const InteractionInboxEventSchema = closed(
   {
     eventId: IdSchemas.eventId,
+    sessionId: IdSchemas.sessionId,
     workflowRunId: IdSchemas.workflowRunId,
     seq: count(1),
     occurredAt: TimestampSchema,
     event: KernelToInteractionEventSchema,
   },
-  'kernel.control.InteractionInboxEvent.v0',
+  'kernel.control.InteractionInboxEvent.v1',
 );
 export type InteractionInboxEvent = Static<typeof InteractionInboxEventSchema>;

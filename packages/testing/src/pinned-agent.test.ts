@@ -1,0 +1,49 @@
+import { createProtocolRegistry, type BoundaryContext } from '@multiagentos/contracts';
+import {
+  DEFAULT_DEFINITIONS_DIRECTORY,
+  DefinitionCatalog,
+  FileDefinitionSource,
+} from '@multiagentos/agent-tool-pool';
+import { describe, expect, it } from 'vitest';
+import { pinnedAgentOf } from '@multiagentos/kernel';
+
+const context: BoundaryContext = { correlationId: 'cor_test0001', tenantId: 'l', projectId: 'l' };
+
+async function pinned(id: string) {
+  const catalog = await DefinitionCatalog.load(
+    new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+  );
+  const set = catalog.pinAgent({ id, version: 'v1.0.0' }, context);
+  if (!set.ok) throw new Error(set.error.message);
+  return set.value;
+}
+
+describe('pinnedAgentOf', () => {
+  it('turns the registered effort into the provider request', async () => {
+    const set = await pinned('main');
+    const registry = createProtocolRegistry();
+    expect(pinnedAgentOf(set, 'high', registry, ['repo.read'])).toMatchObject({
+      modelScope: { kind: 'MODEL', thinking: 'ENABLED', thinkingEffort: 'high' },
+      maxToolUnits: 200,
+    });
+    expect(pinnedAgentOf(set, 'none', registry, ['repo.read'])).toMatchObject({
+      modelScope: { thinking: 'DISABLED' },
+    });
+  });
+
+  it('refuses an effort the Agent does not allow', async () => {
+    expect(
+      pinnedAgentOf(await pinned('explorer'), 'high', createProtocolRegistry(), ['repo.read']),
+    ).toBe('FORBIDDEN');
+  });
+
+  it('lists the same tools in a final call, and names the end tools it may call then (D102)', async () => {
+    const agent = pinnedAgentOf(await pinned('explorer'), 'none', createProtocolRegistry(), [
+      'repo.read',
+    ]);
+    if (agent === 'FORBIDDEN') throw new Error('forbidden');
+    expect(agent.toolSpecs.map((spec) => spec.name)).toContain('read_file');
+    expect(agent.toolSpecs.map((spec) => spec.name)).toContain('finish_subagent');
+    expect(agent.finalToolNames).toEqual(['finish_subagent']);
+  });
+});

@@ -1,28 +1,119 @@
 /**
- * ExecutorSet static library (docs/M1/Library/ExecutorSet.md). One directory per Executor, and
- * `repository-access/` is shared by the three repository Executors. Provider SDKs may be
- * imported only under `model-call/`.
+ * ExecutorSet static library (docs/M2/Library/ExecutorSet.md). One directory per Executor, and
+ * `repository-access/` is shared by the repository Executors. Provider SDKs may be imported only
+ * under `model-call/`.
  */
-import type { ExecutorRegistry } from '@multiagentos/contracts';
+import { createRunCommandExecutor } from './command/run-command-executor.js';
+import { createGitInspectExecutor } from './git/git-inspect-executor.js';
+import type { ExecutionScope, ExecutorRegistry } from '@multiagentos/contracts';
 import { createAssembleExecutor } from './context-assemble/assemble-executor.js';
+import { createPruneExecutor } from './context-assemble/prune-executor.js';
 import { createFileReadExecutor } from './file-read/file-read-executor.js';
+import { createFileEditExecutor, createFileWriteExecutor } from './fs/file-write-executor.js';
+import { PathLocks } from './fs/guarded-write.js';
+export { createShadowFiles, createWorkspaceFiles } from './fs/workspace-files.js';
+import { createOutputReadExecutor } from './output-read/output-read-executor.js';
 import { createModelCallExecutor } from './model-call/model-call-executor.js';
 import { FileDigestCache } from './repository-access/file-set.js';
-import { createOrientExecutor } from './repository-orient/orient-executor.js';
+import { readGuardedFile } from './repository-access/guarded-file.js';
+import { resolveRepositoryScope } from './repository-access/repository-scope.js';
 import { createSearchExecutor } from './repository-search/search-executor.js';
+import { createListExecutor } from './repository-list/list-executor.js';
+import {
+  createWebFetchExecutor,
+  createWebSearchExecutor,
+  type WebOptions,
+} from './web/web-executors.js';
 
 /**
  * Called by the composition root, which injects the result into the Supervisor. The registry
  * owns one digest cache, so the snapshot of a repository is hashed once per process and only
  * changed files are hashed again.
  */
-export function createExecutorRegistry(): ExecutorRegistry {
+export function createExecutorRegistry(
+  options: { readonly web?: WebOptions } = {},
+): ExecutorRegistry {
   const cache = new FileDigestCache();
+  const locks = new PathLocks();
   return {
-    REPOSITORY_ORIENT: createOrientExecutor(cache),
     REPOSITORY_SEARCH: createSearchExecutor({ cache }),
+    REPOSITORY_LIST: createListExecutor(cache),
     FILE_READ: createFileReadExecutor(),
+    FILE_WRITE: createFileWriteExecutor(locks),
+    FILE_EDIT: createFileEditExecutor(locks),
+    OUTPUT_READ: createOutputReadExecutor(),
+    COMMAND: createRunCommandExecutor(),
+    GIT_INSPECT: createGitInspectExecutor(),
+    WEB_SEARCH: createWebSearchExecutor(options.web),
+    WEB_FETCH: createWebFetchExecutor(options.web),
     CONTEXT_ASSEMBLE: createAssembleExecutor(),
+    CONTEXT_PRUNE: createPruneExecutor(),
     MODEL: createModelCallExecutor(),
   };
 }
+
+/**
+ * `readProjectFile` reads `AGENTS.md` through the same guard as `file-read` (Kernel/Execution
+ * 5): undefined when the scope is invalid or the file cannot be read under its checks.
+ */
+export async function readRepositoryText(
+  path: string,
+  scope: ExecutionScope,
+): Promise<string | undefined> {
+  const resolved = await resolveRepositoryScope(scope);
+  if (resolved === undefined) return undefined;
+  const read = await readGuardedFile(resolved, path);
+  return read.ok ? read.file.content.toString('utf8') : undefined;
+}
+
+export { createCommandParser, prefixOf } from './command/parse/command-parser.js';
+export type {
+  CommandParser,
+  ParsedCommand,
+  SubCommand,
+  UnreusableReason,
+} from './command/parse/command-parser.js';
+export { firstMatchingPattern, matchesCommandPattern } from './command/parse/command-match.js';
+export { ARITY, commandPrefix } from './command/parse/arity.js';
+
+export { createRunCommandExecutor } from './command/run-command-executor.js';
+export { createGitInspectExecutor, gitArguments } from './git/git-inspect-executor.js';
+export {
+  createCommandAnalyzer,
+  DEFAULT_CRITICAL_COMMANDS,
+  type CommandAnalysisResult,
+} from './command/command-analyzer.js';
+
+export {
+  DEFAULT_WEB_CONFIG,
+  createWebFetchExecutor,
+  createWebSearchExecutor,
+  type WebConfig,
+  type WebOptions,
+} from './web/web-executors.js';
+export {
+  PUBLIC_ONLY,
+  allowedAddresses,
+  checkUrlLiteral,
+  hostKeyOf,
+  isForbiddenAddress,
+  type AddressPolicy,
+  type Resolve,
+} from './web/address-policy.js';
+export { createBraveSearch } from './web/brave.js';
+export { createDeepSeekFetch, createDeepSeekSearch } from './web/deepseek.js';
+export {
+  FETCH_ADAPTERS,
+  SEARCH_ADAPTERS,
+  type FetchAdapter,
+  type SearchAdapter,
+} from './web/provider-registry.js';
+export {
+  WebFailure,
+  type AdapterOptions,
+  type FetchProvider,
+  type FetchedPage,
+  type SearchHit,
+  type SearchProvider,
+  type SearchRequest,
+} from './web/providers.js';

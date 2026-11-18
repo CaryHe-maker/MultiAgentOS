@@ -1,13 +1,14 @@
 import { Type, type Static, type TProperties, type TSchema } from 'typebox';
-import { ContextAssembleOutputSchema } from '../context/assemble.js';
-import {
-  RepositoryOrientOutputSchema,
-  RepositorySearchOutputSchema,
-} from '../context/repository.js';
+import { ContextAssembleOutputSchema } from '../context/history-entry.js';
+import { RepositorySearchOutputSchema } from '../context/repository.js';
+import { CommandOutputSchema, GitInspectOutputSchema } from '../executor/command.js';
 import { FileReadOutputSchema } from '../executor/file-read.js';
+import { FileWriteOutputSchema } from '../executor/file-write.js';
+import { OutputReadOutputSchema } from '../executor/output-read.js';
+import { WebFetchOutputSchema, WebSearchOutputSchema } from '../executor/web.js';
 import { ModelCallOutputSchema, TokenUsageSchema } from '../executor/model-call.js';
+import { RepositoryListOutputSchema } from '../executor/repository-list.js';
 import { IdSchemas } from '../platform-common/ids.js';
-import { MEDIA_TYPES } from '../platform-common/media-types.js';
 import {
   EXECUTOR_FAILED_CODES,
   EXECUTOR_REJECTED_CODES,
@@ -15,35 +16,7 @@ import {
   VIOLATION_CODES,
   reasonCodeOf,
 } from '../platform-common/reason-code.js';
-import { TimestampSchema, closed, count } from '../platform-common/schema-helpers.js';
-
-const result = <O extends TSchema>(output: O, mediaType: string) =>
-  closed({
-    output,
-    /** Written to the ArtifactStore by Execution, which produces `outputRef`. */
-    artifact: closed({ mediaType: Type.Literal(mediaType), text: Type.String() }),
-  });
-const OrientResultSchema = result(RepositoryOrientOutputSchema, MEDIA_TYPES.contextPack);
-const SearchResultSchema = result(RepositorySearchOutputSchema, MEDIA_TYPES.contextPack);
-const FileReadResultSchema = result(FileReadOutputSchema, MEDIA_TYPES.fileText);
-const AssembleResultSchema = result(ContextAssembleOutputSchema, MEDIA_TYPES.contextPack);
-const ModelResultSchema = result(ModelCallOutputSchema, MEDIA_TYPES.modelOutput);
-
-/**
- * What a completed Executor hands back: the output of its kind and the artifact, always
- * present and always of that kind's media type (M1Interface 6.1).
- */
-export const ExecutionResultSchema = Type.Union(
-  [
-    OrientResultSchema,
-    SearchResultSchema,
-    FileReadResultSchema,
-    AssembleResultSchema,
-    ModelResultSchema,
-  ],
-  { $id: 'kernel.execution.ExecutionResult.v0' },
-);
-export type ExecutionResult = Static<typeof ExecutionResultSchema>;
+import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
 
 export const EXECUTION_OUTCOMES = [
   'COMPLETED',
@@ -106,6 +79,8 @@ const notCompleted = <K extends TSchema, P extends TProperties>(executionKind: K
     startedAt: Type.Optional(TimestampSchema),
     outcome: Type.Literal('TERMINATED'),
     reasonCode: reasonCodeOf(TERMINATION_CODES),
+    /** Present when `cancelExecution` ended it: why (Interface/KernelSupervisor 7). */
+    cancelReason: Type.Optional(Type.Enum(['PAUSED', 'ABORTED'])),
   });
   const unconfirmed = closed({
     ...common,
@@ -130,32 +105,118 @@ const notCompleted = <K extends TSchema, P extends TProperties>(executionKind: K
 
 /** Only a MODEL execution has a request state and a usage; `requestState` is then required. */
 const modelFields = { requestState: RequestStateSchema, usage: Type.Optional(TokenUsageSchema) };
-const NON_MODEL_KINDS = Type.Enum([
-  'REPOSITORY_ORIENT',
-  'REPOSITORY_SEARCH',
-  'FILE_READ',
-  'CONTEXT_ASSEMBLE',
-]);
 
-/**
- * Exactly one per executionId; the Supervisor gives the single verdict. `executionKind` is the
- * kind of the ExecutionRequest it answers, and it decides the rest: the result type of a
- * COMPLETED fact, and whether `requestState` and `usage` exist at all. Each outcome accepts only
- * its own reason codes (M1Interface 7.3), and a completed MODEL execution is always SENT.
- */
+const artifact = closed({ mediaType: text(128), text: Type.String() });
+/** `artifact` is the preview; `fullOutput` is present only when the preview cut something. */
+const toolResult = <O extends TSchema>(output: O) =>
+  closed({
+    output,
+    artifact: artifact,
+    fullOutput: Type.Optional(closed({ text: Type.String() })),
+  });
+const SearchResultSchema = toolResult(RepositorySearchOutputSchema);
+const ListResultSchema = toolResult(RepositoryListOutputSchema);
+const FileReadResultSchema = toolResult(FileReadOutputSchema);
+const FileWriteResultSchema = toolResult(FileWriteOutputSchema);
+const OutputReadResultSchema = toolResult(OutputReadOutputSchema);
+const CommandResultSchema = toolResult(CommandOutputSchema);
+const GitInspectResultSchema = toolResult(GitInspectOutputSchema);
+const WebSearchResultSchema = toolResult(WebSearchOutputSchema);
+const WebFetchResultSchema = toolResult(WebFetchOutputSchema);
+/** `artifact.text` is the JSON `{ items: [{ toolCallId, text, omittedBytes }] }` (ExecutorSet 6.4). */
+const PruneResultSchema = closed({
+  output: closed({ items: count(), omittedBytes: count() }),
+  artifact: artifact,
+});
+const AssembleResultSchema = closed({
+  output: ContextAssembleOutputSchema,
+  artifact: artifact,
+});
+/** `reasoning` is present when the model returned thinking; it is stored apart from the output. */
+const ModelResultSchema = closed({
+  output: ModelCallOutputSchema,
+  artifact: artifact,
+  reasoning: Type.Optional(closed({ text: Type.String() })),
+});
+
+export const ExecutionResultSchema = Type.Union(
+  [
+    SearchResultSchema,
+    ListResultSchema,
+    FileReadResultSchema,
+    FileWriteResultSchema,
+    OutputReadResultSchema,
+    CommandResultSchema,
+    GitInspectResultSchema,
+    WebSearchResultSchema,
+    WebFetchResultSchema,
+    AssembleResultSchema,
+    PruneResultSchema,
+    ModelResultSchema,
+  ],
+  { $id: 'kernel.execution.ExecutionResult.v1' },
+);
+export type ExecutionResult = Static<typeof ExecutionResultSchema>;
+
+const inSession = { sessionId: IdSchemas.sessionId };
+const NON_MODEL_KINDS = Type.Enum([
+  'REPOSITORY_SEARCH',
+  'REPOSITORY_LIST',
+  'FILE_READ',
+  'FILE_WRITE',
+  'FILE_EDIT',
+  'OUTPUT_READ',
+  'COMMAND',
+  'GIT_INSPECT',
+  'WEB_SEARCH',
+  'WEB_FETCH',
+  'CONTEXT_ASSEMBLE',
+  'CONTEXT_PRUNE',
+]);
+const [modelRejected, , modelTerminated, modelUnconfirmed, modelViolation] = notCompleted(
+  Type.Literal('MODEL'),
+  { ...inSession, ...modelFields },
+);
+
 export const ExecutionFactSchema = Type.Union(
   [
-    completed('REPOSITORY_ORIENT', OrientResultSchema, {}),
-    completed('REPOSITORY_SEARCH', SearchResultSchema, {}),
-    completed('FILE_READ', FileReadResultSchema, {}),
-    completed('CONTEXT_ASSEMBLE', AssembleResultSchema, {}),
+    completed('REPOSITORY_SEARCH', SearchResultSchema, inSession),
+    completed('REPOSITORY_LIST', ListResultSchema, inSession),
+    completed('FILE_READ', FileReadResultSchema, inSession),
+    completed('FILE_WRITE', FileWriteResultSchema, inSession),
+    completed('FILE_EDIT', FileWriteResultSchema, inSession),
+    completed('OUTPUT_READ', OutputReadResultSchema, inSession),
+    completed('COMMAND', CommandResultSchema, inSession),
+    completed('GIT_INSPECT', GitInspectResultSchema, inSession),
+    completed('WEB_SEARCH', WebSearchResultSchema, inSession),
+    completed('WEB_FETCH', WebFetchResultSchema, inSession),
+    completed('CONTEXT_ASSEMBLE', AssembleResultSchema, inSession),
+    completed('CONTEXT_PRUNE', PruneResultSchema, inSession),
     completed('MODEL', ModelResultSchema, {
+      ...inSession,
       requestState: Type.Literal('SENT'),
       usage: Type.Optional(TokenUsageSchema),
     }),
-    ...notCompleted(NON_MODEL_KINDS, {}),
-    ...notCompleted(Type.Literal('MODEL'), modelFields),
+    ...notCompleted(NON_MODEL_KINDS, inSession),
+    modelRejected,
+    closed({
+      ...fact,
+      ...started,
+      ...inSession,
+      ...modelFields,
+      executionKind: Type.Literal('MODEL'),
+      outcome: Type.Literal('FAILED'),
+      reasonCode: reasonCodeOf(EXECUTOR_FAILED_CODES),
+      retryable: Type.Boolean(),
+      /** From Retry-After; the wait is the larger of this and the back-off (Execution 4a). */
+      retryAfterMs: Type.Optional(count()),
+      /** What the provider or the HTTP client said, as it said it, without the key (D109). */
+      detail: Type.Optional(text(1000)),
+    }),
+    modelTerminated,
+    modelUnconfirmed,
+    modelViolation,
   ],
-  { $id: 'kernel.execution.ExecutionFact.v0' },
+  { $id: 'kernel.execution.ExecutionFact.v1' },
 );
 export type ExecutionFact = Static<typeof ExecutionFactSchema>;

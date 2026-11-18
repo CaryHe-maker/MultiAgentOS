@@ -2,9 +2,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import type { ProtocolRegistry } from '../protocol-registry.js';
 
 /**
- * The protocol freeze guard of the compatibility matrix (M1TechStack 11). Before M1 is accepted
- * (`frozen: false`) the registered Schemas must equal the snapshot; afterwards every frozen
- * Schema must stay registered and may only gain optional fields (M1Interface 1.2).
+ * The protocol freeze guard. Until M2 is released (`frozen: false`) the registered Schemas must
+ * equal the snapshot; afterwards every frozen Schema must stay registered and may only gain
+ * optional fields (Interface/README 2.2).
  */
 export interface SchemaSnapshot {
   readonly frozen: boolean;

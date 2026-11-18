@@ -1,22 +1,36 @@
 /**
- * Kernel Module (docs/M1/Module/Kernel.md). The package holds three communication subjects:
- * the Kernel core (core, execution, monitor, scheduler, driven by run-actor), the Gateway and
- * the Supervisor. This entry exposes only their factories and `KernelConfig` to the
- * composition root; component internals stay private to their directories.
+ * Kernel Module (Module/Kernel). The package holds three communication subjects: the Kernel
+ * core (Session management, the Session actor and per run Core, Execution, Monitor and
+ * Scheduler under `session/`), the Gateway and the Supervisor. This entry exposes their
+ * factories and the helpers the composition root needs; component internals stay private.
  */
-export { DEFAULT_KERNEL_CONFIG, type BudgetConfig, type KernelConfig } from './interfaces/index.js';
-export { createGateway, type GatewayDeps } from './gateway/index.js';
-export {
-  createKernelCore,
-  type AbortAllRunsRequest,
-  type KernelCoreDeps,
-  type KernelCoreModule,
-} from './kernel-core.js';
+export { DEFAULT_KERNEL_CONFIG } from './interfaces/index.js';
 export {
   createSubprocessRunner,
   createSupervisor,
+  probeLandlock,
+  probeSandbox,
   type ModuleHostControl,
   type SupervisorDeps,
+  type SandboxProbe,
   type SupervisorModule,
   type TrackedSubprocessRunner,
 } from './supervisor/index.js';
+export {
+  createSessionGatewayModule,
+  createSessionKernelCore,
+  type SessionKernelCoreModule,
+  type SessionKernelDeps,
+} from './session-kernel.js';
+export {
+  agentShareFrom,
+  compactionAgentFrom,
+  pinAgentFrom,
+  pinnedAgentOf,
+  type AgentCatalog,
+  type CompactionCatalog,
+  type PinFailure,
+} from './session/pinned-agent.js';
+export type { PinnedAgent } from './session/run-attempts.js';
+export { minShare, type AgentBudget, type MemorySample } from './monitor/index.js';
+export { WorkspaceSnapshots } from './session/workspace-snapshots.js';

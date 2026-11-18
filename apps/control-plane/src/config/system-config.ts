@@ -5,7 +5,7 @@ import { SystemConfigSchema, validate, type SystemConfig } from '@multiagentos/c
 import { DEFAULT_KERNEL_CONFIG } from '@multiagentos/kernel';
 import { DEFAULT_WORKFLOW_CONFIG } from '@multiagentos/workflow';
 
-export type { SystemConfig } from '@multiagentos/contracts';
+export type { SystemConfig as SystemConfig } from '@multiagentos/contracts';
 
 /** The system configuration is wrong; the system must not start. */
 export class ConfigError extends Error {
@@ -15,8 +15,8 @@ export class ConfigError extends Error {
   }
 }
 
-/** The port response deadline of Workflow and UserInteraction (M1Interface 14.3). */
-export const DEFAULT_PORT_RETURN_TIMEOUT_MS = 30_000;
+/** The port response deadline of Workflow and UserInteraction. */
+const DEFAULT_PORT_RETURN_TIMEOUT_MS = 30_000;
 
 /** Built-in defaults, used when `MULTIAGENTOS_CONFIG` is not set. */
 export function defaultSystemConfig(): SystemConfig {
@@ -28,21 +28,22 @@ export function defaultSystemConfig(): SystemConfig {
   };
 }
 
-/**
- * Validates against `platform.config.SystemConfig.v0` and checks what a Schema cannot say.
- * The composition root checks catalog-dependent relationships before creating any module.
- */
+/** Validates against `platform.config.SystemConfig.v1` and checks what a Schema cannot say. */
 export function assertSystemConfig(config: unknown): SystemConfig {
   const result = validate<SystemConfig>(SystemConfigSchema, config);
   if (!result.ok) throw new ConfigError(result.issues.join('; '));
   if (!isAbsolute(result.value.dataDir)) throw new ConfigError('dataDir must be an absolute path');
+  // A compaction that keeps more than the threshold would never get below it.
+  const { keepRatio, triggerRatio } = result.value.kernel.compaction;
+  if (keepRatio >= triggerRatio)
+    throw new ConfigError('kernel.compaction.keepRatio must be less than triggerRatio');
   return result.value;
 }
 
 /**
- * Loads the configuration (docs/M1/M1TechStack.md 4): the JSON file named by
- * `MULTIAGENTOS_CONFIG`, laid over the built-in defaults, or the defaults alone when the
- * variable is not set. A file may give any subset of the settings; an unknown key is an error.
+ * Loads the configuration: the JSON file named by `MULTIAGENTOS_CONFIG`, laid over the built-in
+ * defaults, or the defaults alone when the variable is not set. A file may give any subset of
+ * the settings; an unknown key is an error.
  */
 export async function loadSystemConfig(
   env: Readonly<Record<string, string | undefined>>,

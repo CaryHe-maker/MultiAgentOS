@@ -17,10 +17,10 @@ interface Entry<T, R> {
 }
 
 /**
- * The receive queue inside a communication subject (docs/M1/Infrastructure/Fabric.md 4):
+ * The receive queue inside a communication subject:
  * messages are only enqueued on arrival and one consumer handles them one at a time. Channel
  * priority applies between two messages and never interrupts the one being handled, which is
- * what makes a run actor non-reentrant (docs/M1/Kernel/Interaction.md 4.4).
+ * what makes a Session actor non-reentrant.
  */
 export class Inbox<T, R = void, C extends string = typeof DEFAULT_CHANNEL> {
   readonly #options: InboxOptions<T, C>;

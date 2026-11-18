@@ -11,9 +11,6 @@
   "references": [
     {
       "path": "../../libraries/contracts"
-    },
-    {
-      "path": "../../infrastructure/fabric"
     }
   ]
 }

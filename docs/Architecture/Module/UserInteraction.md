@@ -2,20 +2,19 @@
 
 ## 1. 定位
 
-UserInteraction 是用户与系统交互的产品边界，承载目标输入、会话组织、运行展示与人工参与。
+UserInteraction 是用户与系统交互的产品边界，承载目标输入、Session 操作的入口、运行展示与人工参与；不保存 Session 信息。
 不同交互入口共享同一领域语义，不形成绕过 Kernel 的独立控制面。
 
 ## 2. 状态所有权
 
 | 概念 | 含义 |
 |---|---|
-| WorkSession | 围绕持续目标组织交互的容器 |
-| SessionTree | 运行、派生与恢复之间的展示关系 |
-| InteractionTurn | 用户输入和展示记录 |
-| PromptRevision | 发布后的不可变用户意图版本 |
-| ReviewResponse | 用户原始审核响应 |
-| InteractionView | 草稿、筛选与展示偏好 |
+| ReviewResponse | 用户原始审核响应，提交后即交给 Kernel |
+| InteractionView | 草稿、输入历史、筛选与展示偏好 |
 
+UserInteraction 不保存任何 Session 信息：Session 列表、标题、Fork 关系、会话记录与用户输入的正文都不在 UserInteraction 中，
+一律以 Kernel 交来的内容为准（Session 列表与会话日志归 Workflow，Kernel 保存引用，见 Overall 第 5 节）。
+用户输入提交后成为 Workflow 的 HUMAN 节点，正文由 Kernel 存入 ArtifactStore。
 UserInteraction 不拥有 Workflow 的业务状态、Core 的授权决定或 Kernel 执行事实。
 显示偏好和草稿不能改变运行权限。
 
@@ -43,7 +42,7 @@ UserInteraction 展示必要的目标、风险与证据并收集原始响应。
 
 ## 5. 会话与恢复
 
-SessionTree 保存用户如何组织运行，不替代 TaskGraph 或 MissionScope。
+列出、打开、新建、Fork、删除 Session 都经 Gateway 向 Kernel 请求；Kernel 向 Workflow 取得 Session 列表与派生关系后交给 UserInteraction，界面只展示这次的结果，不另行保存。
 保存点内容和恢复资格分别由 Workflow 与 Kernel 管理；
 只有新运行实际成立后，才将其展示为成功派生关系。
 

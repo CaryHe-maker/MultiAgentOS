@@ -12,7 +12,7 @@ export const FileReadInputSchema = Type.Refine(
       startLine: Type.Optional(count(1)),
       endLine: Type.Optional(count(1)),
     },
-    'executor.FileReadInput.v0',
+    'executor.FileReadInput.v1',
   ),
   (input) =>
     input.startLine === undefined ||
@@ -22,10 +22,7 @@ export const FileReadInputSchema = Type.Refine(
 );
 export type FileReadInput = Static<typeof FileReadInputSchema>;
 
-/**
- * `startLine..endLine` is what was actually returned, inside `1..totalLines`. The only empty
- * result is an empty file: `startLine = 1`, `endLine = 0`, `totalLines = 0`.
- */
+/** `fileSha256` is the digest of the whole file (M2Design 8.1). */
 export const FileReadOutputSchema = Type.Refine(
   closed(
     {
@@ -35,8 +32,10 @@ export const FileReadOutputSchema = Type.Refine(
       totalLines: count(),
       contentSha256: Sha256Schema,
       fileSha256: Sha256Schema,
+      /** The `AGENTS.md` between this file and the root, outermost first (ExecutorSet 3). */
+      nestedInstructions: Type.Optional(Type.Array(text(512), { maxItems: 64 })),
     },
-    'executor.FileReadOutput.v0',
+    'executor.FileReadOutput.v1',
   ),
   (output) =>
     output.totalLines === 0

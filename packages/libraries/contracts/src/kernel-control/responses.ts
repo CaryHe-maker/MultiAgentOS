@@ -6,20 +6,30 @@ import {
   GATEWAY_REJECTED_CODES,
   reasonCodeOf,
 } from '../platform-common/reason-code.js';
-import { closed } from '../platform-common/schema-helpers.js';
+import { closed, count } from '../platform-common/schema-helpers.js';
 import { CloseReasonSchema } from './run-outcome.js';
 
 export const SyscallAckSchema = closed(
   { requestId: IdSchemas.requestId, outcome: Type.Literal('ACCEPTED') },
-  'kernel.control.SyscallAck.v0',
+  'kernel.control.SyscallAck.v1',
 );
 export type SyscallAck = Static<typeof SyscallAckSchema>;
 
 const rejected = { requestId: IdSchemas.requestId, outcome: Type.Literal('REJECTED') };
-/**
- * Each issuer may only use its own reason codes (M1Interface 3.4). RUN_BLOCKED may come from
- * either and is the only reason that carries `closeReason`, which it always does.
- */
+
+/** Every artifact is UTF-8 text or JSON. */
+export const ArtifactContentSchema = closed(
+  {
+    requestId: IdSchemas.requestId,
+    outcome: Type.Literal('ACCEPTED'),
+    ref: ArtifactRefSchema,
+    text: Type.String(),
+  },
+  'kernel.control.ArtifactContent.v1',
+);
+export type ArtifactContent = Static<typeof ArtifactContentSchema>;
+
+/** Each issuer answers with its own reason codes (Interface documents, section 5). */
 export const SyscallRejectedSchema = Type.Union(
   [
     closed({
@@ -38,29 +48,26 @@ export const SyscallRejectedSchema = Type.Union(
       reasonCode: Type.Literal('RUN_BLOCKED'),
       closeReason: CloseReasonSchema,
     }),
+    /** The shares of a delegation are more than the parent can lend; it is told what it can. */
+    closed({
+      ...rejected,
+      issuer: Type.Literal('CORE'),
+      reasonCode: Type.Literal('BUDGET_INSUFFICIENT'),
+      delegable: count(),
+      /** The least the tasks of the call need in all: each its Agent's smallest share. */
+      least: Type.Optional(count()),
+    }),
   ],
-  { $id: 'kernel.control.SyscallRejected.v0' },
+  { $id: 'kernel.control.SyscallRejected.v1' },
 );
 export type SyscallRejected = Static<typeof SyscallRejectedSchema>;
 
-export const RunCreatedSchema = closed(
+export const SessionAcceptedSchema = closed(
   {
     requestId: IdSchemas.requestId,
     outcome: Type.Literal('ACCEPTED'),
-    workflowRunId: IdSchemas.workflowRunId,
+    sessionId: IdSchemas.sessionId,
   },
-  'kernel.control.RunCreated.v0',
+  'kernel.control.SessionAccepted.v1',
 );
-export type RunCreated = Static<typeof RunCreatedSchema>;
-
-/** Every M1 artifact is UTF-8 text or JSON. */
-export const ArtifactContentSchema = closed(
-  {
-    requestId: IdSchemas.requestId,
-    outcome: Type.Literal('ACCEPTED'),
-    ref: ArtifactRefSchema,
-    text: Type.String(),
-  },
-  'kernel.control.ArtifactContent.v0',
-);
-export type ArtifactContent = Static<typeof ArtifactContentSchema>;
+export type SessionAccepted = Static<typeof SessionAcceptedSchema>;

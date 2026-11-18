@@ -6,7 +6,7 @@ import type { ExecutionScope } from '@multiagentos/contracts';
  * The provider-level model. ExecutorSet calls `doGenerate` directly instead of `generateText`:
  * it returns tool-call arguments as the provider's raw text (ModelRawOutput keeps them verbatim,
  * and parse failures must reach Workflow as INVALID_JSON), and it never retries, so the request
- * state of every outcome is exactly the state of the one request sent (ExecutorSet 4.5).
+ * state of every outcome is exactly the state of the one request sent.
  */
 export type LanguageModel = ReturnType<ReturnType<typeof createOpenAI>['chat']>;
 

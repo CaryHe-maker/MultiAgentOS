@@ -2,8 +2,8 @@ import {
   ContextPackSchema,
   EXECUTOR_KINDS,
   ExecutionFactSchema,
+  MEDIA_TYPES,
   ModelRawOutputSchema,
-  sha256Hex,
   validate,
   type ContextAssembleOutput,
   type ContextPack,
@@ -43,16 +43,10 @@ export interface ExecutorContractFixture {
   readonly caseFor: <K extends ExecutorKind>(kind: K) => ExecutorCase<K>;
   /**
    * Further cases, each with its required verdict. A real ExecutorSet passes the guard cases of
-   * `repositoryGuardExpectations` here; the fake registry cannot, because it reads nothing.
+   * `repositoryGuardExpectations` here.
    */
   readonly expectations?: readonly ExecutorExpectation[];
 }
-
-const PACK_OPERATION = {
-  REPOSITORY_ORIENT: 'ORIENT',
-  REPOSITORY_SEARCH: 'SEARCH',
-  CONTEXT_ASSEMBLE: 'ASSEMBLE',
-} as const;
 
 /** Calls the Executor of `kind`; the caller pairs the kind with an input of that kind. */
 function run(
@@ -66,7 +60,7 @@ function run(
 }
 
 /**
- * The ExecutionFact the Supervisor would report for this outcome (M1Interface 8). Validating it
+ * The ExecutionFact the Supervisor would report for this outcome. Validating it
  * checks everything the Kernel relies on at once: the output type and artifact media type of the
  * kind, the reason codes allowed for the outcome, and the request state of a MODEL execution.
  */
@@ -77,6 +71,7 @@ function factOf(kind: ExecutorKind, outcome: ExecutorOutcome): object {
     ...outcome,
   };
   return {
+    sessionId: 'ses_contract',
     workflowRunId: 'wfr_contract',
     unitAttemptId: 'una_contract',
     executionId: 'exe_contract',
@@ -95,9 +90,34 @@ function factOf(kind: ExecutorKind, outcome: ExecutorOutcome): object {
 function expectConsistentArtifact(kind: ExecutorKind, outcome: ExecutorOutcome): void {
   if (outcome.outcome !== 'COMPLETED') return;
   const { output, artifact } = outcome.result;
+  if (kind === 'CONTEXT_PRUNE') {
+    expect(artifact.mediaType).toBe(MEDIA_TYPES.json);
+    const parsed = JSON.parse(artifact.text) as { items?: unknown };
+    expect(Array.isArray(parsed.items)).toBe(true);
+    return;
+  }
+  if (kind === 'WEB_SEARCH' || kind === 'WEB_FETCH') {
+    expect(artifact.mediaType).toBe(MEDIA_TYPES.markdown);
+    expect(artifact.text.length).toBeGreaterThan(0);
+    return;
+  }
   if (kind === 'FILE_READ') {
-    expect(sha256Hex(artifact.text)).toBe((output as FileReadOutput).contentSha256);
+    expect(artifact.mediaType).toBe(MEDIA_TYPES.fileText);
+    expect(artifact.text).toContain((output as FileReadOutput).path);
     expect(artifact.text).not.toContain('\r');
+    return;
+  }
+  if (
+    kind === 'REPOSITORY_SEARCH' ||
+    kind === 'REPOSITORY_LIST' ||
+    kind === 'FILE_WRITE' ||
+    kind === 'FILE_EDIT' ||
+    kind === 'OUTPUT_READ' ||
+    kind === 'COMMAND' ||
+    kind === 'GIT_INSPECT'
+  ) {
+    expect(artifact.mediaType).toBe(MEDIA_TYPES.fileText);
+    expect(artifact.text.length).toBeGreaterThan(0);
     return;
   }
   const content: unknown = JSON.parse(artifact.text);
@@ -109,24 +129,23 @@ function expectConsistentArtifact(kind: ExecutorKind, outcome: ExecutorOutcome):
   }
   expect(validate(ContextPackSchema, content)).toMatchObject({ ok: true });
   const pack = content as ContextPack;
-  expect(pack.operation).toBe(PACK_OPERATION[kind]);
+  expect(pack.operation).toBe('ASSEMBLE');
   expect(pack.tokenCount).toBeLessThanOrEqual(pack.tokenBudget);
-  if (pack.operation === 'ASSEMBLE') {
-    const assembled = output as ContextAssembleOutput;
-    expect(pack).toMatchObject({
-      contextPackId: assembled.contextPackId,
-      prefixSha256: assembled.prefixSha256,
-      tokenCount: assembled.tokenCount,
-      tokenBudget: assembled.tokenBudget,
-      truncated: assembled.truncated,
-      droppedCount: assembled.droppedCount,
-    });
-  } else expect(pack.snapshotId).toBe((output as { snapshotId: string }).snapshotId);
+  const assembled = output as ContextAssembleOutput;
+  expect(pack).toMatchObject({
+    contextPackId: assembled.contextPackId,
+    prefixSha256: assembled.prefixSha256,
+    tokenCount: assembled.tokenCount,
+    tokenBudget: assembled.tokenBudget,
+    projectionDigest: assembled.projectionDigest,
+    headDigest: assembled.headDigest,
+    elidedEntries: assembled.elidedEntries,
+  });
 }
 
 /**
- * What the Supervisor and the Kernel rely on from every Executor (M1Interface 8): the registry
- * covers the five kinds, an Executor never throws, every outcome makes a valid ExecutionFact,
+ * What the Supervisor and the Kernel rely on from every Executor: the registry
+ * covers every executor kind, an Executor never throws, every outcome makes a valid ExecutionFact,
  * and a completed execution carries an artifact that matches its output.
  */
 export function describeExecutorContract(name: string, fixture: ExecutorContractFixture): void {
@@ -151,7 +170,8 @@ export function describeExecutorContract(name: string, fixture: ExecutorContract
     );
 
     it.each(EXECUTOR_KINDS)('%s gives the same output for the same input', async (kind) => {
-      if (kind === 'MODEL') return;
+      // A write changes what the next one finds; that is its point.
+      if (kind === 'MODEL' || kind === 'FILE_WRITE' || kind === 'FILE_EDIT') return;
       const registry = await fixture.create();
       const { input, environment } = fixture.caseFor(kind);
       const first = await run(registry, kind, input, environment);
@@ -185,7 +205,7 @@ export function describeExecutorContract(name: string, fixture: ExecutorContract
 }
 
 /**
- * The verdicts ExecutorSet 3.2, 3.3 and 4.3 require for the fixture repository of
+ * The verdicts ExecutorSet require for the fixture repository of
  * `createFixtureRepository`. `environment` builds the environment of a kind with the given
  * scope, so the same cases can run with any limits, clock and subprocess runner.
  */
@@ -261,16 +281,6 @@ export function repositoryGuardExpectations(
       input: { query: '   ', mode: 'TEXT', maxItems: 20, tokenBudget: 4_000 },
       environment: environment('REPOSITORY_SEARCH', scope),
       expected: rejected('INVALID_QUERY'),
-    },
-    {
-      name: 'rejects a repository with more files than maxFiles',
-      kind: 'REPOSITORY_ORIENT',
-      input: { objective: 'Explain the fixture.', tokenBudget: 4_000 },
-      environment: {
-        ...environment('REPOSITORY_ORIENT', scope),
-        limits: { deadline: '2099-01-01T00:00:00.000Z', maxOutputBytes: 1_048_576, maxFiles: 1 },
-      },
-      expected: rejected('LIMIT_EXCEEDED'),
     },
   ];
 }

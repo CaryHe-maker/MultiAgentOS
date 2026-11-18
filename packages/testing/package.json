@@ -6,9 +6,8 @@
   "devDependencies": {
     "@multiagentos/agent-tool-pool": "workspace:*",
     "@multiagentos/contracts": "workspace:*",
-    "@multiagentos/fabric": "workspace:*",
     "@multiagentos/kernel": "workspace:*",
-    "@multiagentos/user-interaction": "workspace:*",
+    "@multiagentos/persistence": "workspace:*",
     "@multiagentos/workflow": "workspace:*"
   },
   "scripts": {

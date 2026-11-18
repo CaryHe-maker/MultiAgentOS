@@ -4,11 +4,11 @@ import {
   SCHEMA_SNAPSHOT_URL,
   writeSchemaSnapshot,
 } from '../compatibility/schema-snapshot.js';
-import { createM1ProtocolRegistry } from '../protocol-registry.js';
+import { createProtocolRegistry } from '../protocol-registry.js';
 
 /**
- * `pnpm run contracts:snapshot`: rewrites the Schema snapshot of the freeze guard
- * (M1TechStack 11). Once M1 is accepted the snapshot is frozen and this refuses to change it.
+ * `pnpm run contracts:snapshot`: rewrites the Schema snapshot of the freeze guard. Once M2 is
+ * released the snapshot is frozen and this refuses to change it.
  */
 let frozen = false;
 try {
@@ -20,7 +20,7 @@ if (frozen) {
   console.error(`Nothing written: ${SCHEMA_SNAPSHOT_URL.pathname} is frozen`);
   process.exitCode = 1;
 } else {
-  const schemas = currentSchemas(createM1ProtocolRegistry());
+  const schemas = currentSchemas(createProtocolRegistry());
   await writeSchemaSnapshot({ frozen: false, schemas });
   console.log(
     `${Object.keys(schemas).length} Schema(s) written to ${SCHEMA_SNAPSHOT_URL.pathname}`,

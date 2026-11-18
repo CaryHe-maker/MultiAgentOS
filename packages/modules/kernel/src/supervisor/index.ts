@@ -1,26 +1,40 @@
 /** Kernel.Supervisor owns the system lifecycle and execution dispatch. */
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type {
+  CancelExecutionRequest,
   CancelRunExecutionsRequest,
   Envelope,
   ExecutionRequest,
   ExecutorRegistry,
   FabricPort,
   HealthStatus,
+  JobControlRequest,
+  JobControlResult,
   LifecyclePort,
   ProviderCredentials,
   ModuleId,
   SupervisorShutdownRequest,
 } from '@multiagentos/contracts';
 import { newId } from '@multiagentos/contracts';
-import { createExecutionFactSink, SCHEMA_IDS } from '@multiagentos/fabric';
-import type { KernelConfig } from '../interfaces/index.js';
+import {
+  createExecutionFactSink,
+  createJobFactSink,
+  createModelProgressSink,
+  SCHEMA_IDS,
+} from '@multiagentos/fabric';
+import type { KernelConfig } from '@multiagentos/contracts';
 
+import { createSandboxRunner, type TrackedSandboxRunner } from './sandbox/sandbox-runner.js';
 import { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
 import { ExecutionRunner } from './execution-runner.js';
+import { JobTable } from './job-table.js';
 
 export { createSubprocessRunner, type TrackedSubprocessRunner } from './subprocess-runner.js';
+export { createSandboxRunner, type TrackedSandboxRunner } from './sandbox/sandbox-runner.js';
+export { buildBwrapArgs } from './sandbox/bwrap-args.js';
+export { probeLandlock } from './sandbox/landlock.js';
 
 export interface ModuleHostControl {
   start(afterStart?: (moduleId: ModuleId) => void | Promise<void>): Promise<void>;
@@ -33,7 +47,7 @@ export interface SupervisorDeps {
   readonly executors: ExecutorRegistry;
   readonly credentials: ProviderCredentials;
   readonly moduleHost: ModuleHostControl;
-  readonly config: KernelConfig;
+  readonly config: Pick<KernelConfig, 'cancelGraceMs' | 'killGraceMs'>;
   /** System data directory; the Supervisor empties `<dataDir>/tmp/` before anything starts. */
   readonly dataDir: string;
   /**
@@ -41,7 +55,17 @@ export interface SupervisorDeps {
    * end the child processes when the Supervisor cannot; the default is a private runner.
    */
   readonly subprocess?: TrackedSubprocessRunner;
+  /** Runs commands in `bwrap`; the default is made from the data directory and the user's home. */
+  readonly sandbox?: TrackedSandboxRunner;
+  /**
+   * For the default runner: the Python that holds unisolated writes with Landlock, or `false`
+   * (D79). The composition root probes once and tells the Kernel the same (D87); absent, the
+   * runner probes for itself.
+   */
+  readonly landlock?: string | false;
   readonly now?: () => Date;
+  /** The longest a background command runs (Orchestration 6.1); default an hour. */
+  readonly jobMaxMs?: number;
 }
 
 export interface SupervisorModule extends LifecyclePort {
@@ -61,22 +85,50 @@ function temporaryDirectory(dataDir: string): string {
 export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
   const now = deps.now ?? (() => new Date());
   const subprocess = deps.subprocess ?? createSubprocessRunner();
+  const emptyFile = join(temporaryDirectory(deps.dataDir), 'empty');
+  const sandbox =
+    deps.sandbox ??
+    createSandboxRunner({
+      emptyFile,
+      cancelGraceMs: deps.config.cancelGraceMs,
+      killGraceMs: deps.config.killGraceMs,
+      home: homedir(),
+      ...(deps.landlock === undefined ? {} : { landlock: deps.landlock }),
+    });
   const correlations = new Map<string, string>();
-  const facts = createExecutionFactSink(deps.fabric, (workflowRunId) => ({
-    correlationId:
-      workflowRunId === undefined
-        ? newId('cor')
-        : (correlations.get(workflowRunId) ?? newId('cor')),
+  const facts = createExecutionFactSink(deps.fabric, (fact) => ({
+    correlationId: correlations.get(fact.workflowRunId) ?? newId('cor'),
     tenantId: 'local',
     projectId: 'local',
-    ...(workflowRunId === undefined ? {} : { workflowRunId }),
+    sessionId: fact.sessionId,
+    workflowRunId: fact.workflowRunId,
   }));
+  // Streams model calls to whoever watches; best effort, never awaited (Console 4).
+  const progress = createModelProgressSink(
+    deps.fabric,
+    (message) => correlations.get(message.workflowRunId) ?? newId('cor'),
+  );
+  const jobFacts = createJobFactSink(deps.fabric, (fact) => ({
+    correlationId: correlations.get(fact.workflowRunId) ?? newId('cor'),
+    tenantId: 'local',
+    projectId: 'local',
+    sessionId: fact.sessionId,
+    workflowRunId: fact.workflowRunId,
+  }));
+  const jobs = new JobTable({
+    report: (fact) => jobFacts.report(fact),
+    jobMaxMs: deps.jobMaxMs ?? 3_600_000,
+  });
   const runner = new ExecutionRunner({
+    jobs,
+    progress,
     executors: deps.executors,
     credentials: deps.credentials,
     subprocess,
+    sandbox,
     facts,
     cancelGraceMs: deps.config.cancelGraceMs,
+    killGraceMs: deps.config.killGraceMs,
     now,
   });
   const registered = new Set<string>();
@@ -109,6 +161,7 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
       }
       // Every run has converged by now on the normal path; on a fault path nothing else will.
       subprocess.killAll();
+      sandbox.killAll();
       try {
         await rm(temporaryDirectory(deps.dataDir), { recursive: true, force: true });
       } catch (error) {
@@ -148,6 +201,22 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
       runner.cancelRun(envelope.payload);
       return Promise.resolve();
     });
+    serve<CancelExecutionRequest>(SCHEMA_IDS.cancelExecution, (envelope) => {
+      runner.cancelExecution(envelope.payload);
+      return Promise.resolve();
+    });
+    if (!registered.has(SCHEMA_IDS.jobControl)) {
+      deps.fabric.register<JobControlRequest, JobControlResult>(
+        SCHEMA_IDS.jobControl,
+        (envelope) => {
+          if (envelope.producer !== 'kernel-core')
+            throw new Error('Supervisor request has an invalid producer');
+          requireReady();
+          return Promise.resolve(jobs.control(envelope.payload));
+        },
+      );
+      registered.add(SCHEMA_IDS.jobControl);
+    }
     serve<SupervisorShutdownRequest>(SCHEMA_IDS.supervisorShutdown, () => {
       ready = false;
       // Let Fabric complete this request before ModuleHost stops Fabric itself.
@@ -167,6 +236,8 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
         const temporary = temporaryDirectory(deps.dataDir);
         await rm(temporary, { recursive: true, force: true });
         await mkdir(temporary, { recursive: true });
+        // Masks files in the sandbox: an empty regular file, not /dev/null (M2TechStack 3.1).
+        await writeFile(emptyFile, '');
         await deps.moduleHost.start((moduleId) => {
           if (moduleId === 'fabric') register();
         });
@@ -187,3 +258,4 @@ export function createSupervisor(deps: SupervisorDeps): SupervisorModule {
     whenStopped: () => stopped,
   };
 }
+export { probeSandbox, type SandboxProbe } from './sandbox/probe.js';

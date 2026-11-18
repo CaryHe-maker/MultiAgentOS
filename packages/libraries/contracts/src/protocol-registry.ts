@@ -3,7 +3,6 @@ import * as catalogSchemas from './catalog/catalog-schemas.js';
 import * as definitionSchemas from './catalog/definition-schemas.js';
 import type { ContractRef } from './catalog/definition-schemas.js';
 import * as checkpointRefs from './checkpoint/checkpoint-refs.js';
-import * as assemble from './context/assemble.js';
 import * as contextPack from './context/context-pack.js';
 import * as repository from './context/repository.js';
 import * as fileRead from './executor/file-read.js';
@@ -17,14 +16,36 @@ import * as responses from './kernel-control/responses.js';
 import * as runOutcome from './kernel-control/run-outcome.js';
 import * as runSummary from './kernel-control/run-summary.js';
 import * as executionFact from './kernel-execution/execution-fact.js';
+import * as modelProgress from './kernel-execution/model-progress.js';
+import * as modelStream from './kernel-control/model-stream.js';
 import * as executionRequest from './kernel-execution/execution-request.js';
 import * as supervisorRequests from './kernel-execution/supervisor-requests.js';
 import * as budgetState from './kernel-unit/budget-state.js';
-import * as reportPublish from './kernel-unit/report-publish.js';
 import * as unitIo from './kernel-unit/unit-io.js';
 import * as workflowEvents from './kernel-unit/workflow-events.js';
 import * as workflowSyscalls from './kernel-unit/workflow-syscalls.js';
 import * as artifactRefs from './platform-artifact/artifact-refs.js';
+import * as compaction from './context/compaction.js';
+import * as historyEntry from './context/history-entry.js';
+import * as fileWrite from './executor/file-write.js';
+import * as outputRead from './executor/output-read.js';
+import * as web from './executor/web.js';
+import * as command from './executor/command.js';
+import * as updateTodos from './workflow/update-todos.js';
+import * as repositoryList from './executor/repository-list.js';
+import * as retention from './executor/retention.js';
+import * as sessionRequests from './kernel-control/session-requests.js';
+import * as interactionSessionEvents from './kernel-session/interaction-session-events.js';
+import * as workflowSessionEvents from './kernel-session/workflow-session-events.js';
+import * as messagePublish from './kernel-unit/message-publish.js';
+import * as sessionReplies from './kernel-unit/session-replies.js';
+import * as sessionIndexes from './platform-persistence/indexes.js';
+import * as locks from './platform-persistence/locks.js';
+import * as sessionLog from './platform-persistence/session-log.js';
+import * as reply from './workflow/reply.js';
+import * as askUser from './workflow/ask-user.js';
+import * as missionTools from './workflow/mission-tools.js';
+import * as subagents from './workflow/subagents.js';
 import * as commonSchemas from './platform-common/common-schemas.js';
 import * as systemConfig from './platform-config/system-config.js';
 import { EnvelopeSchema } from './platform-common/common-schemas.js';
@@ -35,18 +56,16 @@ import * as fabricRefs from './platform-fabric/fabric-refs.js';
 import * as persistenceRefs from './platform-persistence/persistence-refs.js';
 import * as restoreRefs from './restore/restore-refs.js';
 import * as reviewRefs from './review/review-refs.js';
-import * as handoff from './workflow/handoff.js';
-import * as report from './workflow/report.js';
-import * as stepRecord from './workflow/step-record.js';
 import { Type } from 'typebox';
 
-/** Protocol families, their owner and what M1 does with them (M1Interface 12). */
+/** Protocol families, their owner and whether this release implements them. */
 export const PROTOCOL_FAMILIES = {
   'platform.common': { owner: 'contracts', status: 'SUPPORTED' },
   'platform.config': { owner: 'contracts', status: 'SUPPORTED' },
   'kernel.control': { owner: 'kernel', status: 'SUPPORTED' },
   'kernel.unit': { owner: 'kernel', status: 'SUPPORTED' },
   'kernel.execution': { owner: 'kernel', status: 'SUPPORTED' },
+  'kernel.session': { owner: 'kernel', status: 'SUPPORTED' },
   context: { owner: 'executor-set', status: 'SUPPORTED' },
   executor: { owner: 'executor-set', status: 'SUPPORTED' },
   workflow: { owner: 'workflow', status: 'SUPPORTED' },
@@ -124,7 +143,7 @@ export class ProtocolRegistry {
     return entry;
   }
 
-  /** Looks up by Schema ID, e.g. `kernel.unit.SubmitUnitRequest.v0`. */
+  /** Looks up by Schema ID, e.g. `kernel.unit.SubmitUnitRequest.v1`. */
   get(schemaId: string): ProtocolRegistration {
     const { schemaName, major } = parseSchemaId(schemaId);
     return this.resolve(schemaName, major);
@@ -172,15 +191,10 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   modelCall,
   contextPack,
   repository,
-  stepRecord,
-  handoff,
-  report,
-  assemble,
   definitionSchemas,
   catalogSchemas,
   runOutcome,
   responses,
-  reportPublish,
   unitIo,
   workflowSyscalls,
   workflowEvents,
@@ -190,6 +204,8 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   gatewayForward,
   executionRequest,
   executionFact,
+  modelProgress,
+  modelStream,
   supervisorRequests,
   systemConfig,
   checkpointRefs,
@@ -199,6 +215,27 @@ const MODULES: readonly Readonly<Record<string, unknown>>[] = [
   fabricRefs,
   persistenceRefs,
   artifactRefs,
+  historyEntry,
+  compaction,
+  fileWrite,
+  outputRead,
+  web,
+  command,
+  updateTodos,
+  repositoryList,
+  retention,
+  sessionRequests,
+  interactionSessionEvents,
+  workflowSessionEvents,
+  messagePublish,
+  sessionReplies,
+  sessionIndexes,
+  locks,
+  sessionLog,
+  reply,
+  subagents,
+  askUser,
+  missionTools,
 ];
 
 const hasSchemaId = (value: unknown): value is TSchema =>
@@ -207,7 +244,7 @@ const hasSchemaId = (value: unknown): value is TSchema =>
   typeof (value as { readonly $id?: unknown }).$id === 'string';
 
 /** Registers every top-level Schema exported by the contract files (SharedContracts 3). */
-export function createM1ProtocolRegistry(): ProtocolRegistry {
+export function createProtocolRegistry(): ProtocolRegistry {
   const registry = new ProtocolRegistry();
   registry.register(EnvelopeSchema(Type.Unknown()));
   for (const module of MODULES)

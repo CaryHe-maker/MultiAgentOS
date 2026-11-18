@@ -1,0 +1,757 @@
+import {
+  ExplorerResultSchema,
+  MEDIA_TYPES,
+  ReplyArgsSchema,
+  RepositoryListInputSchema,
+  RunSubagentsArgsSchema,
+  SendMessageArgsSchema,
+  SleepArgsSchema,
+  UpdateTodosArgsSchema,
+  WorkerResultSchema,
+  newId,
+  type ArtifactRef,
+  type SessionLogRecord,
+  type SubmitUnitRequest,
+  type UnitReport,
+} from '@multiagentos/contracts';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { FileSessionStore } from '@multiagentos/persistence';
+import {
+  SessionLogStore,
+  SessionRunner,
+  type AgentDefinitions,
+  type AgentUnit,
+} from '@multiagentos/workflow';
+import { describe, expect, it } from 'vitest';
+import { createFakeSessionKernel, type FakeUnitScript } from './fakes/fake-session-kernel.js';
+
+const digest = 'a'.repeat(64);
+const artifact = (digit: string, mediaType: string): ArtifactRef => {
+  const sha256 = digit.repeat(64);
+  return { artifactId: `art_${sha256}`, sha256, size: 1, mediaType };
+};
+const packRef = artifact('1', MEDIA_TYPES.contextPack);
+const modelRef = artifact('2', MEDIA_TYPES.modelOutput);
+const unit = (id: string): AgentUnit => ({
+  ref: { kind: 'UNIT', id, version: 'v1.0.0', digest },
+  failurePolicy: { NOT_FOUND: 'RETURN_TO_MODEL' },
+});
+const common = {
+  limits: { maxRounds: 8, maxToolCallsPerRound: 4 },
+  contextAssemble: unit('context-assemble'),
+  modelCall: unit('model-call'),
+};
+
+const main: AgentDefinitions = {
+  ...common,
+  label: 'main',
+  publish: unit('message-publish'),
+  tools: [],
+  endTools: [
+    {
+      toolName: 'reply',
+      parameters: ReplyArgsSchema,
+      allowedInFinal: true,
+      action: 'PUBLISH_REPLY',
+    },
+  ],
+  onDegraded: 'PUBLISH_NOTICE',
+  spawnTool: { toolName: 'run_subagents', parameters: RunSubagentsArgsSchema },
+  sleepTool: { toolName: 'sleep', parameters: SleepArgsSchema },
+  messageTool: { toolName: 'send_message', parameters: SendMessageArgsSchema },
+  todoTool: { toolName: 'update_todos', parameters: UpdateTodosArgsSchema },
+};
+const explorer: AgentDefinitions = {
+  ...common,
+  label: 'explorer',
+  tools: [],
+  endTools: [
+    {
+      toolName: 'finish_subagent',
+      parameters: ExplorerResultSchema,
+      allowedInFinal: true,
+      action: 'FINISH_SUBAGENT',
+    },
+  ],
+  onDegraded: 'RETURN_PARTIAL',
+  sleepTool: { toolName: 'sleep', parameters: SleepArgsSchema },
+  messageTool: { toolName: 'send_message', parameters: SendMessageArgsSchema },
+};
+const worker: AgentDefinitions = {
+  ...common,
+  label: 'worker',
+  tools: [
+    {
+      modelName: 'write_file',
+      executionKind: 'FILE_WRITE',
+      unit: unit('file-write'),
+      parameters: RepositoryListInputSchema,
+    },
+    {
+      modelName: 'run_command',
+      executionKind: 'COMMAND',
+      unit: unit('run-command'),
+      parameters: RepositoryListInputSchema,
+    },
+  ],
+  endTools: [
+    {
+      toolName: 'finish_subagent',
+      parameters: WorkerResultSchema,
+      allowedInFinal: true,
+      action: 'FINISH_SUBAGENT',
+    },
+  ],
+  onDegraded: 'RETURN_PARTIAL',
+};
+
+const binding = (
+  id: string,
+  definitions: AgentDefinitions,
+  capabilities: readonly ('repo.read' | 'workspace.write' | 'agent.spawn' | 'command.exec')[],
+  efforts: readonly ('none' | 'low' | 'high' | 'max')[],
+) => ({
+  ref: { kind: 'AGENT', id, version: 'v1.0.0', digest } as const,
+  modelRef: { id: 'deepseek-flash', version: 'v2.0.0' },
+  effort: efforts[0] ?? ('none' as const),
+  allowedEfforts: efforts,
+  requestedCapabilities: capabilities,
+  writeRoots: capabilities.includes('workspace.write') ? ['.'] : [],
+  toolsDigest: digest,
+  definitions,
+});
+
+type Call = { toolName: string; args: unknown };
+const model = (...calls: Call[]) => ({
+  output: {
+    finishReason: 'TOOL_CALLS',
+    toolCalls: calls.map((call, index) => ({
+      toolCallId: `call_${String(index + 1)}`,
+      toolName: call.toolName,
+      arguments: call.args,
+    })),
+    hasText: false,
+    hasReasoning: false,
+  } as UnitReport extends { output: infer O } ? O : never,
+  outputRef: modelRef,
+});
+
+const explorerResult = { summary: 'found it' };
+const workerResult = (extra: object = {}) => ({
+  summary: 'changed',
+  changedFiles: ['src/a.ts'],
+  status: 'done',
+  validation: [],
+  ...extra,
+});
+
+/** One queue of model replies per Agent; every other Unit succeeds. */
+function setup(replies: Record<string, readonly ReturnType<typeof model>[]>) {
+  const dataDir = mkdtempSync(join(tmpdir(), 'mao-subagents-'));
+  const queues = new Map(Object.entries(replies).map(([id, list]) => [id, [...list]]));
+  const assembled: SubmitUnitRequest[] = [];
+  let records: () => readonly SessionLogRecord[] = () => [];
+  const agentOf = (agentRunId: string): string => {
+    const registered = records().find(
+      (record) => record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === agentRunId,
+    );
+    return registered?.type === 'AGENT_RUN_REGISTERED' ? registered.agentRef.id : 'unknown';
+  };
+  const units: FakeUnitScript = (request) => {
+    switch (request.unitRef.id) {
+      case 'model-call': {
+        const next = queues.get(agentOf(request.agentRunId))?.shift();
+        if (next === undefined)
+          throw new Error(`no scripted reply for ${agentOf(request.agentRunId)}`);
+        return next;
+      }
+      case 'message-publish':
+        return { output: { kind: 'REPLY' }, outputRef: artifact('5', MEDIA_TYPES.markdown) };
+      case 'file-write':
+        return {
+          output: { path: 'src/a.ts', operation: 'CREATED', sha256: 'c'.repeat(64) },
+          outputRef: artifact('6', MEDIA_TYPES.fileText),
+          executionKind: 'FILE_WRITE',
+          changedFiles: ['src/a.ts'],
+        };
+      case 'run-command':
+        return {
+          output: {
+            exitCode: 0,
+            signal: null,
+            timedOut: false,
+            backend: 'BWRAP',
+            sandboxDenials: 0,
+          },
+          outputRef: artifact('6', MEDIA_TYPES.fileText),
+          executionKind: 'COMMAND',
+        };
+      case 'context-assemble':
+        assembled.push(request);
+        return {
+          output: {
+            contextPackId: newId('ctx'),
+            tokenCount: 1,
+            tokenBudget: 10,
+            prefixSha256: digest,
+            projectionDigest: digest,
+            headDigest: digest,
+            elidedEntries: [],
+          },
+          outputRef: packRef,
+        };
+      default:
+        return { output: { kind: 'REPLY' }, outputRef: packRef };
+    }
+  };
+  const kernel = createFakeSessionKernel({ units });
+  const runner = new SessionRunner({
+    gateway: kernel.gateway,
+    store: new SessionLogStore(new FileSessionStore(dataDir)),
+    agents: new Map([
+      [
+        'chat',
+        binding('chat', main, ['repo.read', 'workspace.write', 'agent.spawn'], ['high', 'none']),
+      ],
+      ['explorer', binding('explorer', explorer, ['repo.read'], ['none', 'low'])],
+      [
+        'worker',
+        binding(
+          'worker',
+          worker,
+          ['repo.read', 'workspace.write', 'command.exec'],
+          ['high', 'low'],
+        ),
+      ],
+    ]),
+    templates: new Map(),
+    definitionsDigest: digest,
+    definitionVersions: ['chat@v1.0.0'],
+    config: {
+      repeatedIntent: { warnAt: 3, stopAt: 5, window: 20 },
+      maxNestedInstructions: 8,
+      maxSubagentsPerCall: 4,
+      maxDependencyDepth: 2,
+      consecutiveErrorLimit: 5,
+      noProgressRounds: 2,
+      toolFailureRounds: 2,
+      regenerationLimit: 3,
+    },
+    runtime: () => ({ sandbox: 'none', currentDate: '2026-11-05' }),
+  });
+  records = () => runner.records;
+  kernel.onWorkflow(async (envelope) => {
+    if ('workflowRunId' in envelope) await runner.handleRunEvent(envelope);
+    else if ('sessionId' in envelope) await runner.handleSessionEvent(envelope);
+    else await runner.handleSystemEvent(envelope);
+  });
+  return { kernel, runner, assembled };
+}
+
+const context = { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' };
+const begin = async (kernel: ReturnType<typeof createFakeSessionKernel>) => {
+  await kernel.interaction.startSession(
+    { requestId: newId('req'), mode: 'NEW', prompt: { inputId: newId('inp'), text: 'go' } },
+    context,
+  );
+  await kernel.idle();
+};
+/** main waits for every task it started: the call returns at once, so it sleeps (D14). */
+const sleepForChildren = () =>
+  model({ toolName: 'sleep', args: { until: [{ kind: 'children', mode: 'all' }] } });
+
+/**
+ * What the tasks of each `run_subagents` call came to, call by call, in the order they were
+ * written: the result each recorded when its task ended (Orchestration 3.2, 4.3).
+ */
+const resumedCalls = (records: readonly SessionLogRecord[]) =>
+  ofType(records, 'GRAPH_EXTENDED')
+    .filter((record) => record.source === 'SPAWN')
+    .map((spawn) =>
+      spawn.nodes.map((node) => {
+        const missionId = node.mission?.id;
+        const lastNode =
+          ofType(records, 'GRAPH_EXTENDED')
+            .flatMap((record) => record.nodes)
+            .filter((each) => each.mission?.id === missionId)
+            .at(-1)?.nodeId ?? node.nodeId;
+        const ended = ofType(records, 'NODE_ENDED').find((record) => record.nodeId === lastNode);
+        const result = ended?.result as { status?: string; notes?: string[] } | undefined;
+        expect(
+          ofType(records, 'MISSION_ENDED').some((record) => record.missionId === missionId),
+        ).toBe(true);
+        return { name: node.name, status: result?.status, notes: result?.notes ?? [] };
+      }),
+    );
+/** Answers that say something was not taken: the answer that a call started or slept is not one. */
+const refusals = (records: readonly SessionLogRecord[]) =>
+  ofType(records, 'FEEDBACK').filter((record) => !['STARTED', 'ASLEEP'].includes(record.code));
+const ofType = <T extends SessionLogRecord['type']>(
+  records: readonly SessionLogRecord[],
+  type: T,
+): Extract<SessionLogRecord, { type: T }>[] =>
+  records.filter(
+    (record): record is Extract<SessionLogRecord, { type: T }> => record.type === type,
+  );
+
+describe('run_subagents', () => {
+  it('starts the tasks, joins their results in the written order, and the caller goes on', async () => {
+    const { kernel, runner, assembled } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: {
+            tasks: [
+              { name: 'survey', agent: 'explorer', goal: 'look around' },
+              { name: 'check', agent: 'explorer', goal: 'check it', dependsOn: ['survey'] },
+            ],
+          },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'done' } }),
+      ],
+      explorer: [
+        model({ toolName: 'finish_subagent', args: explorerResult }),
+        model({ toolName: 'finish_subagent', args: explorerResult }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    const registered = ofType(records, 'AGENT_RUN_REGISTERED');
+    const main = registered.find((record) => record.agentRef.id === 'chat');
+    const children = registered.filter((record) => record.agentRef.id === 'explorer');
+    expect(children).toHaveLength(2);
+    // Both are tasks below main's task, whether main still ran or slept when they started.
+    expect(children.every((child) => child.missionId !== undefined)).toBe(true);
+    const spawned = ofType(records, 'GRAPH_EXTENDED').find((record) => record.source === 'SPAWN');
+    expect(spawned?.nodes.map((node) => node.mission?.parentId)).toEqual([
+      main?.missionId,
+      main?.missionId,
+    ]);
+    // The second task started only after the first had ended.
+    const firstEnd = records.findIndex(
+      (record) =>
+        record.type === 'AGENT_RUN_ENDED' && record.agentRunId === children[0]?.agentRunId,
+    );
+    const secondStart = records.findIndex(
+      (record) =>
+        record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === children[1]?.agentRunId,
+    );
+    expect(secondStart).toBeGreaterThan(firstEnd);
+    expect(ofType(records, 'GRAPH_EXTENDED').map((record) => record.source)).toContain('SPAWN');
+    const [joined] = resumedCalls(records);
+    expect(joined?.map((result) => [result.name, result.status])).toEqual([
+      ['survey', 'DONE'],
+      ['check', 'DONE'],
+    ]);
+    // main spawned and slept, then a new segment of its task replied.
+    const mainRuns = new Set(
+      registered.filter((record) => record.agentRef.id === 'chat').map((r) => r.agentRunId),
+    );
+    expect(mainRuns.size).toBe(2);
+    expect(
+      ofType(records, 'MODEL_TURN').filter((turn) => mainRuns.has(turn.agentRunId)),
+    ).toHaveLength(3);
+    expect(ofType(records, 'MISSION_WOKEN').map((record) => record.causes[0]?.kind)).toEqual([
+      'CHILDREN',
+    ]);
+    expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
+    // The task that waits sees its own task and the result of the one before it, not the prompt.
+    const history = (request: SubmitUnitRequest | undefined) =>
+      (request?.input as { history: { kind: string; name?: string }[] }).history;
+    const checkAssembly = assembled.find(
+      (request) => request.agentRunId === children[1]?.agentRunId,
+    );
+    // It starts with main's context, the prompt and the call included, is told its task as the
+    // answer to the call, and sees the result of the one before it (D56).
+    expect(history(checkAssembly).map((entry) => [entry.kind, entry.name])).toEqual(
+      expect.arrayContaining([
+        ['HUMAN', undefined],
+        ['FEEDBACK', undefined],
+        ['SUBAGENT_RESULT', 'survey'],
+      ]),
+    );
+    expect(history(checkAssembly).some((entry) => entry.kind === 'TASK')).toBe(false);
+  });
+
+  it('refuses a call that breaks a rule, answers it, and takes the tool away after two', async () => {
+    // A rule of the call as a whole: a task that breaks a rule of its own is only taken out (D56).
+    const overlap = {
+      tasks: [
+        { name: 'one', agent: 'worker', goal: 'x', writeScope: ['src/a'], dependsOn: ['two'] },
+        { name: 'two', agent: 'worker', goal: 'y', writeScope: ['src/b'], dependsOn: ['one'] },
+      ],
+    };
+    const { kernel, runner, assembled } = setup({
+      chat: [
+        model({ toolName: 'run_subagents', args: overlap }),
+        model({ toolName: 'run_subagents', args: overlap }),
+        model({ toolName: 'reply', args: { text: 'by myself' } }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'AGENT_RUN_REGISTERED').map((record) => record.agentRef.id)).toEqual([
+      'chat',
+    ]);
+    const answers = ofType(records, 'FEEDBACK').filter(
+      (record) => record.code === 'INVALID_ACTION',
+    );
+    expect(answers).toHaveLength(2);
+    expect(answers[0]?.message).toContain('CYCLE');
+    expect(answers[1]?.message).toContain('no longer available');
+    const withdrawn = assembled.map(
+      (request) => (request.input as { withdrawnTools?: string[] }).withdrawnTools,
+    );
+    // The tool stays in the request, so the cached prefix holds; a call of it is refused (D102).
+    expect(withdrawn).toEqual([undefined, undefined, undefined]);
+    // Two refused calls are not two rounds without progress: the run was not forced to wrap up.
+    expect(ofType(records, 'AGENT_WRAP_UP')).toHaveLength(0);
+  });
+
+  it('takes the result of a final call as it is, and says what it lacks (D69)', async () => {
+    const { kernel, runner } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: {
+            tasks: [
+              {
+                name: 'fix',
+                agent: 'worker',
+                goal: 'fix it',
+                writeScope: ['src'],
+              },
+            ],
+          },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'done' } }),
+      ],
+      // Seven rounds of writing use up its rounds; the eighth is its final call.
+      worker: [
+        ...Array.from({ length: 7 }, (_, index) =>
+          model({ toolName: 'write_file', args: { path: `src/a${String(index)}.ts` } }),
+        ),
+        model({ toolName: 'finish_subagent', args: workerResult() }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    // The unchecked change does not send it back: it could not act.
+    expect(ofType(records, 'FEEDBACK').filter((record) => record.code === 'NOT_VERIFIED')).toEqual(
+      [],
+    );
+    const [joined] = resumedCalls(records);
+    expect(joined?.[0]?.status).toBe('DONE');
+    expect(joined?.[0]?.notes).toEqual([
+      'not checked: it changed files after its last check and ran out of rounds',
+    ]);
+  });
+
+  it('accepts a worker only after it checked what it changed, and notes what it did not report', async () => {
+    const { kernel, runner } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: {
+            tasks: [
+              {
+                name: 'fix',
+                agent: 'worker',
+                goal: 'fix it',
+                writeScope: ['src'],
+              },
+            ],
+          },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'done' } }),
+      ],
+      worker: [
+        model({ toolName: 'write_file', args: { path: 'src/a.ts' } }),
+        model({
+          toolName: 'finish_subagent',
+          args: workerResult(),
+        }),
+        model({ toolName: 'run_command', args: {} }),
+        model({
+          toolName: 'finish_subagent',
+          args: workerResult({ changedFiles: [] }),
+        }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(
+      ofType(records, 'FEEDBACK')
+        .filter((record) => record.code === 'NOT_VERIFIED')
+        .map((record) => record.code),
+    ).toEqual(['NOT_VERIFIED']);
+    const [joined] = resumedCalls(records);
+    expect(joined?.[0]?.status).toBe('DONE');
+    expect(joined?.[0]?.notes).toEqual([
+      // Its check after its last change goes with its result, first (D54, D68).
+      expect.stringMatching(/^checked: the system saw `.+` exit 0 after the last change/u),
+      'changed but not reported: src/a.ts',
+    ]);
+  });
+});
+
+describe('the length of a result', () => {
+  it('is never a reason to refuse it: a long summary and a very long report are both accepted', async () => {
+    const { kernel, runner } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [
+        model({
+          toolName: 'finish_subagent',
+          args: { summary: 'x'.repeat(5000), report: 'line of the report\n'.repeat(20_000) },
+        }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(refusals(records)).toEqual([]);
+    expect(resumedCalls(records)[0]?.[0]?.status).toBe('DONE');
+  });
+
+  it('needs no evidence and no findings: a summary alone is a result', async () => {
+    const { kernel, runner } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [model({ toolName: 'finish_subagent', args: { summary: 'found it' } })],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(refusals(records)).toEqual([]);
+    expect(resumedCalls(records)[0]?.[0]?.status).toBe('DONE');
+  });
+});
+
+describe('the tool results a task lists', () => {
+  it('are never a reason to fail it: what does not pass is told in one note', async () => {
+    const { kernel, runner } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [
+        model({
+          toolName: 'finish_subagent',
+          args: { summary: 'found it', references: ['call_404', 'not even an id'] },
+        }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(refusals(records)).toEqual([]);
+    const [joined] = resumedCalls(records);
+    expect(joined?.[0]?.status).toBe('DONE');
+    expect(joined?.[0]?.notes).toHaveLength(1);
+    expect(joined?.[0]?.notes[0]).toContain('not handed over');
+    expect(joined?.[0]?.notes[0]).toContain('call_404');
+    // What is handed over is its result, registered for the AgentRun that started it.
+    const [handover] = ofType(records, 'REFERENCES_REGISTERED');
+    expect(handover).toMatchObject({
+      referenceId: 'ref_1',
+      from: { label: 'look' },
+      to: { kind: 'MAIN' },
+    });
+    expect(handover?.items.map((item) => item.tool)).toEqual(['finish_subagent']);
+  });
+
+  it('are numbered once in the Session: a second call of run_subagents continues the numbers', async () => {
+    const call = (name: string) =>
+      model({
+        toolName: 'run_subagents',
+        args: { tasks: [{ name, agent: 'explorer', goal: 'x' }] },
+      });
+    const { kernel, runner } = setup({
+      chat: [
+        call('first'),
+        sleepForChildren(),
+        call('second'),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [
+        model({ toolName: 'finish_subagent', args: explorerResult }),
+        model({ toolName: 'finish_subagent', args: explorerResult }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'REFERENCES_REGISTERED').map((each) => each.referenceId)).toEqual([
+      'ref_1',
+      'ref_2',
+    ]);
+  });
+});
+
+describe('a last result that does not follow the form', () => {
+  it('is not lost: the caller gets what was written, marked as not following the form', async () => {
+    const bad = model({ toolName: 'finish_subagent', args: { report: 'everything I found' } });
+    const { kernel, runner } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: Array.from({ length: 12 }, () => bad),
+    });
+    await begin(kernel);
+    const { records } = runner;
+    const [joined] = resumedCalls(records);
+    expect(joined?.[0]?.status).toBe('PARTIAL');
+    expect(joined?.[0]?.notes.join(' ')).toContain('does not follow the required form');
+    const ended = ofType(records, 'NODE_ENDED').find(
+      (record) => record.result?.['action'] === 'FINISH_SUBAGENT',
+    );
+    expect(ended?.resultRef).toBeDefined();
+    expect(ended?.result?.['toolCallId']).toEqual(expect.any(String));
+    // What was written is handed over like any result, and can be read by its reference.
+    const [handover] = ofType(records, 'REFERENCES_REGISTERED');
+    expect(handover?.referenceId).toBe('ref_1');
+    expect(ended?.result?.['referenceId']).toBe('ref_1');
+  });
+});
+
+describe('a plan before the work', () => {
+  const plan = { todos: [{ content: 'survey', status: 'in_progress' }] };
+  const wrong = { todos: [{ content: 'survey', status: 'finished' }] };
+
+  it('is not a round without progress, even when the todos are refused', async () => {
+    const { kernel, runner } = setup({
+      chat: [
+        model({ toolName: 'update_todos', args: wrong }),
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'look', agent: 'explorer', goal: 'x' }] },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [model({ toolName: 'finish_subagent', args: explorerResult })],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'AGENT_WRAP_UP')).toHaveLength(0);
+    expect(resumedCalls(records)).toHaveLength(1);
+    const refused = ofType(records, 'FEEDBACK').find(
+      (record) => record.code === 'INVALID_ARGUMENTS',
+    );
+    expect(refused?.message).toContain('status');
+  });
+
+  it('is judged from the second in a row on', async () => {
+    const { kernel, runner } = setup({
+      chat: [
+        model({ toolName: 'update_todos', args: plan }),
+        model({ toolName: 'update_todos', args: plan }),
+        model({ toolName: 'update_todos', args: plan }),
+        model({ toolName: 'reply', args: { text: 'stopped' } }),
+      ],
+    });
+    await begin(kernel);
+    expect(ofType(runner.records, 'AGENT_WRAP_UP').map((record) => record.reason)).toEqual([
+      'NO_PROGRESS',
+    ]);
+  });
+});
+
+describe('messages and waking (Orchestration 4, 5)', () => {
+  const sleepOn = (...until: object[]) => model({ toolName: 'sleep', args: { until } });
+  const send = (to: string, text: string) =>
+    model({ toolName: 'send_message', args: { to, text } });
+
+  it('routes a message to a sibling, wakes it, and the sender is told', async () => {
+    const { kernel, runner, assembled } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: {
+            tasks: [
+              { name: 'ui', agent: 'explorer', goal: 'wait for the API' },
+              { name: 'api', agent: 'explorer', goal: 'decide the API' },
+            ],
+          },
+        }),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'ok' } }),
+      ],
+      explorer: [
+        sleepOn({ kind: 'message' }),
+        send('ui', 'GET /keys'),
+        model({ toolName: 'finish_subagent', args: { summary: 'api decided' } }),
+        model({ toolName: 'finish_subagent', args: { summary: 'ui done' } }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'MISSION_MESSAGE')).toHaveLength(1);
+    // What was said is in the log itself, for replay and audit (D56).
+    expect(ofType(records, 'MISSION_MESSAGE')[0]?.text).toBe('GET /keys');
+    expect(ofType(records, 'MISSION_WOKEN').map((each) => each.causes.map((c) => c.kind))).toEqual(
+      expect.arrayContaining([['MESSAGE'], ['CHILDREN']]),
+    );
+    expect(refusals(records)).toEqual(
+      ofType(records, 'FEEDBACK').filter((record) => record.code === 'SENT'),
+    );
+    expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
+    const histories = assembled.map(
+      (request) => (request.input as { history: { kind: string }[] }).history,
+    );
+    expect(histories.some((history) => history.some((entry) => entry.kind === 'MESSAGE'))).toBe(
+      true,
+    );
+  });
+
+  it('wakes the highest sleeping task when every task only waits', async () => {
+    const { kernel, runner } = setup({
+      chat: [
+        model({
+          toolName: 'run_subagents',
+          args: { tasks: [{ name: 'waiter', agent: 'explorer', goal: 'wait' }] },
+        }),
+        sleepForChildren(),
+        send('waiter', 'go'),
+        sleepForChildren(),
+        model({ toolName: 'reply', args: { text: 'unblocked' } }),
+      ],
+      explorer: [
+        sleepOn({ kind: 'message' }),
+        model({ toolName: 'finish_subagent', args: { summary: 'went' } }),
+      ],
+    });
+    await begin(kernel);
+    const { records } = runner;
+    expect(ofType(records, 'MISSION_WOKEN').map((each) => each.causes[0]?.kind)).toEqual([
+      'STALLED',
+      'MESSAGE',
+      'CHILDREN',
+    ]);
+    expect(kernel.interactionEvents.at(-1)?.event.type).toBe('HumanRequest');
+  });
+});

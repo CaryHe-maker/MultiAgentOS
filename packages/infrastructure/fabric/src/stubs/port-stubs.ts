@@ -1,159 +1,433 @@
 import type {
   BoundaryContext,
+  CancelExecutionRequest,
+  CancelRunExecutionsRequest,
   ExecutionFact,
-  ExecutionFactSink,
+  ExecutionRequest,
+  JobControlRequest,
+  JobControlResult,
+  JobEndedFact,
   FabricPort,
   InteractionGatewayPort,
   InteractionInboxEvent,
-  InteractionInboxPort,
-  SupervisorPort,
+  InteractionSessionEvent,
+  InteractionSystemEvent,
+  ModelProgress,
+  ModelStream,
+  SupervisorShutdownRequest,
   WorkflowGatewayPort,
   WorkflowInboxEvent,
-  WorkflowInboxPort,
+  WorkflowSessionEvent,
+  WorkflowSystemEvent,
 } from '@multiagentos/contracts';
 
 /**
- * Typed Port stubs over one subject's Fabric client (M1Interface 2.1 rule 3 and 2.2). The
- * composition root builds them, so each subject can only call and serve what its Port allows.
+ * Typed Port stubs over one subject's Fabric client (Interface 4). The composition root builds
+ * them, so each subject can only call and serve what its Port allows.
  */
 
-/** Builds the BoundaryContext of a message that the Port signature does not carry. */
-export type ContextOf = (workflowRunId: string | undefined) => BoundaryContext;
-
-/** Schema IDs of the Fabric routes (M1Interface 2.2). */
+/** Schema IDs of the Fabric routes (Interface 4). */
 export const SCHEMA_IDS = {
-  registerAgentRun: 'kernel.unit.RegisterAgentRunRequest.v0',
-  submitUnit: 'kernel.unit.SubmitUnitRequest.v0',
-  endAgentRun: 'kernel.unit.EndAgentRunRequest.v0',
-  closeRun: 'kernel.unit.CloseRunRequest.v0',
-  createRun: 'kernel.control.CreateRunRequest.v0',
-  answerAuthorization: 'kernel.control.AnswerAuthorizationRequest.v0',
-  cancelRun: 'kernel.control.CancelRunRequest.v0',
-  readArtifact: 'kernel.control.ReadArtifactRequest.v0',
-  shutdown: 'kernel.control.ShutdownRequest.v0',
-  gatewayForward: 'kernel.control.GatewayForward.v0',
-  admissionProjection: 'kernel.control.AdmissionProjection.v0',
-  execute: 'kernel.execution.ExecutionRequest.v0',
-  cancelRunExecutions: 'kernel.execution.CancelRunExecutionsRequest.v0',
-  supervisorShutdown: 'kernel.execution.SupervisorShutdownRequest.v0',
-  executionFact: 'kernel.execution.ExecutionFact.v0',
-  workflowInboxEvent: 'kernel.unit.WorkflowInboxEvent.v0',
-  interactionInboxEvent: 'kernel.control.InteractionInboxEvent.v0',
+  registerAgentRun: 'kernel.unit.RegisterAgentRunRequest.v1',
+  reserveDelegation: 'kernel.unit.ReserveDelegationRequest.v1',
+  releaseDelegation: 'kernel.unit.ReleaseDelegationRequest.v1',
+  retainArtifacts: 'kernel.unit.RetainArtifactsRequest.v1',
+  scheduleWake: 'kernel.unit.ScheduleWakeRequest.v1',
+  controlJob: 'kernel.unit.ControlJobRequest.v1',
+  haltAgentRun: 'kernel.unit.HaltAgentRunRequest.v1',
+  restoreMission: 'kernel.unit.RestoreMissionRequest.v1',
+  closeMission: 'kernel.unit.CloseMissionRequest.v1',
+  withdrawQuestion: 'kernel.unit.WithdrawQuestionRequest.v1',
+  withdrawOpenInput: 'kernel.unit.WithdrawOpenInputRequest.v1',
+  takeCheckpoint: 'kernel.unit.TakeCheckpointRequest.v1',
+  reportCompactionSource: 'kernel.unit.ReportCompactionSourceRequest.v1',
+  ackCompaction: 'kernel.unit.AckCompactionRequest.v1',
+  submitUnit: 'kernel.unit.SubmitUnitRequest.v1',
+  endAgentRun: 'kernel.unit.EndAgentRunRequest.v1',
+  closeRun: 'kernel.unit.CloseRunRequest.v1',
+  requestHuman: 'kernel.unit.RequestHumanRequest.v1',
+  readProjectFile: 'kernel.unit.ReadProjectFileRequest.v1',
+  reportSessionCommand: 'kernel.unit.ReportSessionCommandRequest.v1',
+  reportSessionList: 'kernel.unit.ReportSessionListRequest.v1',
+  startSession: 'kernel.control.StartSessionRequest.v1',
+  openSession: 'kernel.control.OpenSessionRequest.v1',
+  startRun: 'kernel.control.StartRunRequest.v1',
+  listSessions: 'kernel.control.ListSessionsRequest.v1',
+  deleteSession: 'kernel.control.DeleteSessionRequest.v1',
+  answerAuthorization: 'kernel.control.AnswerAuthorizationRequest.v1',
+  undo: 'kernel.control.UndoRequest.v1',
+  recoverRun: 'kernel.control.RecoverRunRequest.v1',
+  confirmUndo: 'kernel.control.ConfirmUndoRequest.v1',
+  diff: 'kernel.control.DiffRequest.v1',
+  listCheckpoints: 'kernel.control.ListCheckpointsRequest.v1',
+  rewindCheckpoint: 'kernel.control.RewindCheckpointRequest.v1',
+  updateActivity: 'kernel.unit.UpdateActivityRequest.v1',
+  answerHuman: 'kernel.control.AnswerHumanRequest.v1',
+  pauseRun: 'kernel.control.PauseRunRequest.v1',
+  resumeRun: 'kernel.control.ResumeRunRequest.v1',
+  interruptRun: 'kernel.control.InterruptRunRequest.v1',
+  steerRun: 'kernel.control.SteerRunRequest.v1',
+  compactContext: 'kernel.control.CompactContextRequest.v1',
+  readArtifact: 'kernel.control.ReadArtifactRequest.v1',
+  shutdown: 'kernel.control.ShutdownRequest.v1',
+  gatewayForward: 'kernel.control.GatewayForward.v1',
+  admissionProjection: 'kernel.control.AdmissionProjection.v1',
+  sessionProjection: 'kernel.control.SessionProjection.v1',
+  execute: 'kernel.execution.ExecutionRequest.v1',
+  cancelRunExecutions: 'kernel.execution.CancelRunExecutionsRequest.v1',
+  cancelExecution: 'kernel.execution.CancelExecutionRequest.v1',
+  supervisorShutdown: 'kernel.execution.SupervisorShutdownRequest.v1',
+  executionFact: 'kernel.execution.ExecutionFact.v1',
+  jobControl: 'kernel.execution.JobControlRequest.v1',
+  jobEnded: 'kernel.execution.JobEndedFact.v1',
+  modelProgress: 'kernel.execution.ModelProgress.v1',
+  modelStream: 'kernel.control.ModelStream.v1',
+  workflowRunEvent: 'kernel.unit.WorkflowInboxEvent.v1',
+  workflowSessionEvent: 'kernel.session.WorkflowSessionEvent.v1',
+  workflowSystemEvent: 'kernel.session.WorkflowSystemEvent.v1',
+  interactionRunEvent: 'kernel.control.InteractionInboxEvent.v1',
+  interactionSessionEvent: 'kernel.session.InteractionSessionEvent.v1',
+  interactionSystemEvent: 'kernel.session.InteractionSystemEvent.v1',
 } as const;
 
-/** For Workflow: its four syscalls, sent to Gateway. */
+/** The syscalls Gateway serves, by the subject allowed to call them (Kernel/Gateway 3). */
+export const WORKFLOW_SYSCALLS = [
+  'registerAgentRun',
+  'reserveDelegation',
+  'releaseDelegation',
+  'retainArtifacts',
+  'scheduleWake',
+  'controlJob',
+  'haltAgentRun',
+  'restoreMission',
+  'closeMission',
+  'withdrawQuestion',
+  'withdrawOpenInput',
+  'takeCheckpoint',
+  'reportCompactionSource',
+  'ackCompaction',
+  'submitUnit',
+  'endAgentRun',
+  'closeRun',
+  'requestHuman',
+  'readProjectFile',
+  'updateActivity',
+  'reportSessionCommand',
+  'reportSessionList',
+] as const satisfies readonly (keyof WorkflowGatewayPort)[];
+export const INTERACTION_SYSCALLS = [
+  'startSession',
+  'openSession',
+  'startRun',
+  'listSessions',
+  'deleteSession',
+  'answerAuthorization',
+  'answerHuman',
+  'pauseRun',
+  'resumeRun',
+  'interruptRun',
+  'steerRun',
+  'compactContext',
+  'readArtifact',
+  'undo',
+  'recoverRun',
+  'confirmUndo',
+  'diff',
+  'listCheckpoints',
+  'rewindCheckpoint',
+  'shutdown',
+] as const satisfies readonly (keyof InteractionGatewayPort)[];
+
+/** Schema IDs only Gateway may serve with an invalid-body callback. */
+export const GATEWAY_SYSCALL_SCHEMAS: ReadonlySet<string> = new Set(
+  [...WORKFLOW_SYSCALLS, ...INTERACTION_SYSCALLS].map((name) => SCHEMA_IDS[name]),
+);
+
+/** For Workflow: its syscalls, sent to Gateway. */
 export function createWorkflowGatewayPort(fabric: FabricPort): WorkflowGatewayPort {
-  return {
-    registerAgentRun: (request, context) =>
-      fabric.request(SCHEMA_IDS.registerAgentRun, request, context),
-    submitUnit: (request, context) => fabric.request(SCHEMA_IDS.submitUnit, request, context),
-    endAgentRun: (request, context) => fabric.request(SCHEMA_IDS.endAgentRun, request, context),
-    closeRun: (request, context) => fabric.request(SCHEMA_IDS.closeRun, request, context),
-  };
+  const port = Object.fromEntries(
+    WORKFLOW_SYSCALLS.map((name) => [
+      name,
+      (request: unknown, context: BoundaryContext) =>
+        fabric.request(SCHEMA_IDS[name], request, context),
+    ]),
+  );
+  return port as unknown as WorkflowGatewayPort;
 }
 
-/** For UserInteraction: its five requests, sent to Gateway. */
+/** For UserInteraction: its requests, sent to Gateway. */
 export function createInteractionGatewayPort(fabric: FabricPort): InteractionGatewayPort {
-  return {
-    createRun: (request, context) => fabric.request(SCHEMA_IDS.createRun, request, context),
-    answerAuthorization: (request, context) =>
-      fabric.request(SCHEMA_IDS.answerAuthorization, request, context),
-    cancelRun: (request, context) => fabric.request(SCHEMA_IDS.cancelRun, request, context),
-    readArtifact: (request, context) => fabric.request(SCHEMA_IDS.readArtifact, request, context),
-    shutdown: (request, context) => fabric.request(SCHEMA_IDS.shutdown, request, context),
-  };
+  const port = Object.fromEntries(
+    INTERACTION_SYSCALLS.map((name) => [
+      name,
+      (request: unknown, context: BoundaryContext) =>
+        fabric.request(SCHEMA_IDS[name], request, context),
+    ]),
+  );
+  return port as unknown as InteractionGatewayPort;
 }
 
-/** For the Kernel core: delivers Outbox events to Workflow's Inbox. */
-export function createWorkflowInboxSender(
+/** What a receiver of Kernel events handles: one handler per sequence (Fabric 3). */
+export interface WorkflowInbox {
+  handleRunEvent(event: WorkflowInboxEvent): Promise<void>;
+  handleSessionEvent(event: WorkflowSessionEvent): Promise<void>;
+  handleSystemEvent(event: WorkflowSystemEvent): Promise<void>;
+}
+export interface InteractionInbox {
+  handleRunEvent(event: InteractionInboxEvent): Promise<void>;
+  handleSessionEvent(event: InteractionSessionEvent): Promise<void>;
+  handleSystemEvent(event: InteractionSystemEvent): Promise<void>;
+}
+
+export type ToWorkflowEvent = WorkflowInboxEvent | WorkflowSessionEvent | WorkflowSystemEvent;
+export type ToInteractionEvent =
+  InteractionInboxEvent | InteractionSessionEvent | InteractionSystemEvent;
+
+/** The context of an event follows the sequence it belongs to. */
+const eventContext = (event: object, correlationId: string): BoundaryContext => ({
+  correlationId,
+  tenantId: 'local',
+  projectId: 'local',
+  ...('sessionId' in event ? { sessionId: event.sessionId as string } : {}),
+  ...('workflowRunId' in event ? { workflowRunId: event.workflowRunId as string } : {}),
+});
+
+const sequenceOf = (event: object): 'run' | 'session' | 'system' =>
+  'workflowRunId' in event ? 'run' : 'sessionId' in event ? 'session' : 'system';
+
+/** For the Kernel core: sends one event to Workflow on the schema of its sequence. */
+export function createWorkflowEventSender(
   fabric: FabricPort,
-  contextOf: ContextOf,
-): WorkflowInboxPort {
-  return {
-    deliver: (event) =>
-      fabric.send(
-        'inbox.workflow',
-        SCHEMA_IDS.workflowInboxEvent,
-        event,
-        contextOf(event.workflowRunId),
-      ),
-  };
+  correlationOf: (event: ToWorkflowEvent) => string,
+): (event: ToWorkflowEvent) => Promise<void> {
+  const schemas = {
+    run: SCHEMA_IDS.workflowRunEvent,
+    session: SCHEMA_IDS.workflowSessionEvent,
+    system: SCHEMA_IDS.workflowSystemEvent,
+  } as const;
+  return (event) =>
+    fabric.send(
+      'inbox.workflow',
+      schemas[sequenceOf(event)],
+      event,
+      eventContext(event, correlationOf(event)),
+    );
 }
 
-/** For the Kernel core: delivers Outbox events to UserInteraction's Inbox. */
-export function createInteractionInboxSender(
+/** For the Kernel core: sends one event to UserInteraction on the schema of its sequence. */
+export function createInteractionEventSender(
   fabric: FabricPort,
-  contextOf: ContextOf,
-): InteractionInboxPort {
+  correlationOf: (event: ToInteractionEvent) => string,
+): (event: ToInteractionEvent) => Promise<void> {
+  const schemas = {
+    run: SCHEMA_IDS.interactionRunEvent,
+    session: SCHEMA_IDS.interactionSessionEvent,
+    system: SCHEMA_IDS.interactionSystemEvent,
+  } as const;
+  return (event) =>
+    fabric.send(
+      'inbox.user-interaction',
+      schemas[sequenceOf(event)],
+      event,
+      eventContext(event, correlationOf(event)),
+    );
+}
+
+/**
+ * The receiving side of the three sequences (Fabric 3): a repeated `eventId` is dropped, and a
+ * `seq` that does not follow the last one of its sequence is a fault of the sender.
+ */
+class SequenceCheck {
+  readonly #seen = new Set<string>();
+  readonly #last = new Map<string, number>();
+
+  /** False when the event was delivered before. */
+  accept(event: { readonly eventId: string; readonly seq: number }): boolean {
+    if (this.#seen.has(event.eventId)) return false;
+    const key = `${sequenceOf(event)}:${eventScope(event)}`;
+    const expected = (this.#last.get(key) ?? 0) + 1;
+    if (event.seq !== expected)
+      throw new Error(
+        `Event sequence ${key} expected seq ${String(expected)}, got ${String(event.seq)}`,
+      );
+    this.#seen.add(event.eventId);
+    this.#last.set(key, event.seq);
+    return true;
+  }
+}
+
+const eventScope = (event: object): string =>
+  'workflowRunId' in event
+    ? String(event.workflowRunId)
+    : 'sessionId' in event
+      ? String(event.sessionId)
+      : 'system';
+
+/** For Workflow: receives its events from Fabric and hands each to its sequence's handler. */
+export function serveWorkflowInbox(fabric: FabricPort, inbox: WorkflowInbox): void {
+  const check = new SequenceCheck();
+  fabric.subscribe<ToWorkflowEvent>('inbox.workflow', (envelope) => {
+    if (envelope.producer !== 'kernel-core')
+      throw new Error('A Workflow event has an invalid producer');
+    const event = envelope.payload;
+    if (!check.accept(event)) return Promise.resolve();
+    switch (envelope.schemaName) {
+      case 'kernel.unit.WorkflowInboxEvent':
+        return inbox.handleRunEvent(event as WorkflowInboxEvent);
+      case 'kernel.session.WorkflowSessionEvent':
+        return inbox.handleSessionEvent(event as WorkflowSessionEvent);
+      default:
+        return inbox.handleSystemEvent(event as WorkflowSystemEvent);
+    }
+  });
+}
+
+/** For UserInteraction: receives its events from Fabric, by sequence. */
+export function serveInteractionInbox(fabric: FabricPort, inbox: InteractionInbox): void {
+  const check = new SequenceCheck();
+  fabric.subscribe<ToInteractionEvent>('inbox.user-interaction', (envelope) => {
+    if (envelope.producer !== 'kernel-core')
+      throw new Error('A UserInteraction event has an invalid producer');
+    const event = envelope.payload;
+    if (!check.accept(event)) return Promise.resolve();
+    switch (envelope.schemaName) {
+      case 'kernel.control.InteractionInboxEvent':
+        return inbox.handleRunEvent(event as InteractionInboxEvent);
+      case 'kernel.session.InteractionSessionEvent':
+        return inbox.handleSessionEvent(event as InteractionSessionEvent);
+      default:
+        return inbox.handleSystemEvent(event as InteractionSystemEvent);
+    }
+  });
+}
+
+/** What the Kernel core asks of the Supervisor. */
+export interface SupervisorPort {
+  execute(request: ExecutionRequest): Promise<void>;
+  cancelRun(request: CancelRunExecutionsRequest): Promise<void>;
+  cancelExecution(request: CancelExecutionRequest): Promise<void>;
+  controlJob(request: JobControlRequest): Promise<JobControlResult>;
+  shutdown(request: SupervisorShutdownRequest): Promise<void>;
+}
+
+/** For the Kernel core: the Supervisor it calls. */
+export function createSupervisorPort(
+  fabric: FabricPort,
+  contextOf: (request: {
+    readonly sessionId?: string;
+    readonly workflowRunId?: string;
+  }) => BoundaryContext,
+): SupervisorPort {
   return {
-    deliver: (event) =>
-      fabric.send(
-        'inbox.user-interaction',
-        SCHEMA_IDS.interactionInboxEvent,
-        event,
-        contextOf(event.workflowRunId),
-      ),
+    execute: (request) => fabric.request(SCHEMA_IDS.execute, request, contextOf(request)),
+    cancelRun: (request) => fabric.request(SCHEMA_IDS.cancelRunExecutions, request, contextOf({})),
+    cancelExecution: (request) =>
+      fabric.request(SCHEMA_IDS.cancelExecution, request, contextOf({})),
+    controlJob: (request) => fabric.request(SCHEMA_IDS.jobControl, request, contextOf({})),
+    shutdown: (request) => fabric.request(SCHEMA_IDS.supervisorShutdown, request, contextOf({})),
   };
-}
-
-/** For Workflow: receives its Inbox events from Fabric. */
-export function serveWorkflowInbox(fabric: FabricPort, inbox: WorkflowInboxPort): void {
-  fabric.subscribe<WorkflowInboxEvent>('inbox.workflow', (envelope) =>
-    inbox.deliver(envelope.payload),
-  );
-}
-
-/** For UserInteraction: receives its Inbox events from Fabric. */
-export function serveInteractionInbox(fabric: FabricPort, inbox: InteractionInboxPort): void {
-  fabric.subscribe<InteractionInboxEvent>('inbox.user-interaction', (envelope) =>
-    inbox.deliver(envelope.payload),
-  );
-}
-
-/** For the Kernel core: the SupervisorPort it calls. */
-export function createSupervisorPort(fabric: FabricPort, contextOf: ContextOf): SupervisorPort {
-  return {
-    execute: (request) =>
-      fabric.request(SCHEMA_IDS.execute, request, contextOf(request.workflowRunId)),
-    cancelRun: (request) =>
-      fabric.request(SCHEMA_IDS.cancelRunExecutions, request, contextOf(request.workflowRunId)),
-    shutdown: (request) =>
-      fabric.request(SCHEMA_IDS.supervisorShutdown, request, contextOf(undefined)),
-  };
-}
-
-/** For the Supervisor: registers its three request handlers once Fabric is ready. */
-export function serveSupervisor(fabric: FabricPort, supervisor: SupervisorPort): void {
-  fabric.register(SCHEMA_IDS.execute, (envelope) =>
-    supervisor.execute(envelope.payload as Parameters<SupervisorPort['execute']>[0]),
-  );
-  fabric.register(SCHEMA_IDS.cancelRunExecutions, (envelope) =>
-    supervisor.cancelRun(envelope.payload as Parameters<SupervisorPort['cancelRun']>[0]),
-  );
-  fabric.register(SCHEMA_IDS.supervisorShutdown, (envelope) =>
-    supervisor.shutdown(envelope.payload as Parameters<SupervisorPort['shutdown']>[0]),
-  );
 }
 
 /** For the Supervisor: reports execution facts to the Kernel core. */
 export function createExecutionFactSink(
   fabric: FabricPort,
-  contextOf: ContextOf,
-): ExecutionFactSink {
+  contextOf: (fact: ExecutionFact) => BoundaryContext,
+): { report(fact: ExecutionFact): Promise<void> } {
   return {
     report: (fact) =>
-      fabric.send(
-        'kernel-core.execution-facts',
-        SCHEMA_IDS.executionFact,
-        fact,
-        contextOf(fact.workflowRunId),
-      ),
+      fabric.send('kernel-core.execution-facts', SCHEMA_IDS.executionFact, fact, contextOf(fact)),
   };
 }
 
-/** For the Kernel core: receives execution facts from Fabric. */
-export function serveExecutionFacts(fabric: FabricPort, sink: ExecutionFactSink): void {
-  fabric.subscribe<ExecutionFact>('kernel-core.execution-facts', (envelope) =>
-    sink.report(envelope.payload),
+/** For the Supervisor: tells the Kernel core that a background command ended (Orchestration 6.4). */
+export function createJobFactSink(
+  fabric: FabricPort,
+  contextOf: (fact: JobEndedFact) => BoundaryContext,
+): { report(fact: JobEndedFact): Promise<void> } {
+  return {
+    report: (fact) =>
+      fabric.send('kernel-core.job-facts', SCHEMA_IDS.jobEnded, fact, contextOf(fact)),
+  };
+}
+
+/**
+ * The side channel of a running model call (docs/M2/Console.md 4): what the person watching
+ * may see before the call is over. It is not an event of the ordered sequences: no `eventId`, no
+ * `seq`, nothing is awaited and nothing is retried. A message that cannot be delivered, or that
+ * finds the receiver busy, is dropped, so watching can never slow or change the work.
+ */
+const SIDE_CHANNEL_BACKLOG = 64;
+
+/** Sends without waiting and without ever failing; drops what exceeds the backlog. */
+function lossy<T>(send: (message: T) => Promise<void>): (message: T) => void {
+  let pending = 0;
+  return (message) => {
+    if (pending >= SIDE_CHANNEL_BACKLOG) return;
+    pending += 1;
+    void send(message)
+      .catch(() => undefined)
+      .finally(() => {
+        pending -= 1;
+      });
+  };
+}
+
+const progressContext = (progress: ModelProgress, correlationId: string): BoundaryContext => ({
+  correlationId,
+  tenantId: 'local',
+  projectId: 'local',
+  sessionId: progress.sessionId,
+  workflowRunId: progress.workflowRunId,
+});
+
+/** For the Supervisor: tells the Kernel core how a model call is going. */
+export function createModelProgressSink(
+  fabric: FabricPort,
+  correlationOf: (progress: ModelProgress) => string,
+): (progress: ModelProgress) => void {
+  return lossy((progress) =>
+    fabric.send(
+      'kernel-core.model-progress',
+      SCHEMA_IDS.modelProgress,
+      progress,
+      progressContext(progress, correlationOf(progress)),
+    ),
   );
+}
+
+/** For the Kernel core: receives what the Supervisor tells of a model call. */
+export function serveModelProgress(
+  fabric: FabricPort,
+  handle: (progress: ModelProgress) => void,
+): void {
+  fabric.subscribe<ModelProgress>('kernel-core.model-progress', (envelope) => {
+    if (envelope.producer !== 'supervisor') return Promise.resolve();
+    handle(envelope.payload);
+    return Promise.resolve();
+  });
+}
+
+/** For the Kernel core: passes it on to UserInteraction. */
+export function createModelStreamSender(
+  fabric: FabricPort,
+  correlationOf: (stream: ModelStream) => string,
+): (stream: ModelStream) => void {
+  return lossy((stream) =>
+    fabric.send('inbox.user-interaction-stream', SCHEMA_IDS.modelStream, stream, {
+      correlationId: correlationOf(stream),
+      tenantId: 'local',
+      projectId: 'local',
+      sessionId: stream.sessionId,
+      workflowRunId: stream.workflowRunId,
+    }),
+  );
+}
+
+/** For UserInteraction: receives the thinking of the model calls of the Session in view. */
+export function serveModelStream(fabric: FabricPort, handle: (stream: ModelStream) => void): void {
+  fabric.subscribe<ModelStream>('inbox.user-interaction-stream', (envelope) => {
+    if (envelope.producer !== 'kernel-core') return Promise.resolve();
+    handle(envelope.payload);
+    return Promise.resolve();
+  });
 }

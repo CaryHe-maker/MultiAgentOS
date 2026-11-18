@@ -1,0 +1,118 @@
+schemaVersion: v1
+kind: AGENT
+id: lead
+version: v1.0.0
+digest: 1322026f03c6a6c53f1b39c6feddc72ff76bfb4ef9119eb5fe9d2ce2fff18077
+description: A SubAgent that runs one part of the work, splits it among its own subtasks and checks the result.
+role: part lead
+modelRef:
+  id: deepseek-flash
+  version: v1.0.0
+thinking:
+  defaultEffort: high
+  allowedEfforts:
+    - low
+    - high
+promptRef:
+  id: lead-system
+  version: v1.0.0
+unitRefs:
+  - id: repository-list
+    version: v1.0.0
+  - id: repository-search
+    version: v1.0.0
+  - id: file-read
+    version: v1.0.0
+  - id: file-write
+    version: v1.0.0
+  - id: file-edit
+    version: v1.0.0
+  - id: output-read
+    version: v1.0.0
+  - id: run-command
+    version: v1.0.0
+  - id: git-inspect
+    version: v1.0.0
+  - id: web-search
+    version: v1.0.0
+  - id: web-fetch
+    version: v1.0.0
+  - id: external-list
+    version: v1.0.0
+  - id: external-read
+    version: v1.0.0
+  - id: external-search
+    version: v1.0.0
+  - id: context-assemble
+    version: v1.0.0
+  - id: model-call
+    version: v1.0.0
+actions:
+  end:
+    - toolRef:
+        id: finish-worker
+        version: v1.0.0
+      then: FINISH_SUBAGENT
+      allowedInFinal: true
+  onDegraded: RETURN_PARTIAL
+  sleep:
+    toolRef:
+      id: sleep
+      version: v1.0.0
+  message:
+    toolRef:
+      id: send-message
+      version: v1.0.0
+  viewTasks:
+    toolRef:
+      id: view-tasks
+      version: v1.0.0
+  jobOutput:
+    toolRef:
+      id: job-output
+      version: v1.0.0
+  jobList:
+    toolRef:
+      id: job-list
+      version: v1.0.0
+  jobKill:
+    toolRef:
+      id: job-kill
+      version: v1.0.0
+  stop:
+    toolRef:
+      id: stop-subagents
+      version: v1.0.0
+  todos:
+    toolRef:
+      id: update-todos
+      version: v1.0.0
+  askUser:
+    toolRef:
+      id: ask-user
+      version: v1.0.0
+  spawn:
+    toolRef:
+      id: lead-run-subagents
+      version: v1.0.0
+spawnable:
+  defaultShare: 2400000
+capabilities:
+  - repo.read
+  - workspace.write
+  - command.exec
+  - command.network
+  - web.search
+  - web.fetch
+  - external.read
+  - agent.spawn
+limits:
+  maxRounds: 60
+  maxToolCallsPerRound: 8
+  maxToolUnits: 240
+  maxWallClockMs: 3600000
+budget:
+  perCallInputLimit: 256000
+  maxOutputTokens: 32000
+  finalInputBudget: 256000
+  finalMaxOutputTokens: 32000

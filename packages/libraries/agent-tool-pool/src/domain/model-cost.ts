@@ -3,7 +3,7 @@ import type { ModelDefinition, TokenUsage } from '@multiagentos/contracts';
 type Pricing = ModelDefinition['pricing'];
 
 /**
- * Whether `at` falls in the peak period of the model's pricing (AgentToolPool 7): an ISO
+ * Whether `at` falls in the peak period of the model's pricing (AgentToolPool 5a): an ISO
  * weekday listed in `peak.weekdays` and a time inside one of the half-open `[start, end)`
  * windows, both in UTC. Public holidays are not known, so a holiday is priced as a working
  * day and the result is an upper bound on those days.
@@ -33,7 +33,11 @@ export interface CallCost {
  * the rest of the input as misses; a call without cache figures is priced as all misses, which
  * is the upper bound.
  */
-export function modelCallCost(model: ModelDefinition, usage: TokenUsage, at: Date): CallCost {
+export function modelCallCost(
+  model: { readonly pricing: Pricing },
+  usage: TokenUsage,
+  at: Date,
+): CallCost {
   const rates = model.pricing.offPeak;
   const hit = Math.min(usage.inputCacheHitTokens ?? 0, usage.inputTokens);
   const offPeak =

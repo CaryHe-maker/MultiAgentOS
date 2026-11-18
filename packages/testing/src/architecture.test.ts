@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 const root = process.cwd();
 
-/** Internal dependencies each workspace may declare (docs/M1/M1TechStack.md 3). */
+/** Internal dependencies each workspace may declare. */
 const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
   'packages/libraries/contracts': [],
   'packages/libraries/agent-tool-pool': ['contracts'],
@@ -14,8 +14,8 @@ const ALLOWED_INTERNAL_DEPENDENCIES: Readonly<Record<string, readonly string[]>>
   'packages/infrastructure/persistence': ['contracts'],
   'packages/infrastructure/artifacts': ['contracts'],
   'packages/modules/kernel': ['contracts', 'fabric'],
-  'packages/modules/workflow': ['contracts', 'fabric'],
-  'packages/modules/user-interaction': ['contracts', 'fabric'],
+  'packages/modules/workflow': ['contracts'],
+  'packages/modules/user-interaction': ['contracts'],
   'apps/cli': ['contracts', 'user-interaction'],
   'apps/control-plane': [
     'agent-tool-pool',
@@ -40,8 +40,12 @@ const WORKSPACE_GROUPS = [
   'packages/infrastructure',
 ];
 
-/** Kernel components whose data is isolated (docs/M1/Kernel/Interaction.md 3.2). */
-const KERNEL_COMPONENTS = ['core', 'execution', 'monitor', 'scheduler', 'gateway', 'supervisor'];
+/**
+ * Kernel components whose data is isolated (the archived M1 interaction document, 3.2). The Session layer holds
+ * Core and Execution and drives Monitor and Scheduler; none of those reaches back into it, and it
+ * reaches the Supervisor only through Fabric.
+ */
+const KERNEL_COMPONENTS = ['monitor', 'scheduler', 'supervisor'];
 const PROVIDER_SDK = /from '(?:ai|@ai-sdk\/[^']+)'/u;
 const CHILD_PROCESS = /from '(?:node:)?child_process'/u;
 
@@ -84,11 +88,16 @@ describe('architecture boundaries', () => {
 
   it('keeps Kernel components out of each other', async () => {
     for (const component of KERNEL_COMPONENTS) {
-      const others = [...KERNEL_COMPONENTS.filter((other) => other !== component), 'run-actor'];
+      const others = [...KERNEL_COMPONENTS.filter((other) => other !== component), 'session'];
       const sibling = new RegExp(`from '(?:\\.\\./)+(?:${others.join('|')})/`, 'u');
       for (const file of await sources(`packages/modules/kernel/src/${component}`))
         expect(sibling.test(file.text), file.path).toBe(false);
     }
+  });
+
+  it('keeps the Session layer away from the Supervisor', async () => {
+    for (const file of await sources('packages/modules/kernel/src/session'))
+      expect(/from '\.\.\/supervisor\//u.test(file.text), file.path).toBe(false);
   });
 
   it('confines provider SDKs to the model-call Executor', async () => {

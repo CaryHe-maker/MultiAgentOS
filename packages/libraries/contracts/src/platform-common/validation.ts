@@ -42,7 +42,7 @@ export class ContractValidationError extends Error {
     this.issues = issues;
   }
 }
-/** Builds the `UNSUPPORTED_CAPABILITY` error of a capability M1 does not implement. */
+/** Builds the `UNSUPPORTED_CAPABILITY` error of a capability not implemented yet. */
 export function unsupported(
   capability: string,
   schemaName: string,

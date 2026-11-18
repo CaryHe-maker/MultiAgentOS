@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { ExecutorEnvironment } from '@multiagentos/contracts';
+import { DENY_SANDBOX, type ExecutorEnvironment } from '@multiagentos/contracts';
 import { afterEach, describe, expect, it } from 'vitest';
 import { repositoryGuardExpectations } from '../harnesses/executor-contract.js';
 import { FIXTURE_FILES, createFixtureRepository } from './repository.js';
@@ -25,6 +25,7 @@ const environment = (_kind: string, scope: ExecutorEnvironment['scope']): Execut
   subprocess: {
     run: () => Promise.resolve({ exitCode: null, signal: null, stdout: '', truncated: false }),
   },
+  sandbox: DENY_SANDBOX,
   credentials: { apiKeyFor: () => undefined },
   now: () => new Date('2026-01-01T00:00:00.000Z'),
 });
@@ -42,11 +43,11 @@ describe('fixture repository', () => {
       );
   });
 
-  it('comes with the guard verdicts of ExecutorSet for all three repository Executors', async () => {
+  it('comes with the guard verdicts of ExecutorSet for reading and searching', async () => {
     const repository = await fixture();
     const expectations = repositoryGuardExpectations(repository, environment);
     expect(new Set(expectations.map((expectation) => expectation.kind))).toEqual(
-      new Set(['FILE_READ', 'REPOSITORY_SEARCH', 'REPOSITORY_ORIENT']),
+      new Set(['FILE_READ', 'REPOSITORY_SEARCH']),
     );
     const verdicts = new Set(
       expectations.map(({ expected }) =>
@@ -62,7 +63,6 @@ describe('fixture repository', () => {
       'REJECTED:UNSUPPORTED_FILE',
       'REJECTED:INVALID_RANGE',
       'REJECTED:INVALID_QUERY',
-      'REJECTED:LIMIT_EXCEEDED',
       'VIOLATION:SCOPE_MISSING',
     ])
       expect(verdicts).toContain(verdict);

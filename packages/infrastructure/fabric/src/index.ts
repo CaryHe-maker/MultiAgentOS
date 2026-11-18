@@ -1,8 +1,4 @@
-export {
-  catalogWithDeadline,
-  persistenceWithDeadline,
-  withinDeadline,
-} from './deadline/port-deadline.js';
+export { withinDeadline } from './deadline/port-deadline.js';
 export { FabricError } from './in-process/fabric-error.js';
 export { InProcessFabric, type FabricClientOptions } from './in-process/in-process-fabric.js';
 export { DEFAULT_CHANNEL, Inbox, type InboxOptions } from './inbox/inbox.js';

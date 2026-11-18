@@ -1,0 +1,5171 @@
+import { settleOpenCalls } from './settle-stale.js';
+import { lastWorkspaceOf } from '../domain/workspace/workspace-binding.js';
+import { checkedItems, nextReferenceId } from '../domain/handover/handover.js';
+import {
+  REPOSITORY_KINDS,
+  WRITE_KINDS,
+  REASON_CODE_CATEGORY,
+  newId,
+  type AskUserArgs,
+  type ArtifactRef,
+  type BoundaryContext,
+  canonicalJson,
+  type DefinitionRef,
+  type DelegationReserved,
+  type GraphNodeRecord,
+  type HandoverParty,
+  type InterruptReason,
+  DEFAULT_SLEEP_SECONDS,
+  MESSAGE_SHOWN_CHARS,
+  MESSAGE_SHOWN_LINES,
+  messageIsLong,
+  type SendMessageArgs,
+  type SleepArgs,
+  type JobKillArgs,
+  type JobOutputArgs,
+  type StopSubagentsArgs,
+  type WakeCondition,
+  type RunSubagentsArgs,
+  type SpawnRequest,
+  type SpawnTask,
+  type SpawnNode,
+  type KernelToWorkflowEvent,
+  type PinnedDefinitionRef,
+  type ProtectedCapability,
+  type ReasonCode,
+  type SessionCommandFailure,
+  type SessionLogRecord,
+  type TemplateDefinition,
+  type SubmitUnitRequest,
+  type ThinkingEffort,
+  type UnitInput,
+  type WorkflowGatewayPort,
+  type WorkflowInboxEvent,
+  type WorkflowSessionEvent,
+  type WorkflowSystemEvent,
+} from '@multiagentos/contracts';
+import {
+  answerRecord,
+  closeAgent,
+  receiveAgentReport,
+  resumeAfterPause,
+  resumeAfterRefusal,
+  answerDelegatedCall,
+  answerRounds,
+  ROUNDS_ASK_AHEAD,
+  startAgent,
+  type AgentConfig,
+  type AgentContext,
+  type AgentDefinitions,
+  type AgentEnding,
+  type AgentState,
+  type AgentTransition,
+  type ControlSource,
+  type EndAction,
+} from '../domain/agent/agent-cycle.js';
+import { controlLineOf } from '../domain/agent/tool-display.js';
+import { instructionsToLoad } from '../domain/context/nested-instructions.js';
+import { toolInputOf } from '../domain/context/tool-inputs.js';
+import {
+  exitText,
+  jobListText,
+  jobsHeldBy,
+  jobsOf,
+  nextJobId,
+  runningJobs,
+} from '../domain/graph/mission-jobs.js';
+import { owedReplies, replyRefusal } from '../domain/graph/mission-replies.js';
+import { revokedCompactions } from '../domain/context/compaction-revocation.js';
+import { phaseOfCall, playbookRefusal, playbookUnfinished } from '../domain/spawn/playbook.js';
+import { interruptedRunOf } from './interrupted-run.js';
+import { projectHistory, type ProjectionScope } from '../domain/context/history-projection.js';
+import { isTerminal, wakeableNodes, type Wake } from '../domain/graph/graph.js';
+import { placementOf } from '../domain/spawn/placement.js';
+import { readableArtifacts } from '../domain/spawn/readable-artifacts.js';
+import { callOf, spawnNodeOf, stepScopeOf, taskScopeOf } from '../domain/spawn/spawn-graph.js';
+import { finishedOutcome, resultOf, type TaskOutcome } from '../domain/spawn/task-results.js';
+import {
+  validateSpawn,
+  type SpawnAgentFacts,
+  type SpawnError,
+  type SpawnPlan,
+} from '../domain/spawn/validate-spawn.js';
+import {
+  childrenOf,
+  missionStateOf,
+  projectMissions,
+  rootMissionId,
+  siblingsOf,
+  treeView,
+  type MissionView,
+} from '../domain/graph/mission-tree.js';
+import {
+  advanceGraph,
+  chatGrowthPoint,
+  chatGrowthRevision,
+  compileTemplate,
+  initialChatRevision,
+  projectGraph,
+  askRevision,
+  continuationRevision,
+  spawnRevision,
+  steerRevision,
+  type GraphRevision,
+  type ProjectedGraph,
+} from '../domain/graph/session-graph.js';
+import {
+  SessionStoreFailure,
+  type NewLogRecord,
+  type SessionLogStore,
+} from './session-log-store.js';
+
+/**
+ * Every run of a Session on top of the session log (Module/Workflow 4-6, 9): one event at a time,
+ * log first, then the projection, then syscalls. Turn-chat and templates differ only in how the
+ * graph grows; all Agents share one AgentRun cycle and one kind of projection.
+ */
+const READS_REPOSITORY: ReadonlySet<string> = new Set(REPOSITORY_KINDS);
+
+export interface AgentBinding {
+  readonly ref: PinnedDefinitionRef;
+  readonly modelRef: DefinitionRef;
+  readonly effort: ThinkingEffort;
+  readonly allowedEfforts: readonly ThinkingEffort[];
+  readonly requestedCapabilities: readonly ProtectedCapability[];
+  readonly writeRoots: readonly string[];
+  readonly toolsDigest: string;
+  readonly definitions: AgentDefinitions;
+  /** Its tasks started together with the caller's context wait for the first one (D104). */
+  readonly staggered?: boolean;
+}
+
+export interface SessionRunnerDeps {
+  readonly gateway: WorkflowGatewayPort;
+  readonly store: SessionLogStore;
+  /** Built-in Agents by id; `chat` runs the one named `main`. */
+  readonly agents: ReadonlyMap<string, AgentBinding>;
+  /** Built-in templates by id. */
+  readonly templates: ReadonlyMap<string, TemplateDefinition>;
+  readonly definitionsDigest: string;
+  readonly definitionVersions: readonly string[];
+  readonly config: AgentConfig;
+  readonly runtime: () => {
+    readonly sandbox: string;
+    readonly currentDate: string;
+    /** False when the repository is in no git work tree. */
+    readonly git?: boolean;
+  };
+  /** What the probe found, for `SESSION_STARTED`. */
+  readonly sandbox?: Extract<SessionLogRecord, { type: 'SESSION_STARTED' }>['sandbox'];
+  readonly now?: () => Date;
+  readonly newAgentRunId?: () => string;
+}
+
+/** How often a model that did not make the call the user asked for with `/<tool>` is asked again (D114). */
+const REQUIRED_RETRIES = 2;
+
+/** The Agent of a Turn-chat unless configured (D112); Mission's root is the Agent its template names. */
+const CHAT_AGENT = 'chat';
+/** The id the root task of a Turn-chat is named by (Orchestration 3.2). */
+const CHAT_TEMPLATE = 'chat';
+/** Messages one segment may send (Orchestration 5). */
+const MAX_MESSAGES_PER_SEGMENT = 10;
+/** Wakes by messages, timers and jobs between two words of the user (Orchestration 4.4). */
+const MAX_CONSECUTIVE_WAKES = 3;
+/** Times a task is woken because nothing could move, before it is ended. */
+const MAX_STALLED_WAKES = 3;
+/** What a sleep until an answer records as its most; no timer is set for it (Orchestration 4.2). */
+const ASK_SLEEP_SECONDS = 86_400;
+/** Requests a task may have unanswered at once (D25). */
+const MAX_OPEN_REQUESTS = 3;
+/** What one `job_output` reads at most: it must fit the answer of the call. */
+const JOB_READ_BYTES = 12_000;
+/** The deepest level of the MissionTree: three levels (Orchestration 3.6). */
+const MAX_MISSION_DEPTH = 3;
+/**
+ * What a specialist asks for: more than any Agent's largest share, so the Kernel grants the
+ * largest (twice the default of a lead). A caller's own figure is not taken: a specialist sized
+ * for one Agent cannot lend to the tasks its playbook requires.
+ */
+const SPECIALIST_ASK = 1_000_000_000;
+
+/** The playbook a task follows when it is a specialist, as the field of its spawn (D39). */
+const specialistOf = (
+  specialists: ReadonlyMap<string, NonNullable<SpawnNode['specialist']>>,
+  name: string,
+): { specialist?: NonNullable<SpawnNode['specialist']> } => {
+  const specialist = specialists.get(name);
+  return specialist === undefined ? {} : { specialist };
+};
+
+const contextOf = (sessionId: string, workflowRunId?: string): BoundaryContext => ({
+  correlationId: newId('cor'),
+  tenantId: 'local',
+  projectId: 'local',
+  sessionId,
+  ...(workflowRunId === undefined ? {} : { workflowRunId }),
+});
+
+/**
+ * Why the arguments of `ask_user` cannot be taken, in words the model can act on: what the
+ * schema leaves open (a review needs something to look at, a choice needs options, names are
+ * unique) and an artifact the asker cannot read (M2Design 3.4).
+ */
+function askProblem(args: AskUserArgs, readable: ReadonlySet<string>): string | undefined {
+  const fields = args.fields ?? [];
+  const names = new Set<string>();
+  for (const field of fields) {
+    if (names.has(field.name)) return `Not asked: two fields are named ${field.name}.`;
+    names.add(field.name);
+    if ((field.type === 'select' || field.type === 'multiselect') && field.options === undefined)
+      return `Not asked: field ${field.name} is a choice and needs options.`;
+  }
+  if (args.kind === 'review') {
+    if (args.reviewArtifact === undefined)
+      return 'Not asked: a review needs reviewArtifact, the artifact the user should look at.';
+    if (!readable.has(args.reviewArtifact.artifactId))
+      return 'Not asked: you can only hand the user an artifact that you have read yourself.';
+  }
+  return undefined;
+}
+
+/** The nodes of questions put to the user that are still waiting for an answer. */
+function questionsOf(records: readonly SessionLogRecord[], workflowRunId: string): string[] {
+  const asked = new Set<string>();
+  for (const record of records) {
+    if (record.type !== 'HUMAN_REQUESTED' || record.workflowRunId !== workflowRunId) continue;
+    if (record.kind !== 'prompt') asked.add(record.nodeId);
+  }
+  return [...asked];
+}
+
+const asHumanRequestId = (nodeId: string): string => `hrq_${nodeId.slice('nod_'.length)}`;
+
+/** How a node ends once its AgentRun closed. */
+interface NodeEnding {
+  readonly status: 'SUCCEEDED' | 'FAILED';
+  /** The run's result when this node is its output. */
+  readonly runOutput: boolean;
+  /**
+   * What its caller reads, of a Mission that told the user itself in main's place (D115): its
+   * result, and the model output it is read from (in place of the message it published).
+   */
+  readonly result?: { readonly value: ReturnType<typeof resultOf>; readonly ref?: ArtifactRef };
+}
+
+const OVER_BUDGET: readonly string[] = ['BUDGET_WRAP_UP', 'BUDGET_EXHAUSTED'];
+
+interface ActiveAgent {
+  readonly state: AgentState;
+  readonly nodeId: string;
+  /** The task this AgentRun is a segment of (Orchestration 3.4). */
+  readonly missionId: string;
+  /** Messages this segment has sent. */
+  readonly messages: number;
+  /**
+   * The segment ends after the round it is in (Orchestration 5.1, 5.2): stopped by its parent, so
+   * its task ends, or interrupted, so a new segment of it starts at once.
+   */
+  readonly stopAfterRound?: { readonly kind: 'STOP' | 'INTERRUPT'; readonly reason: string };
+  /**
+   * The id of the request for more rounds sent for it to its parent (D91): nothing of it runs
+   * until the reply, or until the request is left without one.
+   */
+  readonly awaitingGrant?: string | undefined;
+  readonly scope: ProjectionScope;
+  readonly agentId: string;
+  readonly nodeEnding?: NodeEnding;
+  /** The task this AgentRun was started for, when it is a SubAgent. */
+  readonly task?: { readonly name: string };
+  /** What the Kernel reported this AgentRun changed (M2Design 3.7). */
+  readonly changed: readonly string[];
+  /** Files changed after the last successful command: a worker should check its work. */
+  readonly unchecked: boolean;
+  /**
+   * The call of the last command that exited 0 after its last change, if any (D54): handed over
+   * with its result, so the caller reads that check instead of running it again.
+   */
+  readonly lastCheck?: string | undefined;
+  readonly completionAsked: boolean;
+}
+
+/** What a stopped task had changed, so its parent knows what it leaves behind. */
+function changedNote(changed: readonly string[]): string[] {
+  if (changed.length === 0) return [];
+  const shown = changed.slice(0, 10).join(', ');
+  return [
+    `it changed: ${shown}${changed.length > 10 ? ` and ${String(changed.length - 10)} more` : ''}`,
+  ];
+}
+
+/** Below these the time of the commands is not worth a line in the status (D82). */
+const COMMAND_MINUTES_SHOWN = 5;
+const COMMAND_SHARE_SHOWN = 0.4;
+
+/**
+ * The minutes a task waited on its own commands (from submission to answer: a command moved to
+ * the background stops counting there) and the minutes since it started, when the commands took
+ * enough of them to be said (D82).
+ */
+function commandTimeOf(
+  records: readonly SessionLogRecord[],
+  missionId: string,
+  now: number,
+): { readonly commands: number; readonly total: number } | undefined {
+  const runs = new Set<string>();
+  let started: number | undefined;
+  const submitted = new Map<string, number>();
+  let waited = 0;
+  for (const record of records) {
+    if (record.type === 'AGENT_RUN_REGISTERED' && record.missionId === missionId) {
+      runs.add(record.agentRunId);
+      started ??= Date.parse(record.at);
+    } else if (
+      record.type === 'UNIT_SUBMITTED' &&
+      runs.has(record.agentRunId) &&
+      record.unitRef.id === 'run-command'
+    )
+      submitted.set(record.requestId, Date.parse(record.at));
+    else if (record.type === 'UNIT_COMPLETED') {
+      const at = submitted.get(record.requestId);
+      if (at !== undefined) waited += Date.parse(record.at) - at;
+    }
+  }
+  if (started === undefined) return undefined;
+  const commands = Math.floor(waited / 60_000);
+  const total = Math.floor((now - started) / 60_000);
+  return commands >= COMMAND_MINUTES_SHOWN && commands >= total * COMMAND_SHARE_SHOWN
+    ? { commands, total: Math.max(total, commands) }
+    : undefined;
+}
+
+/**
+ * A worker with `split: true` (D88) runs as a lead, with its prompt, its tools for subtasks and
+ * its share. Only the root's spawn tool has the field (a lead's has not), so only the root starts
+ * a lead.
+ */
+function splitAsLead(args: RunSubagentsArgs): SpawnRequest {
+  return {
+    ...args,
+    tasks: args.tasks.map((task) => {
+      const { split, ...rest } = task as typeof task & { readonly split?: boolean };
+      return split === true && rest.agent === 'worker' ? { ...rest, agent: 'lead' as const } : rest;
+    }),
+  };
+}
+
+export class SessionRunner {
+  readonly #deps: SessionRunnerDeps;
+  readonly #spawnable: ReadonlyMap<string, SpawnAgentFacts>;
+  /** The pre-orchestrated templates by the specialist Agent that reaches each (Orchestration D39). */
+  readonly #specialists: ReadonlyMap<string, TemplateDefinition>;
+  #sessionId: string | undefined;
+  #repositoryRoot = '';
+  #records: SessionLogRecord[] = [];
+  #mode: 'CHAT' | 'ORCHESTRATION' = 'CHAT';
+  /** The delegation tool the last input asked for, until the segment it opens starts (D114). */
+  #delegateNext: string | undefined;
+  /** The checkpoint of the input whose work goes on; undefined while waiting for one. */
+  #inputCheckpointId: string | undefined;
+  /** Calls of run_subagents that wait for the user's answer about more subtasks (D62). */
+  readonly #awaitingQuota: {
+    readonly workflowRunId: string;
+    readonly agentRunId: string;
+    readonly ending: Extract<AgentEnding, { kind: 'SPAWN' }>;
+  }[] = [];
+  /** Every AgentRun that has not ended, by id: SubAgents run beside the AgentRun that spawned them. */
+  readonly #agents = new Map<string, ActiveAgent>();
+  /** A repository tool succeeded in the current run. */
+  #readRepository = false;
+  /** The run whose `AGENTS.md` was already asked for. */
+  #instructionsRun: string | undefined;
+  #runResult: ArtifactRef | undefined;
+  #overBudget = false;
+  /** The Kernel interrupted this run: the reply that says so is the last thing it publishes. */
+  #interrupted = false;
+  /** Why the run is being interrupted, while it is. */
+  #interruptReason: InterruptReason | undefined;
+  #advancing = false;
+  #advanceAgain = false;
+  #runFailure: string | undefined;
+  /** Delegations given back once all their tasks ended (Orchestration 8.2). */
+  readonly #released = new Set<string>();
+  /**
+   * `run_subagents` calls that came with ordinary tool calls (D41), by AgentRun: they start once
+   * those calls are back, so the checkpoint before the tasks is taken after what the calls did.
+   */
+  readonly #waitingSpawns = new Map<string, AgentEnding[]>();
+
+  public constructor(deps: SessionRunnerDeps) {
+    this.#deps = deps;
+    // The Agents `run_subagents` may start are those that end by returning a result (M2Design 3.9).
+    this.#spawnable = new Map(
+      [...deps.agents]
+        .filter(([, agent]) =>
+          agent.definitions.endTools.some((tool) => tool.action === 'FINISH_SUBAGENT'),
+        )
+        .map(([id, agent]) => [
+          id,
+          {
+            writes: agent.requestedCapabilities.includes('workspace.write'),
+            allowedEfforts: agent.allowedEfforts,
+          },
+        ]),
+    );
+    this.#specialists = new Map(
+      [...deps.templates.values()].flatMap((template) =>
+        template.agent === undefined || template.playbook === undefined
+          ? []
+          : [[template.agent, template] as const],
+      ),
+    );
+  }
+
+  get records(): readonly SessionLogRecord[] {
+    return this.#records;
+  }
+
+  async #append(records: readonly NewLogRecord[]): Promise<void> {
+    for (const record of records) {
+      const stored = await this.#deps.store.append(record);
+      this.#records.push(stored);
+      if (stored.type === 'MODEL_TURN' && this.#held.size > 0)
+        this.#advanceLater(stored.workflowRunId, 0);
+    }
+  }
+
+  /**
+   * The staggered tasks that wait for the first one of their call (D104), by node, with the first
+   * one's node and the time they start at the latest.
+   */
+  readonly #held = new Map<string, { readonly leader: string; readonly until: number }>();
+
+  #now(): number {
+    return (this.#deps.now ?? (() => new Date()))().getTime();
+  }
+
+  /** An advance after the event in hand, in the same line as the events. */
+  #advanceLater(workflowRunId: string, ms: number): void {
+    const timer = setTimeout(() => {
+      void this.#serially(async () => {
+        if (this.#held.size > 0) await this.#advance(workflowRunId);
+      });
+    }, ms);
+    timer.unref();
+  }
+
+  /** Whether a worker still waits: until the first one has a model reply, has ended, or time is up. */
+  #isHeld(nodeId: string): boolean {
+    const hold = this.#held.get(nodeId);
+    if (hold === undefined) return false;
+    const leaderRuns = new Set(
+      this.#records.flatMap((record) =>
+        record.type === 'AGENT_RUN_REGISTERED' && record.nodeId === hold.leader
+          ? [record.agentRunId]
+          : [],
+      ),
+    );
+    const go =
+      this.#now() >= hold.until ||
+      this.#records.some(
+        (record) =>
+          (record.type === 'MODEL_TURN' && leaderRuns.has(record.agentRunId)) ||
+          (record.type === 'NODE_ENDED' && record.nodeId === hold.leader),
+      );
+    if (go) this.#held.delete(nodeId);
+    return !go;
+  }
+
+  /**
+   * Every event, and the advance a stagger timer asks for, runs one after the other: Fabric already
+   * hands events over in order, and the timer joins the same line.
+   */
+  #line: Promise<unknown> = Promise.resolve();
+
+  #serially(work: () => Promise<void>): Promise<void> {
+    const next = this.#line.then(work, work);
+    this.#line = next.catch(() => undefined);
+    return next;
+  }
+
+  handleSessionEvent(envelope: WorkflowSessionEvent): Promise<void> {
+    return this.#serially(() => this.#handleSessionEvent(envelope));
+  }
+
+  handleSystemEvent(envelope: WorkflowSystemEvent): Promise<void> {
+    return this.#serially(() => this.#handleSystemEvent(envelope));
+  }
+
+  handleRunEvent(envelope: WorkflowInboxEvent): Promise<void> {
+    return this.#serially(() => this.#handleRunEvent(envelope));
+  }
+
+  async #handleSessionEvent(envelope: WorkflowSessionEvent): Promise<void> {
+    const { sessionId, event } = envelope;
+    const reply = (result: Parameters<WorkflowGatewayPort['reportSessionCommand']>[0]['result']) =>
+      this.#deps.gateway.reportSessionCommand(
+        { requestId: newId('req'), sessionId, commandId: event.commandId, result },
+        contextOf(sessionId),
+      );
+    const fail = (failure: SessionCommandFailure) =>
+      reply({ command: event.command, outcome: 'FAILED', failure });
+    try {
+      if (event.command === 'CLOSE') {
+        await this.#deps.store.close();
+        this.#reset();
+        await reply({ command: 'CLOSE', outcome: 'DONE' });
+      } else if (event.command === 'CREATE') {
+        const started = await this.#deps.store.create({
+          sessionId,
+          repositoryRoot: event.repositoryRoot,
+          definitionsDigest: this.#deps.definitionsDigest,
+          definitionVersions: this.#deps.definitionVersions,
+          ...(this.#deps.sandbox === undefined ? {} : { sandbox: this.#deps.sandbox }),
+        });
+        this.#adopt(sessionId, event.repositoryRoot, [started]);
+        await reply({ command: 'CREATE', outcome: 'READY' });
+      } else if (event.command === 'FORK') {
+        const forked = await this.#deps.store.fork({
+          sessionId,
+          fromSessionId: event.fromSessionId,
+          repositoryRoot: event.repositoryRoot,
+        });
+        this.#adopt(
+          sessionId,
+          event.repositoryRoot,
+          await this.#bound(event.repositoryRoot, forked.records),
+        );
+        await reply({
+          command: 'FORK',
+          outcome: 'READY',
+          inheritedArtifacts: [...forked.inheritedArtifacts],
+          fromInputCount: forked.fromInputCount,
+        });
+      } else {
+        const opened = await this.#deps.store.open(sessionId, this.#deps.definitionsDigest);
+        const records = await this.#bound(event.repositoryRoot, opened.records);
+        this.#adopt(sessionId, event.repositoryRoot, records);
+        // A long task the last process left can go on, if the user says so (Orchestration 7.6).
+        const interrupted = interruptedRunOf(records);
+        await reply({
+          command: 'OPEN',
+          outcome: 'READY',
+          inputCount: opened.inputCount,
+          ...(opened.titleRef === undefined ? {} : { titleRef: opened.titleRef }),
+          ...(interrupted === undefined ? {} : { interrupted }),
+        });
+      }
+    } catch (error) {
+      if (!(error instanceof SessionStoreFailure)) throw error;
+      await fail({ code: error.code });
+    }
+  }
+
+  /**
+   * The Session is bound to the folder this process works in. When the log says another folder
+   * was the last, that is recorded now, before anything uses the Session (M2Design 2.3): Kernel
+   * has already confirmed it with the user and began the snapshots again. The same comparison
+   * on every open makes this safe to repeat after a crash between the two.
+   */
+  async #bound(
+    repositoryRoot: string,
+    records: readonly SessionLogRecord[],
+  ): Promise<readonly SessionLogRecord[]> {
+    const previousRoot = lastWorkspaceOf(records);
+    if (previousRoot === undefined || previousRoot === repositoryRoot) return records;
+    return [...records, await this.#deps.store.bindWorkspace({ repositoryRoot, previousRoot })];
+  }
+
+  #adopt(sessionId: string, repositoryRoot: string, records: readonly SessionLogRecord[]): void {
+    this.#sessionId = sessionId;
+    this.#repositoryRoot = repositoryRoot;
+    this.#records = [...records];
+  }
+
+  #reset(): void {
+    this.#sessionId = undefined;
+    this.#records = [];
+    this.#inputCheckpointId = undefined;
+    this.#agents.clear();
+    this.#clearRun();
+  }
+
+  #clearRun(): void {
+    this.#interruptReason = undefined;
+    this.#readRepository = false;
+    this.#runResult = undefined;
+    this.#overBudget = false;
+    this.#interrupted = false;
+    this.#runFailure = undefined;
+    this.#released.clear();
+    this.#held.clear();
+  }
+
+  async #handleSystemEvent(envelope: WorkflowSystemEvent): Promise<void> {
+    const { event } = envelope;
+    if (event.type === 'SessionListQuery') {
+      await this.#deps.gateway.reportSessionList(
+        {
+          requestId: newId('req'),
+          queryId: event.queryId,
+          sessions: await this.#deps.store.list(),
+        },
+        { correlationId: newId('cor'), tenantId: 'local', projectId: 'local' },
+      );
+      return;
+    }
+    let result: Parameters<WorkflowGatewayPort['reportSessionCommand']>[0]['result'] = {
+      command: 'DELETE',
+      outcome: 'DONE',
+    };
+    try {
+      await this.#deps.store.remove(event.sessionId);
+    } catch (error) {
+      if (!(error instanceof SessionStoreFailure)) throw error;
+      result = { command: 'DELETE', outcome: 'FAILED', failure: { code: error.code } };
+    }
+    await this.#deps.gateway.reportSessionCommand(
+      { requestId: newId('req'), sessionId: event.sessionId, commandId: event.commandId, result },
+      contextOf(event.sessionId),
+    );
+  }
+
+  async #handleRunEvent(envelope: WorkflowInboxEvent): Promise<void> {
+    const { event, workflowRunId } = envelope;
+    switch (event.type) {
+      case 'RunStart':
+        await this.#onRunStart(workflowRunId, event);
+        break;
+      case 'HumanAnswered':
+        await this.#onHumanAnswered(workflowRunId, event);
+        break;
+      case 'DelegationDecided':
+        await this.#onDelegationDecided(workflowRunId);
+        break;
+      case 'RunPaused':
+        await this.#append([
+          {
+            type: 'RUN_PAUSED',
+            workflowRunId,
+          },
+        ]);
+        break;
+      case 'RunResumed':
+        await this.#onResumed(workflowRunId, event);
+        break;
+      case 'HumanCancelled':
+        // The question is gone: its node was ended when the interrupt came, or is ended now.
+        await this.#endQuestion(workflowRunId, event.nodeId);
+        break;
+      case 'UnitReport':
+        await this.#onUnitReport(workflowRunId, event);
+        break;
+      case 'JobEnded':
+        await this.#onJobEnded(workflowRunId, event);
+        break;
+      case 'CheckpointRolledBack':
+        await this.#onRolledBack(workflowRunId, event);
+        break;
+      case 'CheckpointTaken':
+        await this.#append([
+          {
+            type: 'CHECKPOINT_TAKEN',
+            workflowRunId,
+            checkpointId: event.checkpointId,
+            outcome: event.outcome,
+            ...(event.snapshot === undefined ? {} : { snapshot: event.snapshot }),
+            heldUnits: event.heldUnits,
+          },
+        ]);
+        break;
+      case 'WakeDue':
+        // Recorded first, so a wake by time is read from the log like any other (4.2).
+        await this.#append([
+          {
+            type: 'MISSION_TIMER_DUE',
+            workflowRunId,
+            missionId: event.missionId,
+            timerId: event.timerId,
+          },
+        ]);
+        await this.#advance(workflowRunId);
+        break;
+      case 'InputSettled':
+        await this.#append([
+          {
+            type: 'INPUT_SETTLED',
+            workflowRunId,
+            checkpointId: event.checkpointId,
+            reason: event.reason,
+            usage: event.usage,
+            ...(event.changedFileCount === undefined
+              ? {}
+              : { changedFileCount: event.changedFileCount }),
+          },
+        ]);
+        await this.#deps.store.recordInputSettled();
+        break;
+      case 'CompactionSourceQuery':
+        await this.#onCompactionQuery(workflowRunId, event);
+        break;
+      case 'ToolResultsPruned':
+        await this.#recordCompaction(workflowRunId, event.compactionId, 'PRUNE', [
+          {
+            type: 'TOOL_RESULTS_PRUNED',
+            workflowRunId,
+            compactionId: event.compactionId,
+            target: event.target,
+            items: event.items,
+          },
+        ]);
+        break;
+      case 'ContextCompacted':
+        await this.#recordCompaction(workflowRunId, event.compactionId, 'SUMMARY', [
+          {
+            type: 'CONTEXT_COMPACTED',
+            workflowRunId,
+            compactionId: event.compactionId,
+            target: event.target,
+            fromSeq: event.fromSeq,
+            toSeq: event.toSeq,
+            keptSeqs: event.keptSeqs,
+            summaryRef: event.summaryRef,
+            summaryInput: event.summaryInput,
+            usage: event.usage,
+          },
+        ]);
+        break;
+      case 'WorkspaceDiverged': {
+        // Measured against the last input, so reopening without one finds the same files again.
+        const said = [...this.#records]
+          .reverse()
+          .find(
+            (record) =>
+              record.type === 'WORKSPACE_DIVERGED' ||
+              record.type === 'TURN_STARTED' ||
+              (record.type === 'HUMAN_ANSWERED' && record.kind === 'prompt'),
+          );
+        if (
+          said?.type !== 'WORKSPACE_DIVERGED' ||
+          canonicalJson(said.files) !== canonicalJson(event.files)
+        )
+          await this.#append([{ type: 'WORKSPACE_DIVERGED', workflowRunId, files: event.files }]);
+        break;
+      }
+      case 'RunInterrupted':
+        await this.#append([{ type: 'RUN_INTERRUPTED', workflowRunId, reason: event.reason }]);
+        // Calls the cancelled work left without a result are answered before anything else.
+        await this.#append([...settleOpenCalls(this.#records, workflowRunId)]);
+        await this.#onInterrupted(workflowRunId, event.reason);
+        break;
+      case 'RunClosed':
+        await this.#append([
+          { type: 'WORKFLOW_RUN_ENDED', workflowRunId, closeReason: event.closeReason },
+        ]);
+        this.#agents.clear();
+        this.#clearRun();
+        break;
+    }
+  }
+
+  /** Kernel asks for the material of a compaction: the projection of the target, as it is now. */
+  async #onCompactionQuery(
+    workflowRunId: string,
+    event: Extract<WorkflowInboxEvent['event'], { type: 'CompactionSourceQuery' }>,
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const scope: ProjectionScope | undefined =
+      event.target.kind === 'MAIN'
+        ? { kind: 'MAIN' }
+        : this.#agents.get(event.target.agentRunId)?.scope;
+    // An AgentRun that is gone has nothing to compact; Kernel then finds nothing to do.
+    const entries =
+      scope === undefined ? [] : projectHistory(this.#records, scope, { material: true });
+    await this.#deps.gateway.reportCompactionSource(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        compactionId: event.compactionId,
+        entries: [...entries],
+      },
+      contextOf(sessionId),
+    );
+  }
+
+  /** What Kernel did to a context goes in the log first; only then does it take effect (9.6). */
+  async #recordCompaction(
+    workflowRunId: string,
+    compactionId: string,
+    stage: 'PRUNE' | 'SUMMARY',
+    records: readonly NewLogRecord[],
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const acknowledge = (outcome: 'RECORDED' | 'FAILED') =>
+      this.#deps.gateway.ackCompaction(
+        { requestId: newId('req'), sessionId, workflowRunId, compactionId, stage, outcome },
+        contextOf(sessionId),
+      );
+    try {
+      await this.#append(records);
+    } catch (error) {
+      await acknowledge('FAILED');
+      throw error;
+    }
+    await acknowledge('RECORDED');
+  }
+
+  #sessionIdOrThrow(): string {
+    if (this.#sessionId === undefined) throw new Error('no Session is open');
+    return this.#sessionId;
+  }
+
+  async #extend(
+    workflowRunId: string,
+    revision: number,
+    source: 'TEMPLATE' | 'CHAT_GROWTH' | 'SPAWN' | 'STEER' | 'ASK' | 'WAKE',
+    content: GraphRevision,
+  ): Promise<void> {
+    await this.#append([
+      {
+        type: 'GRAPH_EXTENDED',
+        workflowRunId,
+        revision,
+        source,
+        nodes: [...content.nodes],
+        edges: [...content.edges],
+      },
+    ]);
+  }
+
+  #initialRevision(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'RunStart' }>,
+  ): GraphRevision {
+    const sessionId = this.#sessionIdOrThrow();
+    if (event.mode === 'CHAT')
+      return initialChatRevision(
+        workflowRunId,
+        this.#mainRef(),
+        rootMissionId(sessionId, CHAT_TEMPLATE),
+      );
+    const template = this.#deps.templates.get(event.templateRef.id);
+    if (template === undefined) throw new Error(`unknown template ${event.templateRef.id}`);
+    const compiled = compileTemplate(
+      workflowRunId,
+      template,
+      rootMissionId(sessionId, template.id),
+    );
+    if (compiled.errors.length > 0) throw new Error('a built-in template does not compile');
+    return compiled.revision;
+  }
+
+  async #onRunStart(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'RunStart' }>,
+  ): Promise<void> {
+    this.#mode = event.mode;
+    if (event.mode === 'ORCHESTRATION' && event.resumed !== undefined) {
+      // The run the last process left goes on (Orchestration 7.6): its graph is in the log already.
+      const { checkpointId, files, backupSnapshot } = event.resumed;
+      this.#inputCheckpointId = checkpointId;
+      await this.#append([
+        {
+          type: 'WORKFLOW_RUN_RESUMED',
+          workflowRunId,
+          templateRef: event.templateRef,
+          checkpointId,
+          preset: event.preset,
+        },
+      ]);
+      await this.#rewind(workflowRunId, {
+        checkpointId,
+        files,
+        ...(backupSnapshot === undefined ? {} : { backupSnapshot }),
+        resumed: true,
+      });
+      return;
+    }
+    await this.#append([
+      {
+        type: 'WORKFLOW_RUN_STARTED',
+        workflowRunId,
+        mode: event.mode,
+        ...(event.mode === 'ORCHESTRATION' ? { templateRef: event.templateRef } : {}),
+        preset: event.preset,
+        initialInput: event.initialInput,
+      },
+    ]);
+    await this.#extend(workflowRunId, 1, 'TEMPLATE', this.#initialRevision(workflowRunId, event));
+    if (!event.initialInput) await this.#advance(workflowRunId);
+  }
+
+  #mainRef(): DefinitionRef {
+    const { id, version } = this.#binding(this.#deps.config.chatAgent ?? CHAT_AGENT).ref;
+    return { id, version };
+  }
+
+  #binding(agentId: string): AgentBinding {
+    const binding = this.#deps.agents.get(agentId);
+    if (binding === undefined) throw new Error(`unknown Agent ${agentId}`);
+    return binding;
+  }
+
+  /**
+   * The binding of an Agent for a task at `depth`: at the deepest level it does not spawn
+   * (Orchestration 3.6), and lent a scope without commands it runs none (D17).
+   */
+  #bindingAt(agentId: string, depth: number, commands = true): AgentBinding {
+    let binding = this.#binding(agentId);
+    const starts =
+      binding.definitions.spawnTool !== undefined ||
+      binding.definitions.delegateTools !== undefined;
+    if (depth >= MAX_MISSION_DEPTH && starts) {
+      const definitions: AgentDefinitions = { ...binding.definitions };
+      delete (definitions as { spawnTool?: unknown }).spawnTool;
+      delete (definitions as { delegateTools?: unknown }).delegateTools;
+      binding = {
+        ...binding,
+        requestedCapabilities: binding.requestedCapabilities.filter(
+          (capability) => capability !== 'agent.spawn',
+        ),
+        definitions,
+      };
+    }
+    if (commands) return binding;
+    return {
+      ...binding,
+      requestedCapabilities: binding.requestedCapabilities.filter(
+        (capability) => capability !== 'command.exec' && capability !== 'command.network',
+      ),
+      definitions: {
+        ...binding.definitions,
+        tools: binding.definitions.tools.filter((tool) => tool.executionKind !== 'COMMAND'),
+      },
+    };
+  }
+
+  /** The AgentRun that dispatched a node (a task or a question), from the `DELEGATE` edge to it. */
+  #askerOf(graph: ProjectedGraph, nodeId: string): ActiveAgent | undefined {
+    const call = callOf(graph, nodeId);
+    return [...this.#agents.values()].find((each) => each.nodeId === call?.callerNodeId);
+  }
+
+  /**
+   * The user answered a question of `ask_user`: the node it stands for is done, and the graph then
+   * wakes the AgentRun that asked, which reads the answer as the result of its call (M2Design 3.3).
+   */
+  /**
+   * Asks for a checkpoint (Orchestration 7.2, 7.3): the request is the cut; the Kernel answers
+   * with `CheckpointTaken` once its snapshot is taken, or given up.
+   */
+  async #requestCheckpoint(
+    workflowRunId: string,
+    kind: 'ROOT_SPAWN' | 'HUMAN_ANSWER' | 'TEMPLATE',
+    label: string,
+    triggerToolCallId?: string,
+  ): Promise<void> {
+    const checkpointId = newId('ckp');
+    const shown = label.length <= 200 ? label : `${label.slice(0, 199)}…`;
+    await this.#append([
+      {
+        type: 'CHECKPOINT_REQUESTED',
+        workflowRunId,
+        checkpointId,
+        kind,
+        label: shown,
+        ...(triggerToolCallId === undefined ? {} : { triggerToolCallId }),
+      },
+    ]);
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.takeCheckpoint(
+      { requestId: newId('req'), sessionId, workflowRunId, checkpointId, kind, label: shown },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`takeCheckpoint refused: ${response.reasonCode}`);
+  }
+
+  /**
+   * `/undo` (Orchestration 7.5, D8): the workspace went back to the checkpoint of an input, which is
+   * taken back with everything after it. The run waits for input, so nothing is at work: the record
+   * of the way back is all there is to write. A Session written before input checkpoints existed
+   * names the input by its Turn.
+   */
+  async #onUndone(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'CheckpointRolledBack' }>,
+  ): Promise<void> {
+    const suffix = event.checkpointId.slice(event.checkpointId.indexOf('_') + 1);
+    // Work without an input of the user (a follow-up after a background command) is undone the same.
+    const followUp = this.#records.find(
+      (record) => record.type === 'MISSION_WOKEN' && record.checkpointId === event.checkpointId,
+    );
+    const input =
+      followUp ??
+      this.#records.find(
+        (record): record is Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }> =>
+          record.type === 'HUMAN_ANSWERED' &&
+          record.kind === 'prompt' &&
+          (record.checkpointId === event.checkpointId ||
+            (record.checkpointId === undefined && record.turnId === `trn_${suffix}`)),
+      );
+    if (input === undefined) return;
+    await this.#append([
+      {
+        type: 'ROLLED_BACK',
+        workflowRunId,
+        checkpointId: event.checkpointId,
+        label: event.label,
+        cutSeq: input.seq,
+        fromSeq: input.seq,
+        cancelledMissionIds: [],
+        files: event.files.length,
+        undo: true,
+        ...(event.forced === true ? { forced: true } : {}),
+        ...(event.externalFiles === undefined ? {} : { externalFiles: event.externalFiles }),
+        ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
+      },
+    ]);
+    const rolled = this.#records.at(-1);
+    if (rolled !== undefined)
+      await this.#append(
+        revokedCompactions(this.#records, workflowRunId, { from: input.seq, to: rolled.seq }),
+      );
+  }
+
+  /**
+   * `/rewind #N` (Orchestration 7.5): the files are back at the checkpoint, and so is the work. The
+   * graph and the tasks are read as they were at the cut, what came after it did not happen. The
+   * tasks started after the cut are gone: their segments end, their background commands stop, their
+   * shares go back. Every task below the root that was there at the cut is paused as it was: it
+   * sleeps until its parent sends it a message (or stops it); a call it had not got the result of is
+   * answered as not done. A question open at the cut is asked again. The root starts a new segment
+   * that reads where the work is back to and which tasks wait for it; it sleeps on again instead when
+   * its own question is asked again. The run stays paused until the user continues; the budget
+   * spent is not returned.
+   */
+  async #onRolledBack(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'CheckpointRolledBack' }>,
+  ): Promise<void> {
+    if (event.undo === true) return this.#onUndone(workflowRunId, event);
+    await this.#rewind(workflowRunId, {
+      checkpointId: event.checkpointId,
+      files: event.files.length,
+      ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
+      resumed: false,
+    });
+  }
+
+  /**
+   * The work goes back to a checkpoint: after `/rewind` in this process, or when a run the last
+   * process left goes on (`resumed`, Orchestration 7.6), where the Kernel is new and holds nothing of
+   * the run yet, so there is nothing in it to stop, close or open again.
+   */
+  async #rewind(
+    workflowRunId: string,
+    event: {
+      readonly checkpointId: string;
+      readonly files: number;
+      readonly backupSnapshot?: string;
+      readonly resumed: boolean;
+    },
+  ): Promise<void> {
+    const { resumed } = event;
+    // Where the cut is: a checkpoint inside the run, or the input the work started from.
+    const requested = this.#records.find(
+      (record): record is Extract<SessionLogRecord, { type: 'CHECKPOINT_REQUESTED' }> =>
+        record.type === 'CHECKPOINT_REQUESTED' && record.checkpointId === event.checkpointId,
+    );
+    const input =
+      requested !== undefined
+        ? undefined
+        : this.#records.find(
+            (record): record is Extract<SessionLogRecord, { type: 'HUMAN_ANSWERED' }> =>
+              record.type === 'HUMAN_ANSWERED' &&
+              record.kind === 'prompt' &&
+              record.checkpointId === event.checkpointId,
+          );
+    const cutSeq = requested?.seq ?? input?.seq;
+    if (cutSeq === undefined) return;
+    const trigger =
+      requested?.triggerToolCallId === undefined
+        ? undefined
+        : this.#records.find(
+            (record) =>
+              record.type === 'MODEL_TURN' &&
+              record.toolCalls.some((call) => call.toolCallId === requested.triggerToolCallId),
+          );
+    // An input stays: what is taken back is the work after it.
+    const fromSeq = trigger?.seq ?? (input === undefined ? cutSeq : cutSeq + 1);
+    const before = projectMissions(this.#records);
+    const atCut = projectMissions(this.#records.filter((record) => record.seq < fromSeq));
+    const inRun = (graphNodes: ReadonlyMap<string, GraphNodeRecord>, mission: MissionView) =>
+      mission.nodeIds.some((nodeId) => graphNodes.has(nodeId));
+    const nowGraph = projectGraph(this.#records, workflowRunId);
+    const gone = [...before.values()].filter(
+      (mission) => inRun(nowGraph.nodes, mission) && !atCut.has(mission.missionId),
+    );
+    const goneIds = new Set(gone.map((mission) => mission.missionId));
+    await this.#append([
+      {
+        type: 'ROLLED_BACK',
+        workflowRunId,
+        checkpointId: event.checkpointId,
+        label: requested?.label ?? 'user input',
+        cutSeq,
+        fromSeq,
+        cancelledMissionIds: [...goneIds],
+        files: event.files,
+        ...(resumed ? { resumed: true } : {}),
+        ...(event.backupSnapshot === undefined ? {} : { backupSnapshot: event.backupSnapshot }),
+      },
+    ]);
+    const rolled = this.#records.at(-1);
+    // A summary of work that was taken back stands for nothing any more (Module/Workflow 8.4).
+    if (rolled !== undefined)
+      await this.#append(
+        revokedCompactions(this.#records, workflowRunId, { from: fromSeq, to: rolled.seq }),
+      );
+    if (!resumed) await this.#releaseInKernel(workflowRunId, before, gone, goneIds, fromSeq);
+    await this.#pauseAtCut(workflowRunId, fromSeq, resumed ? 'RESUMED' : 'ROLLED_BACK');
+    await this.#advance(workflowRunId);
+  }
+
+  /**
+   * After a rewind in this process, the Kernel lets go of what came after the cut: the segments at
+   * work stop, the tasks started after it are closed and their shares go back, every background
+   * command stops, and a task that ended after the cut is opened again.
+   */
+  async #releaseInKernel(
+    workflowRunId: string,
+    before: ReadonlyMap<string, MissionView>,
+    gone: readonly MissionView[],
+    goneIds: ReadonlySet<string>,
+    fromSeq: number,
+  ): Promise<void> {
+    const rolled = this.#records.at(-1);
+    // Every segment at work stops now. One of a task that was there at the cut goes to sleep (its
+    // task goes on); one of a task started after it ends with its task.
+    for (const active of [...this.#agents.values()]) {
+      const root = before.get(active.missionId)?.parentId === undefined;
+      if (!root) await this.#haltAgentRun(workflowRunId, active.state.agentRunId);
+      await this.#endAgentRun(
+        workflowRunId,
+        active,
+        goneIds.has(active.missionId) ? 'FAILED' : 'YIELDED',
+        !goneIds.has(active.missionId),
+      );
+    }
+    // The tasks started after the cut: whatever of them still sleeps is closed, and the shares of
+    // the calls that started them go back.
+    for (const mission of gone) await this.#closeMission(workflowRunId, mission.missionId);
+    const lateDelegations = new Set(
+      this.#records.flatMap((record) =>
+        record.type === 'GRAPH_EXTENDED' && record.seq >= fromSeq && record.seq < (rolled?.seq ?? 0)
+          ? record.edges.flatMap((edge) =>
+              edge.kind === 'DELEGATE' && edge.call?.delegationId !== undefined
+                ? [edge.call.delegationId]
+                : [],
+            )
+          : [],
+      ),
+    );
+    const sessionId = this.#sessionIdOrThrow();
+    for (const delegationId of lateDelegations) {
+      if (this.#released.has(delegationId)) continue;
+      this.#released.add(delegationId);
+      await this.#deps.gateway.releaseDelegation(
+        { requestId: newId('req'), sessionId, workflowRunId, delegationId },
+        contextOf(sessionId, workflowRunId),
+      );
+    }
+    // A background command does not go back: every one still running is stopped.
+    await this.#stopJobsOf(workflowRunId, [...before.keys()]);
+    // A task that ended after the cut is open again in the Kernel, with its share and roots.
+    const cutGraph = projectGraph(this.#records, workflowRunId);
+    const atCut = projectMissions(this.#records);
+    for (const mission of atCut.values()) {
+      if (mission.parentId === undefined || mission.ended !== undefined) continue;
+      if (!mission.nodeIds.some((nodeId) => cutGraph.nodes.has(nodeId))) continue;
+      if (before.get(mission.missionId)?.ended === undefined) continue;
+      const first = cutGraph.nodes.get(mission.nodeIds[0] ?? '');
+      await this.#restoreMission(workflowRunId, mission.missionId, first?.spawn?.tokens);
+    }
+  }
+
+  /**
+   * Puts every task as it was at the cut (Orchestration 7.5, step 6): its segment that ran then
+   * ends as asleep, a call it had not got the result of is answered as not done; a question open
+   * then is asked again and its task sleeps until the answer; every other task below the root is
+   * paused until its parent lets it go on; the root starts a new segment that reads it.
+   */
+  async #pauseAtCut(
+    workflowRunId: string,
+    fromSeq: number,
+    cause: 'ROLLED_BACK' | 'RESUMED',
+  ): Promise<void> {
+    const graph = projectGraph(this.#records, workflowRunId);
+    const missions = projectMissions(this.#records);
+    const before = this.#records.filter((record) => record.seq < fromSeq);
+    const runOf = new Map(
+      before.flatMap((record) =>
+        record.type === 'AGENT_RUN_REGISTERED' ? [[record.nodeId, record.agentRunId] as const] : [],
+      ),
+    );
+    // Questions open at the cut are asked again.
+    const askedAgain = new Map<string, string>();
+    for (const node of graph.nodes.values()) {
+      if (node.kind !== 'HUMAN' || node.ask === undefined) continue;
+      const status = graph.view.get(node.nodeId)?.status;
+      if (status === undefined || isTerminal(status)) continue;
+      const call = graph.graph.edges.find(
+        (edge) => edge.kind === 'DELEGATE' && edge.to === node.nodeId,
+      );
+      if (call?.call === undefined) continue;
+      await this.#withdrawQuestion(workflowRunId, node.nodeId);
+      const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+      const again = askRevision(
+        workflowRunId,
+        revision,
+        { nodeId: call.from, toolCallId: call.call.toolCallId },
+        node.ask,
+      );
+      await this.#extend(workflowRunId, revision, 'ASK', again);
+      const asked = again.nodes[0];
+      if (asked !== undefined) askedAgain.set(call.from, asked.nodeId);
+    }
+    let rootNode: GraphNodeRecord | undefined;
+    let rootSleeps = false;
+    for (const mission of missions.values()) {
+      if (mission.ended !== undefined) continue;
+      const last = mission.nodeIds.at(-1);
+      const node = last === undefined ? undefined : graph.nodes.get(last);
+      if (node === undefined) continue;
+      const status = graph.view.get(node.nodeId)?.status;
+      if (status === undefined || (isTerminal(status) && status !== 'YIELDED')) continue;
+      const agentRunId = runOf.get(node.nodeId);
+      if (agentRunId === undefined) continue;
+      if (status !== 'YIELDED') {
+        // It ran at the cut: what it asked for and did not get comes back as not done.
+        await this.#append(unansweredAtCut(before, agentRunId, workflowRunId));
+        await this.#endNode(workflowRunId, node.nodeId, 'YIELDED');
+      }
+      const question = askedAgain.get(node.nodeId);
+      const root = mission.parentId === undefined;
+      if (root && question === undefined) {
+        rootNode = node;
+        continue;
+      }
+      if (root) rootSleeps = true;
+      await this.#append([
+        {
+          type: 'SEGMENT_YIELDED',
+          workflowRunId,
+          nodeId: node.nodeId,
+          missionId: mission.missionId,
+          agentRunId,
+          until:
+            question === undefined ? [{ kind: 'parent' }] : [{ kind: 'human', nodeId: question }],
+          timeoutSeconds: ASK_SLEEP_SECONDS,
+        },
+      ]);
+    }
+    if (rootNode !== undefined && !rootSleeps) {
+      const refreshed = projectGraph(this.#records, workflowRunId).nodes.get(rootNode.nodeId);
+      if (refreshed !== undefined)
+        await this.#continueMission(workflowRunId, refreshed, [{ kind: cause }]);
+    }
+  }
+
+  async #onAnswer(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'HumanAnswered' }> & {
+      readonly kind: 'ask' | 'confirm' | 'review';
+    },
+  ): Promise<void> {
+    // What the user answered changes the course of the work (Orchestration 7.2).
+    if (this.#mode === 'ORCHESTRATION')
+      await this.#requestCheckpoint(
+        workflowRunId,
+        'HUMAN_ANSWER',
+        `after the answer to a question`,
+      );
+    const requested = this.#records.find(
+      (record) =>
+        record.type === 'HUMAN_REQUESTED' &&
+        record.workflowRunId === workflowRunId &&
+        'humanRequestId' in event &&
+        record.humanRequestId === event.humanRequestId,
+    );
+    if (requested?.type !== 'HUMAN_REQUESTED') throw new Error('an answer names no question');
+    const projected = projectGraph(this.#records, workflowRunId);
+    const status = projected.view.get(requested.nodeId)?.status;
+    if (status === undefined || isTerminal(status) || this.#inputCheckpointId === undefined) return;
+    const asker = this.#askerOf(projected, requested.nodeId);
+    await this.#append([
+      {
+        type: 'HUMAN_ANSWERED',
+        workflowRunId,
+        nodeId: requested.nodeId,
+        humanRequestId: requested.humanRequestId,
+        kind: event.kind,
+        origin: 'requested',
+        inputId: event.inputId,
+        contentRef: event.contentRef,
+        ...(asker === undefined ? {} : { attachedAgentRunId: asker.state.agentRunId }),
+      },
+      {
+        type: 'NODE_ENDED',
+        workflowRunId,
+        nodeId: requested.nodeId,
+        status: 'SUCCEEDED',
+        resultRef: event.contentRef,
+      },
+    ]);
+    await this.#advance(workflowRunId);
+  }
+
+  /**
+   * `ask_user` (M2Design 3.4): what the question points at is checked, and then the graph grows by
+   * the HUMAN node that asks it. The caller waits like it waits for tasks: its node is WAITING, and
+   * its AgentRun has a call whose result has not come yet.
+   */
+  async #onAsk(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ASK' }>,
+  ): Promise<void> {
+    const { toolCallId } = ending.source;
+    const args = ending.arguments as AskUserArgs;
+    const problem = askProblem(args, readableArtifacts(this.#records, active.state.agentRunId));
+    if (problem !== undefined) {
+      await this.#apply(
+        workflowRunId,
+        answerDelegatedCall(
+          active.state,
+          toolCallId,
+          {
+            refused: true,
+            spawn: false,
+            records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, problem)],
+          },
+          this.#context(active.scope),
+          this.#deps.config,
+        ),
+      );
+      return;
+    }
+    const revisionNumber = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+    const revision = askRevision(
+      workflowRunId,
+      revisionNumber,
+      { nodeId: active.nodeId, toolCallId },
+      {
+        kind: args.kind,
+        question: args.question,
+        ...(args.fields === undefined ? {} : { fields: args.fields }),
+        ...(args.reviewArtifact === undefined ? {} : { reviewRef: args.reviewArtifact }),
+      },
+    );
+    await this.#extend(workflowRunId, revisionNumber, 'ASK', revision);
+    // The question goes out while the AgentRun that asks it is still there to be named.
+    await this.#advance(workflowRunId);
+    const human = revision.nodes[0];
+    if (
+      this.#mode === 'ORCHESTRATION' &&
+      human !== undefined &&
+      this.#agents.has(active.state.agentRunId)
+    )
+      await this.#sleepUntilAnswered(workflowRunId, active, toolCallId, human.nodeId, ending);
+  }
+
+  /**
+   * `ask_user` in a long task is a sleep (Orchestration 4.1, 4.2): the segment ends, the question
+   * stays with the user, and only its answer wakes the task, which reads it in its next segment.
+   * No timer is set: the task waits as long as the user takes.
+   */
+  async #sleepUntilAnswered(
+    workflowRunId: string,
+    active: ActiveAgent,
+    toolCallId: string,
+    humanNodeId: string,
+    ending: Extract<AgentEnding, { kind: 'ASK' }>,
+  ): Promise<void> {
+    await this.#append([
+      answerRecord(
+        active.state,
+        'ASLEEP',
+        toolCallId,
+        'Your question is with the user. This segment ends here: you are woken with the answer, and nothing else wakes you before it.',
+      ),
+      {
+        type: 'SEGMENT_YIELDED',
+        workflowRunId,
+        nodeId: active.nodeId,
+        missionId: active.missionId,
+        agentRunId: active.state.agentRunId,
+        until: [{ kind: 'human', nodeId: humanNodeId }],
+        timeoutSeconds: ASK_SLEEP_SECONDS,
+        source: { modelTurnRequestId: ending.source.modelTurnRequestId, toolCallId },
+      },
+    ]);
+    await this.#endAgentRun(workflowRunId, active, 'YIELDED', true, true);
+    await this.#endNode(workflowRunId, active.nodeId, 'YIELDED');
+    await this.#advance(workflowRunId);
+  }
+
+  /**
+   * A note of the user slipped into a run that goes on (M2Design 4.5): a HUMAN(steer) node, made
+   * and ended at once, and the record that says whom it is for. The AgentRun sees it at its next
+   * assembly (history projection); nothing about its own state changes.
+   */
+  async #steer(
+    workflowRunId: string,
+    note: {
+      readonly inputId: string;
+      readonly contentRef: ArtifactRef;
+      readonly targetAgentRunId?: string;
+    },
+  ): Promise<void> {
+    const target = this.#steerTarget(note.targetAgentRunId);
+    const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+    const content = steerRevision(workflowRunId, revision);
+    await this.#extend(workflowRunId, revision, 'STEER', content);
+    const node = content.nodes[0];
+    if (node === undefined) throw new Error('a steer makes one node');
+    await this.#append([
+      {
+        type: 'HUMAN_ANSWERED',
+        workflowRunId,
+        nodeId: node.nodeId,
+        kind: 'steer',
+        origin: 'unrequested',
+        inputId: note.inputId,
+        contentRef: note.contentRef,
+        ...(target === undefined ? {} : { attachedAgentRunId: target.agentRunId }),
+        ...(target?.redirectedFrom === undefined ? {} : { redirectedFrom: target.redirectedFrom }),
+      },
+      { type: 'NODE_ENDED', workflowRunId, nodeId: node.nodeId, status: 'SUCCEEDED' },
+    ]);
+  }
+
+  /**
+   * Whom a note is for: the AgentRun it names, or main. One that has ended hands it to the
+   * AgentRun that started it, and so on up; with nobody left it waits for the next input.
+   */
+  #steerTarget(
+    requested: string | undefined,
+  ): { readonly agentRunId: string; readonly redirectedFrom?: string } | undefined {
+    if (requested === undefined) {
+      const standIn = this.#standInRun();
+      if (standIn !== undefined) return { agentRunId: standIn };
+      const main = [...this.#agents.values()].find((each) => each.task === undefined);
+      return main === undefined ? undefined : { agentRunId: main.state.agentRunId };
+    }
+    if (this.#agents.has(requested)) return { agentRunId: requested };
+    const parentOf = (agentRunId: string): string | undefined => {
+      const registered = this.#records.find(
+        (record) => record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === agentRunId,
+      );
+      return registered?.type === 'AGENT_RUN_REGISTERED' ? registered.parentAgentRunId : undefined;
+    };
+    for (let parent = parentOf(requested); parent !== undefined; parent = parentOf(parent))
+      if (this.#agents.has(parent)) return { agentRunId: parent, redirectedFrom: requested };
+    return undefined;
+  }
+
+  /** The user continued a paused run, perhaps with a note: the note first, then what was held. */
+  async #onResumed(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'RunResumed' }>,
+  ): Promise<void> {
+    await this.#append([
+      {
+        type: 'RUN_RESUMED',
+        workflowRunId,
+        ...(event.steer === undefined ? {} : { steerInputId: event.steer.inputId }),
+      },
+    ]);
+    if (event.steer !== undefined) await this.#steer(workflowRunId, event.steer);
+    for (const active of [...this.#agents.values()]) {
+      const current = this.#agents.get(active.state.agentRunId);
+      if (current === undefined) continue;
+      await this.#apply(
+        workflowRunId,
+        resumeAfterPause(current.state, this.#context(current.scope), this.#deps.config),
+      );
+    }
+  }
+
+  async #onHumanAnswered(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'HumanAnswered' }>,
+  ): Promise<void> {
+    if (event.kind === 'steer') return this.#steer(workflowRunId, event);
+    if (event.kind !== 'prompt') return this.#onAnswer(workflowRunId, event);
+    const { graph, view } = projectGraph(this.#records, workflowRunId);
+    const node =
+      event.origin === 'initial'
+        ? graph.nodes.find((candidate) => candidate.kind === 'HUMAN')
+        : graph.nodes.find(
+            (candidate) => asHumanRequestId(candidate.nodeId) === event.humanRequestId,
+          );
+    if (node === undefined) throw new Error('HumanAnswered names no HUMAN node');
+    if (view.get(node.nodeId)?.status === 'SUCCEEDED') return;
+    this.#inputCheckpointId = event.checkpointId;
+    await this.#append([
+      {
+        type: 'HUMAN_ANSWERED',
+        workflowRunId,
+        nodeId: node.nodeId,
+        kind: 'prompt',
+        origin: event.origin,
+        inputId: event.inputId,
+        contentRef: event.contentRef,
+        ...(event.origin === 'requested' ? { humanRequestId: event.humanRequestId } : {}),
+        checkpointId: event.checkpointId,
+        ...(event.delegateTo === undefined ? {} : { delegateTo: event.delegateTo }),
+      },
+      {
+        type: 'NODE_ENDED',
+        workflowRunId,
+        nodeId: node.nodeId,
+        status: 'SUCCEEDED',
+      },
+    ]);
+    if (event.origin === 'initial') await this.#deps.store.setTitle(event.contentRef);
+    this.#delegateNext = event.delegateTo;
+    await this.#advance(workflowRunId);
+  }
+
+  /**
+   * Starts what is ready. A node that ends while this runs asks for another pass instead of
+   * starting a second one inside the first, which would start the same nodes twice.
+   */
+  async #advance(workflowRunId: string): Promise<void> {
+    if (this.#advancing) {
+      this.#advanceAgain = true;
+      return;
+    }
+    this.#advancing = true;
+    try {
+      do {
+        this.#advanceAgain = false;
+        await this.#advanceOnce(workflowRunId);
+      } while (this.#advanceAgain);
+    } finally {
+      this.#advancing = false;
+    }
+  }
+
+  async #advanceOnce(workflowRunId: string): Promise<void> {
+    await this.#settleMissions(workflowRunId);
+    await this.#releaseFinishedDelegations(workflowRunId);
+    if (this.#mode === 'CHAT') {
+      const projected = projectGraph(this.#records, workflowRunId);
+      const growth = chatGrowthPoint(projected);
+      if (growth !== undefined) {
+        const revision = projected.lastRevision + 1;
+        await this.#extend(
+          workflowRunId,
+          revision,
+          'CHAT_GROWTH',
+          chatGrowthRevision(
+            workflowRunId,
+            revision,
+            growth,
+            this.#mainRef(),
+            rootMissionId(this.#sessionIdOrThrow(), CHAT_TEMPLATE),
+          ),
+        );
+      }
+    }
+    const projected = projectGraph(this.#records, workflowRunId);
+    const { skipped, ready, wake: woken } = advanceGraph(projected.graph, projected.view);
+    await this.#append(
+      skipped.map(({ node, reason }) => ({
+        type: 'NODE_ENDED',
+        workflowRunId,
+        nodeId: node.nodeId,
+        status: 'SKIPPED',
+        skipReason: reason,
+      })),
+    );
+    for (const node of ready) {
+      const record = projected.nodes.get(node.nodeId);
+      if (record === undefined) continue;
+      if (this.#isHeld(node.nodeId)) continue;
+      await this.#append([
+        {
+          type: 'NODE_STARTED',
+          workflowRunId,
+          nodeId: node.nodeId,
+          path: record.path,
+        },
+      ]);
+      if (node.kind === 'HUMAN') {
+        await this.#requestHuman(workflowRunId, record);
+      } else {
+        await this.#startAgent(workflowRunId, record);
+      }
+    }
+    await this.#wake(workflowRunId, woken);
+    if (this.#advanceAgain) return;
+    if (await this.#wakeMissions(workflowRunId)) {
+      this.#advanceAgain = true;
+      return;
+    }
+    // A task that sleeps still has work ahead: it waits for a timer, a job or a message that will
+    // come. When none can come, the stall handling above wakes or closes it; the run never ends
+    // as finished around it, and never ends its root before the root has delivered.
+    if (
+      this.#mode === 'ORCHESTRATION' &&
+      ready.length === 0 &&
+      this.#agents.size === 0 &&
+      this.#sleeping(workflowRunId).length === 0
+    )
+      await this.#closeFinishedRun(workflowRunId);
+  }
+
+  /** A template run ends when its graph has nothing left to start. */
+  async #closeFinishedRun(workflowRunId: string): Promise<void> {
+    // The root task ends with the run it is the owner of (Orchestration 3.3).
+    const roots = [...projectMissions(this.#records).values()].filter(
+      (mission) =>
+        mission.parentId === undefined &&
+        mission.ended === undefined &&
+        mission.nodeIds.some((nodeId) =>
+          projectGraph(this.#records, workflowRunId).nodes.has(nodeId),
+        ),
+    );
+    // A root whose last segment failed did not deliver, whatever the run ends as (a budget run
+    // still ends as BUDGET).
+    const projected = projectGraph(this.#records, workflowRunId);
+    const lastFailed = (mission: MissionView) => {
+      const last = mission.nodeIds.at(-1);
+      return last !== undefined && projected.view.get(last)?.status === 'FAILED';
+    };
+    await this.#append(
+      roots.map((mission) => ({
+        type: 'MISSION_ENDED' as const,
+        workflowRunId,
+        missionId: mission.missionId,
+        status:
+          this.#runFailure === undefined && !lastFailed(mission)
+            ? ('SUCCEEDED' as const)
+            : ('FAILED' as const),
+      })),
+    );
+    if (this.#runFailure !== undefined) await this.#closeFailed(workflowRunId, this.#runFailure);
+    else
+      await this.#close(workflowRunId, this.#overBudget ? 'BUDGET' : 'COMPLETED', this.#runResult);
+  }
+
+  /**
+   * A HUMAN node starts: open input (`prompt`), which needs the run to be still, or the question
+   * of an `ask_user` call, which only the AgentRun that asked waits for (M2Design 4.2).
+   */
+  async #requestHuman(workflowRunId: string, node: GraphNodeRecord): Promise<void> {
+    const { nodeId, ask } = node;
+    const humanRequestId = asHumanRequestId(nodeId);
+    const asker =
+      ask === undefined
+        ? undefined
+        : this.#askerOf(projectGraph(this.#records, workflowRunId), nodeId);
+    // Asked again after a rewind (7.5): the AgentRun that asked first has ended, its task sleeps on it.
+    const firstAsker =
+      ask === undefined || asker !== undefined
+        ? undefined
+        : this.#firstAskerOf(workflowRunId, nodeId);
+    if (ask !== undefined && asker === undefined && firstAsker === undefined)
+      throw new Error('a question has no AgentRun that asked it');
+    const attachedAgentRunId = asker?.state.agentRunId ?? firstAsker;
+    const question =
+      ask === undefined || attachedAgentRunId === undefined
+        ? ({ kind: 'prompt' } as const)
+        : {
+            kind: ask.kind,
+            attachedAgentRunId,
+            ...(asker === undefined ? { askedAgain: true } : {}),
+            question: ask.question,
+            ...(ask.fields === undefined ? {} : { fields: ask.fields }),
+            ...(ask.reviewRef === undefined ? {} : { reviewRef: ask.reviewRef }),
+          };
+    await this.#append([
+      { type: 'HUMAN_REQUESTED', workflowRunId, humanRequestId, nodeId, ...question },
+    ]);
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.requestHuman(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        humanRequestId,
+        nodeId,
+        ...question,
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`requestHuman refused: ${response.reasonCode}`);
+  }
+
+  /** The AgentRun of the segment whose call a question answers (its DELEGATE edge), if any. */
+  #firstAskerOf(workflowRunId: string, nodeId: string): string | undefined {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const caller = projected.graph.edges.find(
+      (edge) => edge.kind === 'DELEGATE' && edge.to === nodeId,
+    )?.from;
+    const registered = this.#records.find(
+      (record) => record.type === 'AGENT_RUN_REGISTERED' && record.nodeId === caller,
+    );
+    return registered?.type === 'AGENT_RUN_REGISTERED' ? registered.agentRunId : undefined;
+  }
+
+  #context(scope: ProjectionScope): AgentContext {
+    return {
+      // What a transition has not appended yet still counts: it may be the write this one follows.
+      toolInput: (kind, args, notYetInLog = []) =>
+        toolInputOf(
+          kind,
+          args,
+          [...this.#records, ...(notYetInLog as SessionLogRecord[])],
+          scope,
+          this.#repositoryRoot,
+        ),
+      owedReplies: (agentRunId, answered) =>
+        scope.missionId === undefined
+          ? undefined
+          : replyRefusal(owedReplies(this.#records, scope.missionId, { agentRunId }), answered),
+      // An answer written as text ends the task when nothing is left to wait for (D97, D112): the
+      // root's as its reply, a subtask's as its result, for an Agent whose end allows it. Only when
+      // nothing is left that it could be early for: no subtask of it runs or waits to start, no
+      // request to it is unanswered, and none of its background commands still runs. Otherwise it
+      // is sent back as before, and the task goes on.
+      mayReplyNow: (agentRunId) => {
+        if (scope.missionId === undefined) return false;
+        const missions = projectMissions(this.#records);
+        return (
+          this.#runningChildren(scope.missionId).length === 0 &&
+          owedReplies(this.#records, scope.missionId, { agentRunId }).length === 0 &&
+          !jobsHeldBy(this.#records, scope.missionId, missions).some((job) => job.running)
+        );
+      },
+      // A subtask asks its parent for more rounds (D91); a root has no one to ask.
+      asksForRounds: () =>
+        scope.missionId !== undefined &&
+        projectMissions(this.#records).get(scope.missionId)?.parentId !== undefined,
+      assembleInput: (status, final) => {
+        // In a folder that is no git repository, git history cannot be read: the tool is not
+        // offered, rather than refused on every call (each worker tried it once before). It is
+        // known when the Session starts and never changes within it, so the cache holds.
+        const withdrawn = this.#deps.runtime().git === false ? this.#gitTools() : [];
+        // What still runs in the background is said at every call (D65): the task may stop it.
+        const now = (this.#deps.now ?? (() => new Date()))().getTime();
+        const jobs =
+          scope.missionId === undefined
+            ? []
+            : jobsHeldBy(this.#records, scope.missionId, projectMissions(this.#records))
+                .filter((job) => job.running)
+                .map((job) => ({
+                  name: job.name,
+                  command: job.command.replace(/\s+/gu, ' ').slice(0, 120),
+                  seconds: Math.max(0, Math.round((now - Date.parse(job.startedAt)) / 1000)),
+                  ...(job.from === undefined ? {} : { from: job.from }),
+                }))
+                .slice(0, 16);
+        // Once every subtask it started has ended, the task is told so at every call (D70).
+        const missions = scope.missionId === undefined ? undefined : projectMissions(this.#records);
+        const children =
+          missions === undefined
+            ? []
+            : [...missions.values()].filter((mission) => mission.parentId === scope.missionId);
+        const partsBack =
+          children.length > 0 && children.every((child) => child.ended !== undefined);
+        // How long the task has been on its own since then: a model does not feel the time (D80).
+        const childIds = new Set(children.map((child) => child.missionId));
+        const lastEnded = partsBack
+          ? Math.max(
+              ...this.#records.flatMap((record) =>
+                record.type === 'MISSION_ENDED' && childIds.has(record.missionId)
+                  ? [Date.parse(record.at)]
+                  : [],
+              ),
+            )
+          : Number.NaN;
+        const partsBackMinutes = Math.floor((now - lastEnded) / 60_000);
+        const commandMinutes =
+          scope.missionId === undefined
+            ? undefined
+            : commandTimeOf(this.#records, scope.missionId, now);
+        // A task whose siblings have all ended holds up its caller alone (D72).
+        const parentId =
+          scope.missionId === undefined ? undefined : missions?.get(scope.missionId)?.parentId;
+        const siblings =
+          missions === undefined || parentId === undefined
+            ? []
+            : [...missions.values()].filter(
+                (mission) => mission.parentId === parentId && mission.missionId !== scope.missionId,
+              );
+        const lastRunning =
+          siblings.length > 0 && siblings.every((sibling) => sibling.ended !== undefined);
+        return {
+          final,
+          ...(withdrawn.length === 0 ? {} : { withdrawnTools: [...new Set(withdrawn)] }),
+          history: [...projectHistory(this.#records, scope, { final })],
+          status: {
+            ...status,
+            ...(jobs.length === 0 ? {} : { jobs }),
+            ...(partsBack ? { partsBack: true as const } : {}),
+            ...(partsBack && partsBackMinutes >= 1 ? { partsBackMinutes } : {}),
+            ...(lastRunning ? { lastRunning: true as const } : {}),
+            ...(commandMinutes === undefined ? {} : { commandMinutes }),
+            ...(missions !== undefined && children.length === 0
+              ? { noSubtasksYet: true as const }
+              : {}),
+          },
+        };
+      },
+    };
+  }
+
+  /** The tools that read git history, by the name the models know them by. */
+  #gitTools(): readonly string[] {
+    return [
+      ...new Set(
+        [...this.#deps.agents.values()].flatMap((binding) =>
+          binding.definitions.tools
+            .filter((tool) => tool.executionKind === 'GIT_INSPECT')
+            .map((tool) => tool.modelName),
+        ),
+      ),
+    ];
+  }
+
+  /** Who dispatched a task, from the `DELEGATE` edge that leads to it; undefined for any other node. */
+  #dispatchOf(
+    graph: ProjectedGraph,
+    node: GraphNodeRecord,
+  ): { parentAgentRunId?: string; delegationId: string } | undefined {
+    if (node.spawn === undefined) return undefined;
+    const call = callOf(graph, node.nodeId);
+    if (call?.delegationId === undefined)
+      throw new Error(`the task ${node.name} was not dispatched by run_subagents`);
+    // The caller may have gone to sleep since: its task, not its AgentRun, stands behind the task.
+    const caller = [...this.#agents.values()].find((each) => each.nodeId === call.callerNodeId);
+    return {
+      ...(caller === undefined ? {} : { parentAgentRunId: caller.state.agentRunId }),
+      delegationId: call.delegationId,
+    };
+  }
+
+  /** The tool call a unit was submitted for, by its request. */
+  #toolCallOf(requestId: string): string | undefined {
+    for (let index = this.#records.length - 1; index >= 0; index -= 1) {
+      const record = this.#records[index];
+      if (record?.type === 'UNIT_SUBMITTED' && record.requestId === requestId)
+        return record.inputSource.kind === 'TOOL_CALL' ? record.inputSource.toolCallId : undefined;
+    }
+    return undefined;
+  }
+
+  /** The node a task was started by: itself, or the first segment of its task. */
+  #taskNodeOf(workflowRunId: string, node: GraphNodeRecord): GraphNodeRecord | undefined {
+    if (node.spawn !== undefined) return node;
+    const missionId = node.mission?.id;
+    if (missionId === undefined) return undefined;
+    const first = projectMissions(this.#records).get(missionId)?.nodeIds[0];
+    const found =
+      first === undefined ? undefined : projectGraph(this.#records, workflowRunId).nodes.get(first);
+    return found?.spawn === undefined ? undefined : found;
+  }
+
+  /**
+   * What the user asked with `/<tool>` (D114), taken once by the segment of chat the input opens:
+   * a delegation tool of that Agent by that name, with two retries; nothing when it has none.
+   */
+  #requiredDelegation(definitions: AgentDefinitions): AgentState['required'] {
+    const name = this.#delegateNext;
+    this.#delegateNext = undefined;
+    if (name === undefined) return undefined;
+    const tool = definitions.delegateTools?.find((each) => each.toolName === name);
+    return tool === undefined ? undefined : { toolName: tool.toolName, retries: REQUIRED_RETRIES };
+  }
+
+  async #startAgent(workflowRunId: string, node: GraphNodeRecord): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    if (this.#inputCheckpointId === undefined)
+      throw new Error('an AgentRun needs the work of an input of the user');
+    if (node.agentRef === undefined) throw new Error('an AGENT node names no Agent');
+    const nodeId = node.nodeId;
+    const agentId = node.agentRef.id;
+    const { spawn } = node;
+    const agentRunId = this.#deps.newAgentRunId?.() ?? newId('agr');
+    const graph = projectGraph(this.#records, workflowRunId);
+    const missionId = node.mission?.id ?? agentRunId;
+    // Below the deepest level a task does not spawn (Orchestration 3.6).
+    const depth = projectMissions(this.#records).get(missionId)?.depth ?? 0;
+    // A later segment of a spawned task works within what its first segment was given.
+    const taskNode = this.#taskNodeOf(workflowRunId, node);
+    // A task that inherits is asked with the very prompt and tools of the task it comes from, or
+    // the provider's cache of that context is lost (D35); what it may not do is refused instead.
+    // It comes from a task that was started by a call, or from the root of the work (D53).
+    const segments =
+      taskNode?.spawn?.inherits === undefined
+        ? []
+        : [...graph.nodes.values()].filter(
+            (each) => each.mission?.id === taskNode.spawn?.inherits?.missionId,
+          );
+    const origin = segments.find((each) => each.spawn !== undefined) ?? segments[0];
+    // A task of a phase runs as the Agent of the task it comes from; a task that asked for the
+    // context itself (D53) runs as its own Agent, with its own prompt, tools and budget, and pays
+    // for the inherited context once, on its first call.
+    // Only a task that is one Agent and runs as another (a phase's worker run as its lead) works
+    // in its caller's binding; a lead started by a lead is a lead of its own level (D58).
+    const from =
+      origin?.agentRef?.id === agentId && taskNode?.spawn?.inherits?.as !== agentId
+        ? origin
+        : undefined;
+    const own = this.#bindingAt(agentId, depth, taskNode?.spawn?.commands !== false);
+    const lent = this.#bindingAt(agentId, Math.max(0, depth - 1), from?.spawn?.commands !== false);
+    // It asks for no more than the Agent its phase names may do: the Kernel grants a task only
+    // what its caller lent, and the tools beyond that are refused when called.
+    const named = this.#deps.agents.get(taskNode?.spawn?.inherits?.as ?? '');
+    const binding: AgentBinding =
+      from === undefined
+        ? own
+        : {
+            ...lent,
+            requestedCapabilities: lent.requestedCapabilities.filter(
+              (capability) => named?.requestedCapabilities.includes(capability) ?? true,
+            ),
+          };
+    const place = placementOf(
+      taskNode ?? node,
+      {
+        label: binding.definitions.label,
+        effort: binding.effort,
+        writeRoots: binding.writeRoots,
+      },
+      spawn === undefined
+        ? taskNode === undefined
+          ? undefined
+          : { delegationId: '' }
+        : this.#dispatchOf(graph, node),
+    );
+    const link = spawn === undefined ? undefined : place.link;
+    // A task that inherits thinks as hard as the task it comes from: the provider keeps a cache
+    // per effort, so another effort would pay for the whole inherited context again (D35).
+    const inheritedFrom = taskNode?.spawn?.inherits?.agentRunId;
+    const effort =
+      (from === undefined
+        ? undefined
+        : this.#records.find(
+            (record): record is Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }> =>
+              record.type === 'AGENT_RUN_REGISTERED' && record.agentRunId === inheritedFrom,
+          )?.effort) ?? place.effort;
+    await this.#append([
+      {
+        type: 'AGENT_RUN_REGISTERED',
+        workflowRunId,
+        agentRunId,
+        nodeId,
+        agentRef: binding.ref,
+        effort: effort,
+        ...(link?.parentAgentRunId === undefined
+          ? {}
+          : { parentAgentRunId: link.parentAgentRunId }),
+        missionId,
+      },
+      {
+        type: 'REQUEST_CONTEXT',
+        workflowRunId,
+        agentRunId,
+        modelRef: binding.modelRef,
+        thinking: effort,
+        toolsDigest: binding.toolsDigest,
+        runtimeContext: { workingDirectory: this.#repositoryRoot, ...this.#deps.runtime() },
+      },
+    ]);
+    const registered = await this.#deps.gateway.registerAgentRun(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        agentRunId,
+        nodeId,
+        agentRef: binding.ref,
+        effort: effort,
+        workspaceViewId: 'main',
+        display: {
+          label: place.label,
+          ...(taskNode?.spawn?.standsIn === true ? { standsIn: true as const } : {}),
+        },
+        requestedCapabilities: [...binding.requestedCapabilities],
+        ...(from === undefined ? {} : { offeredCapabilities: [...lent.requestedCapabilities] }),
+        writeRoots: [...place.writeRoots],
+        ...(node.inputLimit === undefined ? {} : { inputLimit: node.inputLimit }),
+        ...(link === undefined ? {} : { delegationId: link.delegationId, taskName: link.taskName }),
+        ...(node.mission === undefined
+          ? {}
+          : {
+              mission: {
+                missionId: node.mission.id,
+                ...(node.mission.parentId === undefined
+                  ? {}
+                  : { parentMissionId: node.mission.parentId }),
+              },
+            }),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (registered.outcome === 'REJECTED') {
+      if (taskNode !== undefined) {
+        // The caller is told why this task did not start; tasks that wait for it are skipped.
+        await this.#endNode(
+          workflowRunId,
+          nodeId,
+          'FAILED',
+          resultOf({
+            status: 'FAILED',
+            notes: [`could not be started: ${registered.reasonCode}`],
+          }),
+        );
+        return this.#advance(workflowRunId);
+      }
+      await this.#endNode(workflowRunId, nodeId, 'FAILED');
+      // This process is short of memory (Core 5c): no model is asked. The run closes as
+      // interrupted, the user is told so, and the next message opens a new run instead of
+      // waiting on one that has nothing left to do.
+      if (registered.reasonCode === 'MEMORY_PRESSURE')
+        await this.#close(workflowRunId, 'INTERRUPTED');
+      return;
+    }
+    const task =
+      taskNode?.spawn !== undefined
+        ? taskScopeOf(this.#records, workflowRunId, graph, taskNode, taskNode.spawn)
+        : this.#mode === 'ORCHESTRATION'
+          ? stepScopeOf(node)
+          : undefined;
+    const scope: ProjectionScope =
+      this.#mode === 'CHAT' && taskNode === undefined && node.mission?.parentId === undefined
+        ? { kind: 'MAIN', ...(node.mission === undefined ? {} : { missionId }) }
+        : {
+            kind: 'NODE',
+            workflowRunId,
+            agentRunId,
+            ...(node.mission === undefined ? {} : { missionId }),
+            ...(task === undefined ? {} : { task }),
+          };
+    // The input the user sent with `/<tool>` (D114): the segment of chat it opens calls that tool.
+    const required =
+      scope.kind === 'MAIN' ? this.#requiredDelegation(binding.definitions) : undefined;
+    const transition = startAgent(
+      {
+        workflowRunId,
+        sessionId,
+        agentRunId,
+        definitions: binding.definitions,
+        ...(required === undefined ? {} : { required }),
+      },
+      this.#context(scope),
+    );
+    this.#agents.set(agentRunId, {
+      state: transition.state,
+      nodeId,
+      missionId,
+      messages: 0,
+      scope,
+      agentId,
+      changed: [],
+      unchecked: false,
+      completionAsked: false,
+      ...(taskNode?.spawn === undefined ? {} : { task: { name: taskNode.name } }),
+    });
+    await this.#apply(workflowRunId, transition);
+  }
+
+  async #apply(workflowRunId: string, transition: AgentTransition): Promise<void> {
+    const { agentRunId } = transition.state;
+    await this.#append(transition.records);
+    const current = this.#agents.get(agentRunId);
+    if (current !== undefined)
+      this.#agents.set(agentRunId, { ...current, state: transition.state });
+    if (transition.activity !== undefined) {
+      const sessionId = this.#sessionIdOrThrow();
+      await this.#deps.gateway.updateActivity(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          agentRunId,
+          todos: transition.activity,
+        },
+        contextOf(sessionId, workflowRunId),
+      );
+    }
+    // A segment told to stop or interrupted ends where its next round would begin (5.1, 5.2).
+    const halted = this.#agents.get(agentRunId);
+    // A segment that would go to sleep instead is halted just the same: stopped, it does not sleep
+    // on; interrupted, it starts again at once with the interrupt.
+    if (
+      halted?.stopAfterRound !== undefined &&
+      (transition.ending?.kind === 'SLEEP' ||
+        (transition.ending === undefined &&
+          (transition.submissions.some((each) => each.unitRef.id === 'context-assemble') ||
+            // Its cancelled work has all answered and nothing else is left to wait for.
+            (transition.submissions.length === 0 && transition.state.pending.size === 0))))
+    ) {
+      // The sleep it asked for is answered, so its history stays whole.
+      if (transition.ending?.kind === 'SLEEP')
+        await this.#append([
+          answerRecord(
+            transition.state,
+            'NOT_ASLEEP',
+            transition.ending.source.toolCallId,
+            halted.stopAfterRound.kind === 'STOP'
+              ? 'Not asleep: your parent stopped this task.'
+              : 'Not asleep: your parent interrupted you; its message follows.',
+          ),
+        ]);
+      this.#waitingSpawns.delete(agentRunId);
+      return this.#halt(workflowRunId, halted, halted.stopAfterRound);
+    }
+    const sessionId = this.#sessionIdOrThrow();
+    if (transition.submissions.length > 0) this.#assertNotWaiting(workflowRunId, current);
+    for (const planned of transition.submissions) {
+      const request = await this.#withCurrentHistory(workflowRunId, planned);
+      const response = await this.#deps.gateway.submitUnit(
+        request,
+        contextOf(sessionId, workflowRunId),
+      );
+      if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+        throw new Error(`submitUnit refused: ${response.reasonCode}`);
+    }
+    // A control call runs no Unit: the interface is told of it, while the AgentRun still runs.
+    for (const control of [
+      ...(transition.ending === undefined ? [] : [transition.ending]),
+      ...(transition.controls ?? []),
+    ])
+      await this.#showControl(workflowRunId, agentRunId, control);
+    if (transition.ending !== undefined)
+      await this.#onEnding(workflowRunId, agentRunId, transition.ending);
+    // Control calls that came with the round's Units: each is answered, one after another. A
+    // run_subagents waits for the Units: its checkpoint is a cut after them (Orchestration 7.3, D41).
+    for (const control of transition.controls ?? []) {
+      if (control.kind === 'SPAWN' && this.#roundBusy(agentRunId)) {
+        this.#waitingSpawns.set(agentRunId, [
+          ...(this.#waitingSpawns.get(agentRunId) ?? []),
+          control,
+        ]);
+        continue;
+      }
+      await this.#onEnding(workflowRunId, agentRunId, control);
+    }
+    await this.#startWaitingSpawns(workflowRunId, agentRunId);
+  }
+
+  /** The AgentRun still waits for a Unit of its round, or for a write held behind another. */
+  #roundBusy(agentRunId: string): boolean {
+    const state = this.#agents.get(agentRunId)?.state;
+    if (state === undefined) return false;
+    return (
+      [...state.pending.values()].some((pending) => pending.role !== 'DELEGATED') ||
+      state.held.length > 0 ||
+      state.deferred.length > 0
+    );
+  }
+
+  /** The run_subagents calls of a round whose ordinary calls are all back start now (D41). */
+  async #startWaitingSpawns(workflowRunId: string, agentRunId: string): Promise<void> {
+    const waiting = this.#waitingSpawns.get(agentRunId);
+    if (waiting === undefined || this.#roundBusy(agentRunId)) return;
+    this.#waitingSpawns.delete(agentRunId);
+    if (!this.#agents.has(agentRunId)) return;
+    for (const control of waiting) await this.#onEnding(workflowRunId, agentRunId, control);
+  }
+
+  /** Only for the interface: a line for a control call (send_message, sleep, run_subagents, ...). */
+  async #showControl(
+    workflowRunId: string,
+    agentRunId: string,
+    ending: AgentEnding,
+  ): Promise<void> {
+    const active = this.#agents.get(agentRunId);
+    const step = active === undefined ? undefined : controlLineOf(active.state.definitions, ending);
+    if (step === undefined) return;
+    const sessionId = this.#sessionIdOrThrow();
+    // What the interface misses is no reason to stop the work: a refusal is left as it is.
+    await this.#deps.gateway
+      .updateActivity(
+        { requestId: newId('req'), sessionId, workflowRunId, agentRunId, step },
+        contextOf(sessionId, workflowRunId),
+      )
+      .catch(() => undefined);
+  }
+
+  /**
+   * A node that waits for a call it dispatched submits no new Unit (M2Design 3.1): the AgentRun
+   * has nothing to do until the call comes back, so a submission now is a bug in the runner.
+   */
+  #assertNotWaiting(workflowRunId: string, active: ActiveAgent | undefined): void {
+    if (active === undefined) return;
+    const { view } = projectGraph(this.#records, workflowRunId);
+    if (view.get(active.nodeId)?.status === 'WAITING')
+      throw new Error(`the node of ${active.state.agentRunId} waits and submits no Unit`);
+  }
+
+  /**
+   * An assembly is planned before the records of its transition are appended, so its history is
+   * taken again from the log: every tool result must be there, whether the tool succeeded or not.
+   * `AGENTS.md` is read when the run first needs the repository, like any document, and joins
+   * the context after the tool results of that round, because a result must directly follow its
+   * call.
+   */
+  async #withCurrentHistory(
+    workflowRunId: string,
+    request: SubmitUnitRequest,
+  ): Promise<SubmitUnitRequest> {
+    const active = this.#agents.get(request.agentRunId);
+    if (active === undefined || !('history' in request.input)) return request;
+    if (this.#readRepository && this.#instructionsRun !== workflowRunId) {
+      this.#instructionsRun = workflowRunId;
+      const sessionId = this.#sessionIdOrThrow();
+      const file = await this.#deps.gateway.readProjectFile(
+        { requestId: newId('req'), sessionId, workflowRunId, path: 'AGENTS.md' },
+        contextOf(sessionId, workflowRunId),
+      );
+      if (file.outcome === 'ACCEPTED' && file.exists)
+        await this.#append([
+          {
+            type: 'PROJECT_FILE_LOADED',
+            workflowRunId,
+            path: 'AGENTS.md',
+            ref: file.ref,
+            sha256: file.sha256,
+            trusted: file.trusted,
+          },
+        ]);
+    }
+    await this.#loadNestedInstructions(workflowRunId, active.state.agentRunId, active.scope);
+    return {
+      ...request,
+      input: {
+        ...request.input,
+        history: [...projectHistory(this.#records, active.scope, { final: active.state.final })],
+      },
+    };
+  }
+
+  /** Done before the assembly, so the model sees them right after the read (M2Design 9.5). */
+  async #loadNestedInstructions(
+    workflowRunId: string,
+    agentRunId: string,
+    scope: ProjectionScope,
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    for (const { path, skip } of instructionsToLoad(
+      this.#records,
+      scope,
+      workflowRunId,
+      agentRunId,
+      this.#deps.config.maxNestedInstructions,
+    )) {
+      if (skip) {
+        await this.#append([
+          { type: 'PROJECT_FILE_LOADED', workflowRunId, path, agentRunId, skipped: 'LIMIT' },
+        ]);
+        continue;
+      }
+      const file = await this.#deps.gateway.readProjectFile(
+        { requestId: newId('req'), sessionId, workflowRunId, path },
+        contextOf(sessionId, workflowRunId),
+      );
+      if (file.outcome === 'ACCEPTED' && file.exists)
+        await this.#append([
+          {
+            type: 'PROJECT_FILE_LOADED',
+            workflowRunId,
+            path,
+            ref: file.ref,
+            sha256: file.sha256,
+            trusted: file.trusted,
+            agentRunId,
+          },
+        ]);
+    }
+  }
+
+  async #onUnitReport(
+    workflowRunId: string,
+    report: Extract<KernelToWorkflowEvent, { type: 'UnitReport' }>,
+  ): Promise<void> {
+    const found = this.#agents.get(report.agentRunId);
+    if (found === undefined) return;
+    // A read outside the workspace is not a read of the workspace: it must not lead to the
+    // workspace's project instructions being read, and to a question about it (Kernel/Core 5h).
+    const external = found.state.definitions.tools.some(
+      (tool) => tool.unit.external === true && tool.unit.ref.id === report.unitRef.id,
+    );
+    if (report.status === 'OK' && READS_REPOSITORY.has(report.executionKind) && !external)
+      this.#readRepository = true;
+    let active = found;
+    if (report.status === 'OK') {
+      const ranClean =
+        report.executionKind === 'COMMAND' &&
+        (report.output as { readonly exitCode?: number }).exitCode === 0;
+      const wrote = (WRITE_KINDS as readonly string[]).includes(report.executionKind);
+      const call = ranClean ? this.#toolCallOf(report.requestId) : undefined;
+      const lastCheck = call ?? (wrote ? undefined : found.lastCheck);
+      active = {
+        ...found,
+        changed: [...new Set([...found.changed, ...(report.changedFiles ?? [])])],
+        unchecked: ranClean ? false : found.unchecked || wrote,
+        lastCheck,
+      };
+      this.#agents.set(report.agentRunId, active);
+    }
+    await this.#noteJobStarted(workflowRunId, active, report);
+    const transition = receiveAgentReport(
+      active.state,
+      report,
+      this.#context(active.scope),
+      this.#deps.config,
+    );
+    await this.#apply(workflowRunId, transition);
+  }
+
+  /** A question that waited for the user ends with the run that was interrupted (M2Design 4.5). */
+  async #endQuestion(workflowRunId: string, nodeId: string): Promise<void> {
+    const { view } = projectGraph(this.#records, workflowRunId);
+    const status = view.get(nodeId)?.status;
+    if (this.#inputCheckpointId === undefined || status === undefined || isTerminal(status)) return;
+    await this.#endNode(workflowRunId, nodeId, 'INTERRUPTED');
+  }
+
+  async #endNode(
+    workflowRunId: string,
+    nodeId: string,
+    status: 'SUCCEEDED' | 'FAILED' | 'INTERRUPTED' | 'YIELDED',
+    result?: Record<string, unknown>,
+    resultRef?: ArtifactRef,
+  ): Promise<void> {
+    await this.#append([
+      {
+        type: 'NODE_ENDED',
+        workflowRunId,
+        nodeId,
+        status,
+        ...(result === undefined ? {} : { result }),
+        ...(resultRef === undefined ? {} : { resultRef }),
+      },
+    ]);
+  }
+
+  /**
+   * The AgentRun ends. Its task goes on (`continues`) when it went to sleep, and always for a root
+   * task, whose next step is another segment; a task below ends with its last segment (8.1).
+   */
+  async #endAgentRun(
+    workflowRunId: string,
+    active: ActiveAgent,
+    outcome: AgentEnding['kind'] | 'YIELDED',
+    sleeping = false,
+    /** It sleeps until the answer to its own question, which stays open (ask_user as a sleep). */
+    keepsQuestions = false,
+  ): Promise<void> {
+    const isRoot =
+      projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.mission?.parentId ===
+      undefined;
+    const continues = sleeping || isRoot;
+    const { agentRunId, wrapUpReason } = active.state;
+    this.#agents.delete(agentRunId);
+    await this.#append([
+      {
+        type: 'AGENT_RUN_ENDED',
+        workflowRunId,
+        agentRunId,
+        outcome,
+        ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
+      },
+    ]);
+    const sessionId = this.#sessionIdOrThrow();
+    await this.#deps.gateway.endAgentRun(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        agentRunId,
+        ...(continues ? { missionContinues: true } : {}),
+        ...(keepsQuestions ? { keepsQuestions: true } : {}),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+  }
+
+  async #closeWith(
+    workflowRunId: string,
+    active: ActiveAgent,
+    input: UnitInput,
+    source: ControlSource | undefined,
+    nodeEnding: NodeEnding,
+  ): Promise<void> {
+    this.#agents.set(active.state.agentRunId, { ...active, nodeEnding });
+    await this.#apply(workflowRunId, closeAgent(active.state, input, source));
+  }
+
+  async #close(
+    workflowRunId: string,
+    outcome: 'COMPLETED' | 'BUDGET' | 'INTERRUPTED' | 'CANCELLED' | 'TIMEOUT',
+    resultRef?: ArtifactRef,
+  ): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    await this.#deps.gateway.closeRun(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        outcome,
+        ...(resultRef === undefined ? {} : { resultRef }),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+  }
+
+  async #closeFailed(workflowRunId: string, reason: string): Promise<void> {
+    const code: ReasonCode =
+      reason in REASON_CODE_CATEGORY ? (reason as ReasonCode) : 'WORKFLOW_INTERNAL';
+    const sessionId = this.#sessionIdOrThrow();
+    await this.#deps.gateway.closeRun(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        outcome: 'FAILED',
+        failure: { code, category: REASON_CODE_CATEGORY[code], source: 'WORKFLOW' },
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+  }
+
+  /**
+   * The reply of an Agent that ends with one: from its `reply` call, or the text it wrote without
+   * a tool call when it could end then (D97), which has no call to name.
+   */
+  async #publishReply(
+    workflowRunId: string,
+    active: ActiveAgent,
+    source:
+      ControlSource | { readonly modelTurnRequestId: string; readonly modelOutputRef: ArtifactRef },
+  ): Promise<void> {
+    const { label } = active.state.definitions;
+    const { wrapUpReason } = active.state;
+    const call = 'toolCallId' in source ? source : undefined;
+    return this.#closeWith(
+      workflowRunId,
+      active,
+      {
+        kind: 'REPLY',
+        agentLabel: label,
+        source: {
+          modelOutputRef: source.modelOutputRef,
+          ...(call === undefined ? {} : { toolCallId: call.toolCallId }),
+        },
+        ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
+      },
+      call,
+      // In a template, the reply of the output step is the result of the run (3.5, 10.1).
+      {
+        status: 'SUCCEEDED',
+        runOutput:
+          this.#mode === 'ORCHESTRATION' &&
+          projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId)?.output === true,
+      },
+    );
+  }
+
+  /** The one table of what follows each declared end action. */
+  async #runEndAction(
+    action: EndAction,
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ENDED' }>,
+  ): Promise<void> {
+    // A task that started subtasks ends only after they ended (D4, Orchestration 9.3).
+    const running = this.#runningChildren(active.missionId);
+    if (running.length > 0 && !active.state.final)
+      return this.#sendBack(
+        workflowRunId,
+        active,
+        ending.source.toolCallId,
+        'SUBTASKS_RUNNING',
+        `Not yet: subtasks you started are still running (${running.map((each) => each.name).join(', ')}). Call sleep with until children: you are woken as each one ends; finish when all have ended.`,
+      );
+    switch (action) {
+      // The root of a template run as a subtask (D113) replies to its caller: the reply is its result.
+      case 'PUBLISH_REPLY':
+        if (active.task === undefined)
+          return this.#publishReply(workflowRunId, active, ending.source);
+        return this.#standsIn(workflowRunId, active)
+          ? this.#deliverInPlace(workflowRunId, active, ending)
+          : this.#finishSubagent(workflowRunId, active, ending);
+      case 'FINISH_SUBAGENT':
+        return this.#finishSubagent(workflowRunId, active, ending);
+    }
+  }
+
+  /** The caller is told its finishing call is not accepted yet; it goes on with a new Round. */
+  async #sendBack(
+    workflowRunId: string,
+    active: ActiveAgent,
+    toolCallId: string,
+    code: string,
+    message: string,
+  ): Promise<void> {
+    const transition = resumeAfterRefusal(
+      active.state,
+      [answerRecord(active.state, code, toolCallId, message)],
+      this.#context(active.scope),
+      this.#deps.config,
+    );
+    await this.#apply(workflowRunId, transition);
+  }
+
+  /** The result of a SubAgent: checked in form, then handed to whoever waits for it (M2Design 3.7). */
+  async #finishSubagent(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ENDED' }>,
+  ): Promise<void> {
+    const { task } = active;
+    if (task === undefined) throw new Error('only a SubAgent finishes with a result');
+    const args = ending.arguments as Parameters<typeof finishedOutcome>[0];
+    const { toolCallId } = ending.source;
+    // A specialist is done only once its playbook has run (Orchestration 3.9).
+    const ownTask = this.#taskNodeOf(
+      workflowRunId,
+      projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId) ??
+        ({} as GraphNodeRecord),
+    );
+    const followed = ownTask?.spawn?.specialist;
+    // On its final call a task can do nothing but finish: a result sent back then would be lost,
+    // and the caller would get "stopped early" instead of the report. It is taken as it is, and
+    // what it lacks is said in its notes (D69).
+    const final = active.state.final;
+    if (
+      !final &&
+      followed !== undefined &&
+      (args as { readonly status?: string }).status === 'done'
+    ) {
+      const left = playbookUnfinished(this.#records, active.missionId, followed);
+      if (left.length > 0)
+        return this.#sendBack(
+          workflowRunId,
+          active,
+          toolCallId,
+          'PLAYBOOK_UNFINISHED',
+          `Not accepted as done: these phases of your playbook have not run: ${left.join(', ')}. Go on with them, or finish with status partial or blocked and say why.`,
+        );
+    }
+    const canRun = active.state.definitions.tools.some((tool) => tool.executionKind === 'COMMAND');
+    if (!final && canRun && active.unchecked && !active.completionAsked) {
+      this.#agents.set(active.state.agentRunId, { ...active, completionAsked: true });
+      return this.#sendBack(
+        workflowRunId,
+        { ...active, completionAsked: true },
+        toolCallId,
+        'NOT_VERIFIED',
+        'Not accepted yet: you changed files but have not run a command that checks them since. Run the tests, the build or the linter, then finish again.',
+      );
+    }
+    const seenCheck =
+      active.lastCheck === undefined ? undefined : commandOfCall(this.#records, active.lastCheck);
+    const finished = finishedOutcome(args, active.changed, seenCheck);
+    // Its result and the tool results it listed are handed over: those that pass, the others are
+    // only told of.
+    // Its last check goes with it, whether it listed it or not (D54).
+    const listed = [...(args.references ?? [])];
+    if (active.lastCheck !== undefined && !listed.includes(active.lastCheck))
+      listed.push(active.lastCheck);
+    const handed = await this.#hand(
+      workflowRunId,
+      active,
+      { toolCallId, ref: ending.source.modelOutputRef },
+      listed,
+    );
+    const unverified =
+      final && canRun && active.unchecked
+        ? ['not checked: it changed files after its last check and ran out of rounds']
+        : [];
+    const outcome = { ...finished, notes: [...unverified, ...finished.notes, ...handed.notes] };
+    await this.#endAgentRun(workflowRunId, active, 'ENDED');
+    await this.#endNode(
+      workflowRunId,
+      active.nodeId,
+      outcome.status === 'BLOCKED' ? 'FAILED' : 'SUCCEEDED',
+      resultOf({
+        ...outcome,
+        toolCallId,
+        ...(handed.referenceId === undefined ? {} : { referenceId: handed.referenceId }),
+      }),
+      ending.source.modelOutputRef,
+    );
+    return this.#advance(workflowRunId);
+  }
+
+  /** Whether this task is a Mission working in a chat main's place (D115). */
+  #standsIn(workflowRunId: string, active: ActiveAgent): boolean {
+    const node = projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId);
+    return node !== undefined && this.#taskNodeOf(workflowRunId, node)?.spawn?.standsIn === true;
+  }
+
+  /**
+   * A Mission in main's place delivered (D115): its reply goes to the user as the answer of the
+   * turn, and is the result of main's call, which main reads when the user writes next.
+   */
+  async #deliverInPlace(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ENDED' }>,
+  ): Promise<void> {
+    const seenCheck =
+      active.lastCheck === undefined ? undefined : commandOfCall(this.#records, active.lastCheck);
+    const args = ending.arguments as Parameters<typeof finishedOutcome>[0];
+    const outcome = finishedOutcome(args, active.changed, seenCheck);
+    const { label } = active.state.definitions;
+    const { wrapUpReason } = active.state;
+    return this.#closeWith(
+      workflowRunId,
+      active,
+      {
+        kind: 'REPLY',
+        agentLabel: label,
+        source: {
+          modelOutputRef: ending.source.modelOutputRef,
+          toolCallId: ending.source.toolCallId,
+        },
+        ...(wrapUpReason === undefined ? {} : { wrapUpReason }),
+      },
+      ending.source,
+      {
+        status: 'SUCCEEDED',
+        runOutput: false,
+        result: {
+          value: resultOf({ ...outcome, toolCallId: ending.source.toolCallId }),
+          ref: ending.source.modelOutputRef,
+        },
+      },
+    );
+  }
+
+  /** Whether a call of this node handed the turn to a Mission in main's place (D115). */
+  #handedOver(workflowRunId: string, nodeId: string, toolCallId: string): boolean {
+    const { graph, nodes } = projectGraph(this.#records, workflowRunId);
+    return graph.edges.some(
+      (edge) =>
+        edge.kind === 'RESUME' &&
+        edge.to === nodeId &&
+        edge.call?.toolCallId === toolCallId &&
+        nodes.get(edge.from)?.spawn?.standsIn === true,
+    );
+  }
+
+  /** The AgentRun of a Mission in main's place that has not ended: running, or its last. */
+  #standInRun(): string | undefined {
+    for (const active of this.#agents.values())
+      if (active.task !== undefined && this.#standsIn(active.state.workflowRunId, active))
+        return active.state.agentRunId;
+    const missions = projectMissions(this.#records);
+    for (const record of [...this.#records].reverse())
+      if (
+        record.type === 'GRAPH_EXTENDED' &&
+        record.nodes.some((each) => each.spawn?.standsIn === true)
+      ) {
+        const node = record.nodes.find((each) => each.spawn?.standsIn === true);
+        const missionId = node?.mission?.id;
+        if (missionId === undefined || missions.get(missionId)?.ended !== undefined)
+          return undefined;
+        const last = [...this.#records]
+          .reverse()
+          .find(
+            (each): each is Extract<SessionLogRecord, { type: 'AGENT_RUN_REGISTERED' }> =>
+              each.type === 'AGENT_RUN_REGISTERED' && each.missionId === missionId,
+          );
+        return last?.agentRunId;
+      }
+    return undefined;
+  }
+
+  /**
+   * A subtask that answered in text (D112): its text is its result, read from its model output
+   * (the caller is shown it whole up to the length of a report). Nothing runs below it and nothing
+   * waits for it, or the answer would not have been taken (`mayReplyNow`).
+   */
+  async #finishWithText(
+    workflowRunId: string,
+    active: ActiveAgent,
+    source: { readonly modelTurnRequestId: string; readonly modelOutputRef: ArtifactRef },
+  ): Promise<void> {
+    const seenCheck =
+      active.lastCheck === undefined ? undefined : commandOfCall(this.#records, active.lastCheck);
+    const outcome = finishedOutcome({}, active.changed, seenCheck);
+    await this.#endAgentRun(workflowRunId, active, 'ENDED');
+    await this.#endNode(
+      workflowRunId,
+      active.nodeId,
+      'SUCCEEDED',
+      resultOf(outcome),
+      source.modelOutputRef,
+    );
+    return this.#advance(workflowRunId);
+  }
+
+  /**
+   * What a SubAgent hands to the AgentRun that started it (M2Design 3.7): its result, and the tool
+   * results it listed that were checked. The Kernel keeps them for the Session first; when it
+   * cannot, nothing is handed over and the result goes on without a reference.
+   */
+  async #hand(
+    workflowRunId: string,
+    active: ActiveAgent,
+    result: { readonly toolCallId: string; readonly ref: ArtifactRef },
+    listed: readonly string[],
+  ): Promise<{ readonly referenceId?: string; readonly notes: readonly string[] }> {
+    const { agentRunId, sessionId } = active.state;
+    const checked = checkedItems(this.#records, agentRunId, listed);
+    const items = [
+      { toolCallId: result.toolCallId, tool: 'finish_subagent', ref: result.ref },
+      ...checked.items,
+    ];
+    // The receiver is the parent task, whichever of its segments reads it, asleep or not (3.4).
+    const missions = projectMissions(this.#records);
+    const parentId = missions.get(active.missionId)?.parentId;
+    const parent = parentId === undefined ? undefined : missions.get(parentId);
+    if (parent === undefined) return { notes: checked.notes };
+    const receiver: HandoverParty =
+      this.#mode === 'CHAT' && parent.parentId === undefined
+        ? { kind: 'MAIN' }
+        : { kind: 'MISSION', missionId: parent.missionId };
+    const kept = await this.#deps.gateway.retainArtifacts(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        refs: items.map((item) => item.ref),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (kept.outcome !== 'ACCEPTED')
+      return {
+        notes: [...checked.notes, 'system: its results could not be kept, so none are handed over'],
+      };
+    const referenceId = nextReferenceId(this.#records);
+    await this.#append([
+      {
+        type: 'REFERENCES_REGISTERED',
+        workflowRunId,
+        referenceId,
+        from: { agentRunId, label: active.task?.name ?? active.agentId },
+        to: receiver,
+        items,
+      },
+    ]);
+    return { referenceId, notes: checked.notes };
+  }
+
+  /** A SubAgent that stops without a result: whatever it has left is the caller's to read. */
+  async #endTask(
+    workflowRunId: string,
+    active: ActiveAgent,
+    kind: AgentEnding['kind'],
+    outcome: TaskOutcome,
+    resultRef?: ArtifactRef,
+    /** Why it ended without a result of its own; a Mission in main's place tells the user. */
+    reason?: string,
+  ): Promise<void> {
+    // The user hears of it as of main's turn that ended so (D115); the notice ends the Mission.
+    if (reason !== undefined && this.#standsIn(workflowRunId, active)) {
+      const input = { kind: 'DEGRADED_REPLY', agentLabel: active.state.definitions.label, reason };
+      return this.#closeWith(workflowRunId, active, input as UnitInput, undefined, {
+        status: outcome.status === 'PARTIAL' ? 'SUCCEEDED' : 'FAILED',
+        runOutput: false,
+        result: {
+          value: resultOf(outcome),
+          ...(resultRef === undefined ? {} : { ref: resultRef }),
+        },
+      });
+    }
+    await this.#endAgentRun(workflowRunId, active, kind);
+    await this.#endNode(
+      workflowRunId,
+      active.nodeId,
+      // A task that was cut short with the run is INTERRUPTED, whatever it had to report.
+      this.#interrupted ? 'INTERRUPTED' : outcome.status === 'PARTIAL' ? 'SUCCEEDED' : 'FAILED',
+      resultOf(outcome),
+      resultRef,
+    );
+  }
+
+  /**
+   * The Kernel interrupts the run (Kernel/Core 5c, 5e): no model is called again. What waits for
+   * the user is over, SubAgents stop where they are, and the AgentRun that spawned them ends with
+   * the one reply that says why, which needs no model. Whatever was in flight is no longer waited
+   * for. How the run goes on from there depends on why it was interrupted (`#finishInterrupted`).
+   */
+  async #onInterrupted(workflowRunId: string, reason: InterruptReason): Promise<void> {
+    this.#interrupted = true;
+    this.#interruptReason = reason;
+    const all = [...this.#agents.values()];
+    if (all.length === 0) {
+      for (const { node } of this.#sleeping(workflowRunId))
+        await this.#closeSleeping(workflowRunId, node, 'INTERRUPTED');
+      await this.#settleMissions(workflowRunId);
+      return this.#finishInterrupted(workflowRunId);
+    }
+    for (const nodeId of questionsOf(this.#records, workflowRunId))
+      await this.#endQuestion(workflowRunId, nodeId);
+    // A task asleep ends with the run: nothing will wake it now.
+    for (const { node } of this.#sleeping(workflowRunId))
+      await this.#closeSleeping(workflowRunId, node, 'INTERRUPTED');
+    await this.#settleMissions(workflowRunId);
+    for (const active of all.filter((each) => each.task !== undefined))
+      await this.#endTask(
+        workflowRunId,
+        active,
+        'FAILED',
+        { status: 'FAILED', notes: ['stopped: the run was interrupted'] },
+        undefined,
+        reason,
+      );
+    // Every task has ended now: the calls came back, though nobody will read what they came to.
+    const projected = projectGraph(this.#records, workflowRunId);
+    await this.#wake(workflowRunId, wakeableNodes(projected.graph, projected.view));
+    for (const active of all.filter((each) => each.task === undefined))
+      await this.#onDegraded(workflowRunId, active, reason);
+  }
+
+  /**
+   * Every AgentRun of an interrupted run has ended (Kernel/Core 5e). Memory pressure closes the
+   * run, which the system then leaves in control; any other reason ends only the work of the input: a chat asks
+   * for the next input, an Orchestration run closes as cancelled or timed out.
+   */
+  async #finishInterrupted(workflowRunId: string): Promise<void> {
+    const reason = this.#interruptReason ?? 'MEMORY_PRESSURE';
+    if (reason === 'MEMORY_PRESSURE') return this.#close(workflowRunId, 'INTERRUPTED');
+    if (this.#mode === 'CHAT') {
+      this.#interrupted = false;
+      this.#interruptReason = undefined;
+      return this.#advance(workflowRunId);
+    }
+    return this.#close(
+      workflowRunId,
+      reason === 'INPUT_TIMEOUT' ? 'TIMEOUT' : 'CANCELLED',
+      this.#runResult,
+    );
+  }
+
+  async #onDegraded(
+    workflowRunId: string,
+    active: ActiveAgent,
+    reason: string,
+    unfinished?: Extract<AgentEnding, { kind: 'DEGRADED' }>['unfinished'],
+  ): Promise<void> {
+    if (OVER_BUDGET.includes(reason)) this.#overBudget = true;
+    // A task reports to its caller, a Mission started by chat's `mission` too (D113): its own
+    // definition publishes a notice, as Mission's root of a run.
+    const { onDegraded } = active.state.definitions;
+    if (onDegraded === 'RETURN_PARTIAL' || active.task !== undefined) {
+      // What the last round wrote is not thrown away for its form: the caller gets it as written,
+      // marked as not following the form, and judges it itself.
+      const handed =
+        unfinished === undefined
+          ? undefined
+          : await this.#hand(
+              workflowRunId,
+              active,
+              { toolCallId: unfinished.source.toolCallId, ref: unfinished.source.modelOutputRef },
+              [],
+            );
+      await this.#endTask(
+        workflowRunId,
+        active,
+        'DEGRADED',
+        {
+          status: 'PARTIAL',
+          notes: [
+            `stopped early: ${reason}`,
+            ...(unfinished === undefined
+              ? []
+              : [
+                  `its last result does not follow the required form (${unfinished.why}); it is shown as written`,
+                ]),
+          ],
+          ...(unfinished === undefined ? {} : { toolCallId: unfinished.source.toolCallId }),
+          ...(handed?.referenceId === undefined ? {} : { referenceId: handed.referenceId }),
+        },
+        unfinished?.source.modelOutputRef,
+        reason,
+      );
+      return this.#advance(workflowRunId);
+    }
+    // A step of a template that gave up has not delivered: `mas run` must not say it did. A run
+    // cut by its budget still ends as BUDGET.
+    if (this.#mode !== 'CHAT' && active.task === undefined && !OVER_BUDGET.includes(reason))
+      this.#runFailure ??= reason;
+    const input = { kind: 'DEGRADED_REPLY', agentLabel: active.state.definitions.label, reason };
+    await this.#closeWith(workflowRunId, active, input as UnitInput, undefined, {
+      status: 'FAILED',
+      runOutput: false,
+    });
+  }
+
+  async #onEnding(workflowRunId: string, agentRunId: string, ending: AgentEnding): Promise<void> {
+    const active = this.#agents.get(agentRunId);
+    if (active === undefined) return;
+    switch (ending.kind) {
+      case 'ENDED':
+        return this.#runEndAction(ending.tool.action, workflowRunId, active, ending);
+      case 'REPLIED':
+        // A subtask's answer written as text is its result (D112).
+        return active.task === undefined
+          ? this.#publishReply(workflowRunId, active, ending.source)
+          : this.#finishWithText(workflowRunId, active, ending.source);
+      case 'SPAWN':
+        return this.#onSpawn(workflowRunId, active, ending);
+      case 'ASK':
+        return this.#onAsk(workflowRunId, active, ending);
+      case 'SLEEP':
+        return this.#onSleep(workflowRunId, active, ending);
+      case 'MESSAGE':
+        return this.#onMessage(workflowRunId, active, ending);
+      case 'VIEW_TASKS':
+        return this.#answerControl(
+          workflowRunId,
+          active,
+          ending.source.toolCallId,
+          false,
+          'TASKS',
+          treeView(projectMissions(this.#records), active.missionId, missionStateOf(this.#records)),
+        );
+      case 'STOP':
+        return this.#onStop(workflowRunId, active, ending);
+      case 'ROUNDS':
+        return this.#onRounds(workflowRunId, active, ending);
+      case 'JOB':
+        return this.#onJobTool(workflowRunId, active, ending);
+      case 'DEGRADED':
+        return this.#onDegraded(workflowRunId, active, ending.reason, ending.unfinished);
+      case 'CLOSED': {
+        const plan = active.nodeEnding ?? { status: 'SUCCEEDED', runOutput: false };
+        await this.#endAgentRun(workflowRunId, active, ending.kind);
+        await this.#endNode(
+          workflowRunId,
+          active.nodeId,
+          this.#interrupted ? 'INTERRUPTED' : plan.status,
+          plan.result?.value,
+          plan.result === undefined ? ending.outputRef : plan.result.ref,
+        );
+        if (plan.runOutput) this.#runResult = ending.outputRef;
+        if (this.#interrupted)
+          return this.#agents.size === 0 ? this.#finishInterrupted(workflowRunId) : undefined;
+        if (this.#mode === 'CHAT' && ending.budget.run !== 'NORMAL')
+          return this.#close(workflowRunId, 'BUDGET');
+        return this.#advance(workflowRunId);
+      }
+      case 'FAILED':
+        if (active.task !== undefined) {
+          await this.#endTask(
+            workflowRunId,
+            active,
+            ending.kind,
+            { status: 'FAILED', notes: [`failed: ${ending.code}`] },
+            undefined,
+            ending.code,
+          );
+          return this.#advance(workflowRunId);
+        }
+        if (this.#interrupted) {
+          // The reply could not be published: the run still ends, and the log says why.
+          await this.#endAgentRun(workflowRunId, active, ending.kind);
+          await this.#endNode(workflowRunId, active.nodeId, 'INTERRUPTED');
+          return this.#agents.size === 0 ? this.#finishInterrupted(workflowRunId) : undefined;
+        }
+        // In a chat the run goes on with the next prompt, so the user must hear of it here.
+        if (this.#mode === 'CHAT') return this.#onDegraded(workflowRunId, active, ending.code);
+        await this.#endAgentRun(workflowRunId, active, ending.kind);
+        await this.#endNode(workflowRunId, active.nodeId, 'FAILED');
+        this.#runFailure = ending.code;
+        return this.#advance(workflowRunId);
+    }
+  }
+
+  #refOf(agentId: string): DefinitionRef {
+    const { id, version } = this.#binding(agentId).ref;
+    return { id, version };
+  }
+
+  /** The model reads this in place of a result: which rules failed, and what to do instead. */
+  #refusalText(errors: readonly SpawnError[], withdrawn: boolean): string {
+    const lines = errors.map(
+      (error) =>
+        `${error.code}${error.task === undefined ? '' : ` (${error.task})`}: ${error.message}`,
+    );
+    const tail = withdrawn
+      ? 'run_subagents is no longer available to you: finish the work yourself.'
+      : 'Nothing was started. Correct the call and send it again, or do the work yourself.';
+    const text = [...lines, tail].join('\n');
+    return text.length <= 1000 ? text : `${text.slice(0, 999)}…`;
+  }
+
+  /**
+   * The user answered about more subtasks (D62) or more tokens (D115): every call that waited is
+   * made again; the Kernel lets it start, or refuses it now that the answer was no.
+   */
+  async #onDelegationDecided(workflowRunId: string): Promise<void> {
+    const waiting = this.#awaitingQuota.filter((each) => each.workflowRunId === workflowRunId);
+    this.#awaitingQuota.splice(
+      0,
+      this.#awaitingQuota.length,
+      ...this.#awaitingQuota.filter((each) => each.workflowRunId !== workflowRunId),
+    );
+    for (const each of waiting) {
+      const active = this.#agents.get(each.agentRunId);
+      if (active !== undefined) await this.#onSpawn(workflowRunId, active, each.ending);
+    }
+  }
+
+  /**
+   * `run_subagents` (M2Design 3.6): the tasks are checked as a whole, the Kernel lends their
+   * shares as a whole, and only then does the graph grow. The caller waits until they all ended.
+   */
+  async #onSpawn(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'SPAWN' }>,
+  ): Promise<void> {
+    const { toolCallId } = ending.source;
+    const refuse = (text: string, withdraw = false, counted = true): Promise<void> =>
+      this.#apply(
+        workflowRunId,
+        answerDelegatedCall(
+          active.state,
+          toolCallId,
+          {
+            refused: true,
+            spawn: counted,
+            withdraw,
+            records: [answerRecord(active.state, 'INVALID_ACTION', toolCallId, text)],
+          },
+          this.#context(active.scope),
+          this.#deps.config,
+        ),
+      );
+    const isRoot = projectMissions(this.#records).get(active.missionId)?.parentId === undefined;
+    const delegate = ending.delegate;
+    const requested =
+      delegate === undefined
+        ? splitAsLead(ending.arguments as RunSubagentsArgs)
+        : this.#delegated(workflowRunId, active, delegate, ending.arguments);
+    // A template's step started as a subtask (D113) is told its step as the template tells it.
+    const step =
+      delegate?.template === undefined ? undefined : this.#ownerStep(delegate.template.id);
+    const first = requested.tasks[0];
+    const steps = new Map<string, { readonly guide?: string; readonly inputLimit?: number }>(
+      step === undefined || first === undefined
+        ? []
+        : [
+            [
+              first.name,
+              {
+                ...(step.guide === undefined ? {} : { guide: step.guide }),
+                ...(step.inputLimit === undefined ? {} : { inputLimit: step.inputLimit }),
+              },
+            ],
+          ],
+    );
+    // A specialist (fixer, reviewer, ...) is a lead that follows the playbook of the template that
+    // names it (Orchestration 3.9, D39). Only the root's spawn tool offers one (D93): the
+    // specialist and its tasks take the two levels below it.
+    const specialists = new Map<string, NonNullable<SpawnNode['specialist']>>();
+    const tasks: SpawnTask[] = [];
+    for (const task of requested.tasks) {
+      const template = this.#specialists.get(task.agent);
+      if (template?.playbook === undefined) {
+        tasks.push(task);
+        continue;
+      }
+      if (task.continues !== undefined)
+        return this.#answerControl(
+          workflowRunId,
+          active,
+          toolCallId,
+          true,
+          'SPECIALIST_REFUSED',
+          `Not started: a ${task.agent} is not continued; start a new one, or give the defect to a worker with continues.`,
+        );
+      specialists.set(task.name, {
+        template: { id: template.id, version: template.version },
+        // A copy of it as it is now: the log keeps what the specialist was given.
+        playbook: structuredClone(template.playbook) as NonNullable<
+          SpawnNode['specialist']
+        >['playbook'],
+      });
+      tasks.push({
+        ...task,
+        agent: 'lead',
+        role: task.role ?? `${task.agent}: ${template.playbook.summary}`.slice(0, 80),
+        // A specialist pays for its whole subtree, which its caller cannot size: it asks for the
+        // most a lead may get (the Kernel clamps it), never for less.
+        budget: { tokens: SPECIALIST_ASK },
+      });
+    }
+    const args: SpawnRequest = { ...requested, tasks };
+    // The root task writes the plan of the work before its first subtasks (D24). Refused here, it
+    // does not count as a wrong call of run_subagents: nothing was wrong with the tasks.
+    const planned = this.#records.some(
+      (record) =>
+        record.type === 'PLAN_REGISTERED' &&
+        record.workflowRunId === workflowRunId &&
+        record.missionId === active.missionId,
+    );
+    if (isRoot && this.#mode === 'ORCHESTRATION' && !planned && args.plan === undefined)
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        true,
+        'PLAN_REQUIRED',
+        'Not started: write the plan of the work first, in plan of this same call: what is delivered and how it is checked, the approach, how the work is split and who owns which part and which shared file or interface, and the constraints every task must keep. Every task you start sees it, so the goals of the tasks need not repeat it.',
+      );
+    // A specialist follows its playbook (Orchestration 3.9): a call that does not
+    // is sent back, without counting as a wrong call of run_subagents.
+    const ownTask = this.#taskNodeOf(
+      workflowRunId,
+      projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId) ??
+        ({} as GraphNodeRecord),
+    );
+    // A task that runs as its caller's Agent for a phase is not a lead; a lead that started with
+    // its caller's context is, and splits its part (D58).
+    if (ownTask?.spawn?.inherits !== undefined && ownTask.spawn.inherits.as !== 'lead')
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        true,
+        'NOT_A_LEAD',
+        'Not started: you are a subtask, not the task whose context you were given. You start no subtasks: do your goal yourself and finish with your finishing call.',
+      );
+    const followed = ownTask?.spawn?.specialist;
+    let phaseInherits: string | undefined;
+    if (followed !== undefined) {
+      const off = playbookRefusal(this.#records, active.missionId, followed, args.tasks);
+      if (off !== undefined)
+        return this.#answerControl(workflowRunId, active, toolCallId, true, 'PLAYBOOK', off);
+      const phase = phaseOfCall(this.#records, active.missionId, followed, args.tasks);
+      if (phase?.tasks?.context === 'inherit') phaseInherits = phase.tasks.agent;
+    }
+    const readable = readableArtifacts(this.#records, active.state.agentRunId);
+    const spawnContext = {
+      rules: this.#deps.config,
+      // A delegated task writes only where its call names (D112): without a writeScope it reads,
+      // and the Kernel lends it nothing to write. A template's step started as a task writes the
+      // caller's roots (D113).
+      agents:
+        delegate === undefined
+          ? this.#spawnable
+          : new Map([
+              ...this.#spawnable,
+              [
+                delegate.agent,
+                {
+                  writes: (requested.tasks[0]?.writeScope ?? []).length > 0,
+                  allowedEfforts: this.#binding(delegate.agent).allowedEfforts,
+                },
+              ],
+            ]),
+      callerRoots: this.#callerRoots(workflowRunId, active),
+      readable: (artifactId: string) => readable.has(artifactId),
+    };
+    // The tasks that break a rule of their own are taken out, with the tasks that wait for them,
+    // and the others start (D56); a rule of the call as a whole refuses the call.
+    const notStarted = [...(ending.notes ?? [])];
+    let attempt = args;
+    let checked = validateSpawn(attempt, spawnContext);
+    while (!checked.ok) {
+      const errors = checked.errors;
+      let keep = attempt.tasks;
+      if (errors.some((error) => error.code === 'TOO_MANY_TASKS')) {
+        const max = this.#deps.config.maxSubagentsPerCall;
+        for (const task of keep.slice(max))
+          notStarted.push(
+            `task ${task.name} was not started: at most ${String(max)} tasks start in one call; start it in a later call`,
+          );
+        keep = keep.slice(0, max);
+      } else if (errors.some((error) => error.task === undefined)) break;
+      const bad = new Set(
+        errors.flatMap((error) => (error.task === undefined ? [] : [error.task])),
+      );
+      for (const error of errors)
+        if (error.task !== undefined)
+          notStarted.push(`task ${error.task} was not started: ${error.code}: ${error.message}`);
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const task of keep) {
+          const missing = (task.dependsOn ?? []).find(
+            (each) => bad.has(each) || !keep.some((other) => other.name === each),
+          );
+          if (bad.has(task.name) || missing === undefined) continue;
+          notStarted.push(
+            `task ${task.name} was not started: it depends on ${missing}, which was not started`,
+          );
+          bad.add(task.name);
+          changed = true;
+        }
+      }
+      keep = keep.filter((task) => !bad.has(task.name));
+      if (keep.length === 0 || keep.length === attempt.tasks.length) break;
+      attempt = { ...attempt, tasks: keep };
+      checked = validateSpawn(attempt, spawnContext);
+    }
+    if (!checked.ok) {
+      // The root of a long task splits the work: it keeps run_subagents whatever was wrong with
+      // a call (D56). How many tasks a run starts is the Kernel's to count (D62).
+      const longRoot = isRoot && this.#mode === 'ORCHESTRATION';
+      return refuse(
+        [
+          ...notStarted,
+          this.#refusalText(checked.errors, !longRoot && active.state.invalidSpawns + 1 >= 2),
+        ].join('\n'),
+        false,
+        !longRoot,
+      );
+    }
+    // A task taken up again (`continues`) is an ended task of this caller's, in this run, run by
+    // the same Agent: its history must be one this Agent can go on from (Orchestration 5.3).
+    const continued = new Map<string, string>();
+    const missions = projectMissions(this.#records);
+    const inRun = projectGraph(this.#records, workflowRunId).nodes;
+    for (const task of checked.plan.tasks) {
+      if (task.continues === undefined) continue;
+      const before = childrenOf(missions, active.missionId)
+        .filter((each) => each.name === task.continues)
+        .at(-1);
+      const inThisRun = [...inRun.values()].some((node) => node.mission?.id === before?.missionId);
+      if (before === undefined || before.ended === undefined || !inThisRun)
+        return refuse(
+          `CONTINUES (${task.name}): continues names a task you started in this run that has ended; ${task.continues} is not one. Nothing was started.`,
+        );
+      if (before.agentId !== task.agent)
+        return refuse(
+          `CONTINUES (${task.name}): ${task.continues} ran as ${before.agentId}, and goes on as one; set agent to ${before.agentId}. Nothing was started.`,
+        );
+      continued.set(task.name, before.missionId);
+    }
+    // A tester writes acceptance tests beside the build (D55): started once the build has come
+    // back, without builders of its own, it is a round that runs alone while every task waits.
+    const BUILDERS = ['worker', 'lead'];
+    const built = [...projectGraph(this.#records, workflowRunId).nodes.values()].some(
+      (node) =>
+        node.mission?.parentId === active.missionId &&
+        node.spawn !== undefined &&
+        node.spawn.specialist === undefined &&
+        BUILDERS.includes(node.agentRef?.id ?? ''),
+    );
+    if (
+      built &&
+      requested.tasks.some((task) => task.agent === 'tester') &&
+      !requested.tasks.some((task) => BUILDERS.includes(task.agent))
+    )
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        true,
+        'TESTER_AFTER_BUILD',
+        'Not started: a tester writes the acceptance tests beside the build, in the same call as the tasks that build. The build has come back, and each result shows the check its task ran after its last change, as the system saw it. Read those; for the whole, run the checks of the plan yourself once, or start an integrator when the whole fails in ways you cannot place.',
+      );
+    // Who starts with the caller's context (D35, D53): every task of a phase that says so, or a
+    // task that is a worker, explorer or lead.
+    const inherit = new Map<string, { readonly as: string; readonly runAs: string }>();
+    for (const task of checked.plan.tasks) {
+      if (delegate !== undefined) {
+        if (delegate.context === 'inherit')
+          inherit.set(task.name, { as: task.agent, runAs: task.agent });
+      } else if (phaseInherits !== undefined)
+        inherit.set(task.name, { as: phaseInherits, runAs: active.agentId });
+      // A worker, explorer or lead starts with its caller's context, which holds what the
+      // caller read and its call (D56, D58); a specialist and a task taken up again do not.
+      else if (
+        (task.agent === 'worker' || task.agent === 'explorer' || task.agent === 'lead') &&
+        task.continues === undefined &&
+        !specialists.has(task.name)
+      )
+        inherit.set(task.name, { as: task.agent, runAs: task.agent });
+    }
+    const lent = await this.#lend(workflowRunId, active, checked.plan.tasks);
+    if (lent.kind === 'BLOCKED') return;
+    // Left unanswered: the call is made again when the user has answered (D62).
+    if (lent.kind === 'ASKED') {
+      this.#awaitingQuota.push({ workflowRunId, agentRunId: active.state.agentRunId, ending });
+      return;
+    }
+    // A refusal for the budget or the number of tasks says nothing against the tasks: it is not
+    // counted as a wrong call, or two of them would take run_subagents away.
+    if (lent.kind === 'REFUSED')
+      return lent.budget
+        ? this.#answerControl(
+            workflowRunId,
+            active,
+            toolCallId,
+            true,
+            lent.text.startsWith('TASK_QUOTA') ? 'TASK_QUOTA_REACHED' : 'BUDGET_INSUFFICIENT',
+            lent.text,
+          )
+        : refuse(lent.text);
+    if (isRoot && args.plan !== undefined)
+      await this.#append([
+        {
+          type: 'PLAN_REGISTERED',
+          workflowRunId,
+          missionId: active.missionId,
+          source: {
+            modelTurnRequestId: ending.source.modelTurnRequestId,
+            outputRef: ending.source.modelOutputRef,
+            toolCallId,
+          },
+        },
+      ]);
+    // The root splitting the work is a point worth coming back to (Orchestration 7.2): the cut is
+    // taken before the tasks start, and their writes wait behind its barrier until the snapshot.
+    if (isRoot && this.#mode === 'ORCHESTRATION')
+      await this.#requestCheckpoint(
+        workflowRunId,
+        'ROOT_SPAWN',
+        `before starting ${checked.plan.tasks.map((task) => task.name).join(', ')}`,
+        toolCallId,
+      );
+    await this.#expandGraph(
+      workflowRunId,
+      active,
+      toolCallId,
+      checked.plan.tasks,
+      lent.reserved,
+      specialists,
+      continued,
+      inherit,
+      { notStarted, cut: ending.cut ?? [] },
+      steps,
+    );
+  }
+
+  /**
+   * The one task a tool that starts one subtask asks for (Orchestration D112): named `sub-N` (a
+   * template's step `mission-N`) by the first number none of the caller's tasks has; its prompt is
+   * its goal; it may change only the paths it names, and a template's step the caller's own (D113).
+   */
+  #delegated(
+    workflowRunId: string,
+    active: ActiveAgent,
+    delegate: NonNullable<Extract<AgentEnding, { kind: 'SPAWN' }>['delegate']>,
+    argumentsOf: unknown,
+  ): SpawnRequest {
+    const args = (argumentsOf ?? {}) as {
+      readonly description?: string;
+      readonly prompt?: string;
+      readonly goal?: string;
+      readonly writeScope?: readonly string[];
+    };
+    const prefix = delegate.template === undefined ? 'sub' : 'mission';
+    const taken = new Set(
+      childrenOf(projectMissions(this.#records), active.missionId).map((each) => each.name),
+    );
+    let number = 1;
+    while (taken.has(`${prefix}-${String(number)}`)) number += 1;
+    const text = args.prompt ?? args.goal ?? '';
+    const step =
+      delegate.template === undefined ? undefined : this.#ownerStep(delegate.template.id);
+    return {
+      tasks: [
+        {
+          name: `${prefix}-${String(number)}`,
+          agent: delegate.agent,
+          // A Mission works in chat's place until it delivers (D115).
+          ...(step !== undefined && this.#mode === 'CHAT' ? { standsIn: true as const } : {}),
+          role: (args.description ?? text.split('\n')[0] ?? prefix).slice(0, 80),
+          goal: step === undefined ? text : `${step.goal}\n\nThe goal you own:\n${text}`,
+          writeScope:
+            delegate.template === undefined
+              ? [...(args.writeScope ?? [])]
+              : [...this.#callerRoots(workflowRunId, active)],
+        },
+      ],
+    };
+  }
+
+  /** The step of a template's owner: its goal, guide and input limit (Orchestration 3.5, D113). */
+  #ownerStep(
+    templateId: string,
+  ): { readonly goal: string; readonly guide?: string; readonly inputLimit?: number } | undefined {
+    const node = this.#deps.templates
+      .get(templateId)
+      ?.nodes.find((each) => each.kind === 'AGENT' && each.role === 'owner');
+    if (node === undefined || node.kind !== 'AGENT') return undefined;
+    return {
+      goal: node.goal ?? '',
+      ...(node.guide === undefined ? {} : { guide: node.guide }),
+      ...(node.inputLimit === undefined ? {} : { inputLimit: node.inputLimit }),
+    };
+  }
+
+  /** Asks the Kernel to lend the shares of all the tasks, or none (M2Design 7.3, rule 2). */
+  async #lend(
+    workflowRunId: string,
+    active: ActiveAgent,
+    tasks: SpawnPlan['tasks'],
+  ): Promise<
+    | { readonly kind: 'GRANTED'; readonly reserved: DelegationReserved }
+    | { readonly kind: 'REFUSED'; readonly text: string; readonly budget: boolean }
+    | { readonly kind: 'BLOCKED' }
+    | { readonly kind: 'ASKED' }
+  > {
+    const sessionId = this.#sessionIdOrThrow();
+    const reserved = await this.#deps.gateway.reserveDelegation(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        parentAgentRunId: active.state.agentRunId,
+        tasks: tasks.map((task) => ({
+          name: task.name,
+          agentRef: this.#binding(task.agent).ref,
+          writeRoots: [...task.writeRoots],
+          ...(task.budget === undefined ? {} : { tokens: task.budget.tokens }),
+        })),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (reserved.outcome === 'ACCEPTED') return { kind: 'GRANTED', reserved };
+    // The run is closing: whoever asked is told by the run, not by this answer.
+    if (reserved.reasonCode === 'RUN_BLOCKED') return { kind: 'BLOCKED' };
+    // The user is asked whether the run may start more (D62), or lend more (D115): the call
+    // waits for the answer.
+    if (reserved.reasonCode === 'TASK_QUOTA_ASKED' || reserved.reasonCode === 'BUDGET_ASKED')
+      return { kind: 'ASKED' };
+    if (reserved.reasonCode === 'TASK_QUOTA_REACHED')
+      return {
+        kind: 'REFUSED',
+        text: 'TASK_QUOTA_REACHED: this run has started as many subtasks as it may, and the user did not allow more. Nothing was started. Do the rest yourself, or with the tasks that run.',
+        budget: true,
+      };
+    const text =
+      reserved.reasonCode === 'BUDGET_INSUFFICIENT'
+        ? `BUDGET_INSUFFICIENT: at most ${String(reserved.delegable)} tokens can be lent to subtasks right now, in total${
+            reserved.least === undefined
+              ? ''
+              : `, and these ${String(tasks.length)} task(s) need at least ${String(reserved.least)} even at their smallest (a task never gets less than its Agent's smallest share, whatever budget you write)`
+          }. Nothing was started. Start fewer tasks in this call and the rest when these have ended, or do the work yourself; writing smaller budgets does not help.`
+        : `${reserved.reasonCode}: the system refused to start these tasks. Nothing was started.`;
+    return { kind: 'REFUSED', text, budget: reserved.reasonCode === 'BUDGET_INSUFFICIENT' };
+  }
+
+  /**
+   * Task graph: the tasks become nodes, joined to their caller by `DELEGATE` and `RESUME` edges,
+   * so the caller is the last link of the tasks it started (M2Design 3.1, 3.6). The caller's node is
+   * WAITING from here on; its AgentRun just has a tool call whose result has not come yet.
+   */
+  async #expandGraph(
+    workflowRunId: string,
+    active: ActiveAgent,
+    toolCallId: string,
+    tasks: SpawnPlan['tasks'],
+    reserved: DelegationReserved,
+    /** The specialists among the tasks, by task name, with the playbook each follows (D39). */
+    specialists: ReadonlyMap<string, NonNullable<SpawnNode['specialist']>> = new Map(),
+    /** The ended task each continuing task takes up, by task name. */
+    continued: ReadonlyMap<string, string> = new Map(),
+    /**
+     * The tasks that start with the caller's context, and the Agent each is (a phase with
+     * `context: inherit`, D35, or a task with `context: "inherit"`, D53), by task name.
+     */
+    inherit: ReadonlyMap<string, { readonly as: string; readonly runAs: string }> = new Map(),
+    /** The tasks of the call that were not started, and those whose goal the graph holds cut (D56). */
+    told: { readonly notStarted: readonly string[]; readonly cut: readonly string[] } = {
+      notStarted: [],
+      cut: [],
+    },
+    /** A template's step started as a task (D113): its guide and input limit, by task name. */
+    steps: ReadonlyMap<
+      string,
+      { readonly guide?: string; readonly inputLimit?: number }
+    > = new Map(),
+  ): Promise<void> {
+    const call = { toolCallId, delegationId: reserved.delegationId };
+    const shares = new Map(reserved.shares.map((share) => [share.name, share]));
+    const projected = projectGraph(this.#records, workflowRunId);
+    const revisionNumber = projected.lastRevision + 1;
+    const missionId = projected.nodes.get(active.nodeId)?.mission?.id;
+    if (missionId === undefined) throw new Error('a caller of run_subagents belongs to no task');
+    const revision = spawnRevision(
+      workflowRunId,
+      revisionNumber,
+      { nodeId: active.nodeId, call, missionId },
+      tasks.map((task) => {
+        const inherits = inherit.get(task.name);
+        const step = steps.get(task.name);
+        return {
+          name: task.name,
+          // A task of a phase runs as the caller's Agent (same prompt, tools and cache, D35); a task
+          // that asked for the context runs as its own (D53).
+          agentRef: this.#refOf(inherits?.runAs ?? task.agent),
+          goal: task.goal,
+          ...(step?.guide === undefined ? {} : { guide: step.guide }),
+          ...(step?.inputLimit === undefined ? {} : { inputLimit: step.inputLimit }),
+          dependsOn: task.dependsOn ?? [],
+          spawn: {
+            ...spawnNodeOf(task, shares.get(task.name)),
+            ...(told.cut.includes(task.name) ? { cut: true } : {}),
+            ...(inherits === undefined
+              ? {}
+              : {
+                  inherits: {
+                    missionId,
+                    agentRunId: active.state.agentRunId,
+                    as: inherits.as,
+                  },
+                }),
+            ...specialistOf(specialists, task.name),
+            ...(continued.get(task.name) === undefined
+              ? {}
+              : { continues: { missionId: continued.get(task.name) ?? '' } }),
+          },
+        };
+      }),
+    );
+    await this.#extend(workflowRunId, revisionNumber, 'SPAWN', revision);
+    this.#staggerWorkers(workflowRunId, tasks, inherit, revision.nodes);
+    // A Mission in chat's place takes the turn over (D115): main's call stays open until the
+    // Mission has ended, and main's AgentRun ends here, with nothing more to do in this turn.
+    if (revision.nodes.some((node) => node.spawn?.standsIn === true)) {
+      await this.#endAgentRun(
+        workflowRunId,
+        this.#agents.get(active.state.agentRunId) ?? active,
+        'SPAWN',
+      );
+      return this.#advance(workflowRunId);
+    }
+    // The call comes back at once (D14): the tasks run while the caller goes on or sleeps.
+    const current = this.#agents.get(active.state.agentRunId) ?? active;
+    await this.#apply(
+      workflowRunId,
+      answerDelegatedCall(
+        current.state,
+        toolCallId,
+        {
+          refused: false,
+          spawn: true,
+          records: [
+            answerRecord(
+              current.state,
+              'STARTED',
+              toolCallId,
+              `Started ${String(tasks.length)} subtask(s): ${tasks.map((task) => task.name).join(', ')}. They run now; their results come to you as they finish. To wait for them, call sleep with until children: you are woken as each one ends, with its result, so you can use it, check it or start what depends on it; the others go on meanwhile. Until each has ended, its scope is its own: you may not write there, and your commands see it read-only.${told.notStarted.length === 0 ? '' : `\n${told.notStarted.join('\n')}\nCorrect only these and start them in a later call; the tasks above run.`}`,
+            ),
+          ],
+        },
+        this.#context(current.scope),
+        this.#deps.config,
+      ),
+    );
+    await this.#advance(workflowRunId);
+  }
+
+  /**
+   * The tasks of one call that run with the caller's context as an Agent whose definition staggers
+   * them (D104, worker) and wait for no other task send the same prefix (its prompt, its tools,
+   * the caller's view). One starts at once; the others wait for its first model reply, at most
+   * `staggerWorkersMs`, so their first request finds that prefix in the provider's cache. A task
+   * lent no commands has other tools, so it is a group of its own. The others start at once.
+   */
+  #staggerWorkers(
+    workflowRunId: string,
+    tasks: SpawnPlan['tasks'],
+    inherit: ReadonlyMap<string, { readonly as: string; readonly runAs: string }>,
+    nodes: readonly GraphNodeRecord[],
+  ): void {
+    const ms = this.#deps.config.staggerWorkersMs ?? 0;
+    if (ms <= 0) return;
+    const groups = new Map<boolean, string[]>();
+    for (const task of tasks) {
+      const runAs = inherit.get(task.name)?.runAs;
+      if (runAs === undefined || this.#deps.agents.get(runAs)?.staggered !== true) continue;
+      if ((task.dependsOn ?? []).length > 0) continue;
+      const nodeId = nodes.find((node) => node.name === task.name)?.nodeId;
+      if (nodeId === undefined) continue;
+      const commands = task.commands !== false;
+      groups.set(commands, [...(groups.get(commands) ?? []), nodeId]);
+    }
+    const until = this.#now() + ms;
+    let waits = false;
+    for (const [leader, ...rest] of groups.values()) {
+      if (leader === undefined) continue;
+      for (const nodeId of rest) {
+        this.#held.set(nodeId, { leader, until });
+        waits = true;
+      }
+    }
+    if (waits) this.#advanceLater(workflowRunId, ms + 50);
+  }
+
+  /** Where the caller may write: a task its own scope, the root what its Agent may (3.6). */
+  #callerRoots(workflowRunId: string, active: ActiveAgent): readonly string[] {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const node = projected.nodes.get(active.nodeId);
+    const taskNode = node === undefined ? undefined : this.#taskNodeOf(workflowRunId, node);
+    return taskNode?.spawn?.writeScope ?? this.#binding(active.agentId).writeRoots;
+  }
+
+  /**
+   * The graph says a call came back (its `RESUME` edges can be followed); the AgentRun that waits
+   * for it goes on (M2Design 3.3): the shares of the tasks that never started go back to it, and
+   * what its tasks came to answers the call.
+   */
+  async #wake(workflowRunId: string, woken: readonly Wake[]): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    for (const { node, call } of woken) {
+      const caller = [...this.#agents.values()].find((each) => each.nodeId === node.nodeId);
+      await this.#append([
+        {
+          type: 'NODE_RESUMED',
+          workflowRunId,
+          nodeId: node.nodeId,
+          call,
+        },
+      ]);
+      // A main that handed its turn to a Mission (D115) has no AgentRun to go on: the call that
+      // came back ends its step, and chat reads the result when the user writes next.
+      if (caller === undefined && this.#handedOver(workflowRunId, node.nodeId, call.toolCallId)) {
+        await this.#endNode(workflowRunId, node.nodeId, 'SUCCEEDED');
+        this.#advanceAgain = true;
+        continue;
+      }
+      // A run that is closing hears no answer; an AgentRun whose call is not out has nothing to go on with.
+      if (this.#interrupted || caller === undefined || !caller.state.pending.has(call.toolCallId))
+        continue;
+      // A call to SubAgents has a reservation to give back; a question to the user has none.
+      if (call.delegationId !== undefined)
+        await this.#deps.gateway.releaseDelegation(
+          { requestId: newId('req'), sessionId, workflowRunId, delegationId: call.delegationId },
+          contextOf(sessionId, workflowRunId),
+        );
+      await this.#apply(
+        workflowRunId,
+        answerDelegatedCall(
+          caller.state,
+          call.toolCallId,
+          { refused: false, spawn: call.delegationId !== undefined, records: [] },
+          this.#context(caller.scope),
+          this.#deps.config,
+        ),
+      );
+    }
+  }
+
+  // ---- tasks: sleep, wake, messages (Orchestration 4, 5) ------------------------------------
+
+  /** The tasks this task started with `run_subagents` that have not ended yet. */
+  #runningChildren(missionId: string): readonly MissionView[] {
+    const missions = projectMissions(this.#records);
+    const spawned = this.#spawnedNodes();
+    return childrenOf(missions, missionId).filter(
+      (child) => child.ended === undefined && child.nodeIds.some((id) => spawned.has(id)),
+    );
+  }
+
+  /** The siblings of a task that have not ended: what `until siblings` can wait for (D28). */
+  #runningSiblings(missionId: string): readonly MissionView[] {
+    const missions = projectMissions(this.#records);
+    const spawned = this.#spawnedNodes();
+    return siblingsOf(missions, missionId).filter(
+      (sibling) => sibling.ended === undefined && sibling.nodeIds.some((id) => spawned.has(id)),
+    );
+  }
+
+  /** Nodes that `run_subagents` added: the first segments of spawned tasks. */
+  #spawnedNodes(): ReadonlySet<string> {
+    const found = new Set<string>();
+    for (const record of this.#records)
+      if (record.type === 'GRAPH_EXTENDED' && record.source === 'SPAWN')
+        for (const node of record.nodes) found.add(node.nodeId);
+    return found;
+  }
+
+  /**
+   * `sleep` (Orchestration 4.1, 4.2): the segment ends and its task waits for what it named. A
+   * sleep that nothing could ever end is not taken; the call is answered and the segment goes on.
+   */
+  /**
+   * A command that runs on as a job (Orchestration 6.1): it is named in its task, before its result
+   * is shown, so the result can say which job it is.
+   */
+  async #noteJobStarted(
+    workflowRunId: string,
+    active: ActiveAgent,
+    report: Extract<KernelToWorkflowEvent, { type: 'UnitReport' }>,
+  ): Promise<void> {
+    if (report.status !== 'OK' || report.executionKind !== 'COMMAND') return;
+    const job = (report.output as { readonly job?: { jobKey: string; promoted: boolean } }).job;
+    if (job === undefined) return;
+    const submitted = this.#records.find(
+      (record): record is Extract<SessionLogRecord, { type: 'UNIT_SUBMITTED' }> =>
+        record.type === 'UNIT_SUBMITTED' && record.requestId === report.requestId,
+    );
+    const fields =
+      submitted?.inputSource.kind === 'TOOL_CALL'
+        ? submitted.inputSource.workflowFields
+        : undefined;
+    const command = typeof fields?.command === 'string' ? fields.command : 'a command';
+    await this.#append([
+      {
+        type: 'JOB_STARTED',
+        workflowRunId,
+        missionId: active.missionId,
+        jobId: nextJobId(this.#records, active.missionId),
+        jobKey: job.jobKey,
+        requestId: report.requestId,
+        command: command.length <= 200 ? command : `${command.slice(0, 199)}…`,
+        promoted: job.promoted,
+      },
+    ]);
+  }
+
+  /**
+   * `job_output`, `job_list`, `job_kill` (Orchestration 6.2): the jobs the task holds, its own and
+   * those subtasks that delivered left running and handed up to it (6.4).
+   */
+  async #onJobTool(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'JOB' }>,
+  ): Promise<void> {
+    const { toolCallId } = ending.source;
+    const jobs = jobsHeldBy(this.#records, active.missionId, projectMissions(this.#records));
+    if (ending.action === 'LIST')
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        false,
+        'JOBS',
+        jobListText(jobs),
+      );
+    const args = ending.arguments as JobOutputArgs | JobKillArgs;
+    const job = jobs.find((each) => each.name === args.jobId);
+    if (job === undefined)
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        true,
+        'JOB_NOT_FOUND',
+        `You have no background command ${args.jobId}. ${jobListText(jobs)}`,
+      );
+    const sessionId = this.#sessionIdOrThrow();
+    const fromStart = ending.action === 'OUTPUT' && (args as JobOutputArgs).fromStart === true;
+    const response = await this.#deps.gateway.controlJob(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId: job.workflowRunId,
+        jobKey: job.jobKey,
+        action: ending.action === 'KILL' ? 'STOP' : 'READ',
+        ...(ending.action === 'OUTPUT'
+          ? { offset: fromStart ? 0 : job.readOffset, maxBytes: JOB_READ_BYTES }
+          : {}),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    const result = response.outcome === 'ACCEPTED' ? response.result : { found: false as const };
+    if (!result.found) {
+      const state = job.ended === undefined ? 'stopped with its run' : exitText(job.ended);
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        ending.action !== 'KILL',
+        'JOB_GONE',
+        `${job.name} is no longer kept: ${state}.`,
+      );
+    }
+    if (ending.action === 'KILL') {
+      const how =
+        result.exit === undefined
+          ? 'stopping it; you are told when it has ended.'
+          : `it had already ended [${job.ended === undefined ? 'ended' : exitText(job.ended)}].`;
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        toolCallId,
+        false,
+        'JOB_KILLED',
+        `${job.name}: ${how}`,
+      );
+    }
+    await this.#append([
+      {
+        type: 'JOB_READ',
+        workflowRunId,
+        missionId: job.missionId,
+        jobId: job.jobId,
+        nextOffset: result.nextOffset,
+      },
+    ]);
+    const state =
+      result.exit === undefined
+        ? 'running'
+        : job.ended === undefined
+          ? 'ended'
+          : exitText(job.ended);
+    const skipped =
+      result.skipped > 0 ? `[${String(result.skipped)} older bytes are no longer kept]\n` : '';
+    const more =
+      result.nextOffset < result.totalBytes
+        ? `\n[${String(result.totalBytes - result.nextOffset)} more bytes: call job_output again]`
+        : '';
+    const body = result.text === '' ? '(nothing new)' : result.text;
+    return this.#answerControl(
+      workflowRunId,
+      active,
+      toolCallId,
+      false,
+      'JOB_OUTPUT',
+      `${skipped}${body}${more}\n[${job.name} status: ${state}]`,
+    );
+  }
+
+  /**
+   * A job has ended (Orchestration 6.4): recorded for its task, which reads it at its next
+   * assembly, or is woken by it.
+   */
+  async #onJobEnded(
+    workflowRunId: string,
+    event: Extract<KernelToWorkflowEvent, { type: 'JobEnded' }>,
+  ): Promise<void> {
+    const job = jobsOf(this.#records).find((each) => each.jobKey === event.jobKey);
+    if (job === undefined || job.ended !== undefined) return;
+    // The task that started it is told; when it has ended, the nearest task above that has not
+    // (Orchestration 6.4), up to the root.
+    const missions = projectMissions(this.#records);
+    let toMissionId = job.missionId;
+    for (
+      let at = missions.get(toMissionId);
+      at?.ended !== undefined && at.parentId !== undefined;
+      at = missions.get(at.parentId)
+    )
+      toMissionId = at.parentId;
+    await this.#append([
+      {
+        type: 'JOB_ENDED',
+        workflowRunId,
+        missionId: job.missionId,
+        ...(toMissionId === job.missionId ? {} : { toMissionId }),
+        jobId: job.jobId,
+        exit: event.exit,
+        durationMs: event.durationMs,
+        totalBytes: event.totalBytes,
+        readUpTo: job.readOffset,
+        tail: event.tail.length <= 8192 ? event.tail : event.tail.slice(-8192),
+      },
+    ]);
+    await this.#followUpInChat(workflowRunId, toMissionId);
+    await this.#advance(workflowRunId);
+  }
+
+  /**
+   * A chat's main that waits for the user is woken when a background command of the work ends
+   * (Orchestration 4.4, D12), within the limit of wakes without the user: the open input is taken
+   * back, and main goes on in a segment of its own that reads the notice. When the user has just
+   * answered, the Kernel refuses, and the notice comes with that answer.
+   */
+  async #followUpInChat(workflowRunId: string, missionId: string): Promise<void> {
+    if (this.#mode !== 'CHAT' || this.#agents.size > 0) return;
+    if (this.#wakeLimitReached(missionId)) return;
+    const projected = projectGraph(this.#records, workflowRunId);
+    const root = projectMissions(this.#records).get(missionId);
+    if (root === undefined || root.parentId !== undefined) return;
+    const prompt = [...projected.nodes.values()].find(
+      (node) =>
+        node.kind === 'HUMAN' &&
+        node.ask === undefined &&
+        projected.view.get(node.nodeId)?.status === 'RUNNING',
+    );
+    if (prompt === undefined) return;
+    const checkpointId = newId('ckp');
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.withdrawOpenInput(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        humanRequestId: asHumanRequestId(prompt.nodeId),
+        checkpointId,
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED') return;
+    const ended = this.#records.at(-1);
+    this.#inputCheckpointId = checkpointId;
+    await this.#append([
+      {
+        type: 'MISSION_WOKEN',
+        workflowRunId,
+        missionId,
+        checkpointId,
+        causes: [{ kind: 'JOB', ...(ended === undefined ? {} : { seq: ended.seq }) }],
+      },
+      { type: 'NODE_ENDED', workflowRunId, nodeId: prompt.nodeId, status: 'SUCCEEDED' },
+    ]);
+  }
+
+  /** A task that ended stops its jobs (Orchestration 6.3); their end is recorded when it comes. */
+  async #stopJobsOf(workflowRunId: string, missionIds: readonly string[]): Promise<void> {
+    const jobs = runningJobs(this.#records, workflowRunId).filter((job) =>
+      missionIds.includes(job.missionId),
+    );
+    if (jobs.length === 0) return;
+    const sessionId = this.#sessionIdOrThrow();
+    for (const job of jobs)
+      await this.#deps.gateway.controlJob(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          jobKey: job.jobKey,
+          action: 'STOP',
+        },
+        contextOf(sessionId, workflowRunId),
+      );
+  }
+
+  async #onSleep(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'SLEEP' }>,
+  ): Promise<void> {
+    const args = ending.arguments as SleepArgs;
+    const { toolCallId } = ending.source;
+    const running = this.#runningChildren(active.missionId);
+    const jobs = jobsHeldBy(this.#records, active.missionId, projectMissions(this.#records)).filter(
+      (job) => job.running,
+    );
+    const siblings = this.#runningSiblings(active.missionId);
+    const problems: string[] = [];
+    for (const condition of args.until) {
+      if (condition.kind === 'siblings') {
+        const unknown = (condition.names ?? []).filter(
+          (name) => !siblings.some((sibling) => sibling.name === name),
+        );
+        if (siblings.length === 0) problems.push('none of your sibling tasks is still running');
+        else if (unknown.length > 0)
+          problems.push(`no running sibling task is named ${unknown.join(', ')}`);
+        continue;
+      }
+      if (condition.kind === 'children') {
+        const unknown = (condition.names ?? []).filter(
+          (name) => !running.some((child) => child.name === name),
+        );
+        if (running.length === 0)
+          problems.push('none of the subtasks you started is still running');
+        else if (unknown.length > 0)
+          problems.push(`no running subtask of yours is named ${unknown.join(', ')}`);
+      } else if (condition.kind === 'jobs') {
+        const unknown = (condition.jobIds ?? []).filter(
+          (jobId) => !jobs.some((job) => job.name === jobId),
+        );
+        if (jobs.length === 0)
+          problems.push('you have no background commands that are still running');
+        else if (unknown.length > 0)
+          problems.push(`no running background command of yours is ${unknown.join(', ')}`);
+      }
+    }
+    const usable = args.until.some(
+      (condition) =>
+        condition.kind === 'message' ||
+        condition.kind === 'timer' ||
+        (condition.kind === 'children' && running.length > 0) ||
+        (condition.kind === 'siblings' && siblings.length > 0) ||
+        (condition.kind === 'jobs' && jobs.length > 0),
+    );
+    if (!usable || problems.length === args.until.length)
+      return this.#sendBack(
+        workflowRunId,
+        active,
+        toolCallId,
+        'SLEEP_REFUSED',
+        `Not asleep: nothing you named could wake you (${problems.join('; ')}). Go on working, or finish.`,
+      );
+    const timeoutSeconds = args.timeoutSeconds ?? DEFAULT_SLEEP_SECONDS;
+    // What it waits for, with the defaults written down (D28): each child as it ends, all of the
+    // named siblings, any job.
+    const until = args.until.map((condition): WakeCondition => {
+      if (condition.kind === 'children' || condition.kind === 'jobs')
+        return { ...condition, mode: condition.mode ?? 'any' };
+      if (condition.kind === 'siblings') return { ...condition, mode: condition.mode ?? 'all' };
+      return { ...condition };
+    });
+    const named = until
+      .map((condition) =>
+        'mode' in condition ? `${condition.kind} (${condition.mode})` : condition.kind,
+      )
+      .join(', ');
+    // A timer guessed while siblings still work is the wrong way to wait for them.
+    const guessing =
+      siblings.length > 0 &&
+      until.every((condition) => condition.kind === 'timer' || condition.kind === 'message');
+    const hint = guessing
+      ? ` If you are waiting for a sibling task to finish, sleep with until siblings (names) instead of a timer: you are woken when it has ended.`
+      : '';
+    await this.#append([
+      answerRecord(
+        active.state,
+        'ASLEEP',
+        toolCallId,
+        `Asleep until: ${named} (at most ${String(timeoutSeconds)} seconds).${hint}`,
+      ),
+      {
+        type: 'SEGMENT_YIELDED',
+        workflowRunId,
+        nodeId: active.nodeId,
+        missionId: active.missionId,
+        agentRunId: active.state.agentRunId,
+        until,
+        timeoutSeconds,
+        source: { modelTurnRequestId: ending.source.modelTurnRequestId, toolCallId },
+      },
+    ]);
+    await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
+    await this.#endNode(workflowRunId, active.nodeId, 'YIELDED');
+    // Time is the Kernel's: it is asked for the timer it named and for the most it may sleep.
+    const timers = args.until.flatMap((condition) =>
+      condition.kind === 'timer' ? [condition.seconds] : [],
+    );
+    const sessionId = this.#sessionIdOrThrow();
+    const schedule = async (suffix: string, seconds: number) => {
+      const response = await this.#deps.gateway.scheduleWake(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          missionId: active.missionId,
+          timerId: `${active.nodeId}:${suffix}`,
+          seconds,
+        },
+        contextOf(sessionId, workflowRunId),
+      );
+      if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+        throw new Error(`scheduleWake refused: ${response.reasonCode}`);
+    };
+    if (timers.length > 0) await schedule('timer', Math.min(...timers));
+    await schedule('timeout', timeoutSeconds);
+    return this.#advance(workflowRunId);
+  }
+
+  /** Requests a task sent that are neither answered nor left without an answer (D25). */
+  #openRequests(missionId: string): readonly string[] {
+    const sent: string[] = [];
+    const closed = new Set<string>();
+    for (const record of this.#records) {
+      if (
+        record.type === 'MISSION_MESSAGE' &&
+        record.from === missionId &&
+        record.kind === 'request'
+      )
+        sent.push(record.source.toolCallId);
+      if (
+        record.type === 'MISSION_MESSAGE' &&
+        record.kind === 'reply' &&
+        record.replyTo !== undefined
+      )
+        closed.add(record.replyTo);
+      if (record.type === 'MESSAGE_UNANSWERED') closed.add(record.requestToolCallId);
+    }
+    return sent.filter((id) => !closed.has(id));
+  }
+
+  /**
+   * Tool results of the sender's own, handed over to one task with a message (D25): kept for the
+   * Session and registered for that task, which reads them with read_output.
+   */
+  async #handToMission(
+    workflowRunId: string,
+    active: ActiveAgent,
+    missionId: string,
+    listed: readonly string[],
+  ): Promise<
+    | { readonly kind: 'HANDED'; readonly referenceId: string; readonly notes: readonly string[] }
+    | { readonly kind: 'REFUSED'; readonly text: string }
+  > {
+    const { agentRunId, sessionId } = active.state;
+    const checked = checkedItems(this.#records, agentRunId, listed);
+    if (checked.items.length === 0)
+      return {
+        kind: 'REFUSED',
+        text: `Not sent: none of the references is a successful tool call of yours (${checked.notes.join(' ')}).`,
+      };
+    const kept = await this.#deps.gateway.retainArtifacts(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        refs: checked.items.map((item) => item.ref),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (kept.outcome !== 'ACCEPTED')
+      return { kind: 'REFUSED', text: 'Not sent: the tool results could not be kept.' };
+    const referenceId = nextReferenceId(this.#records);
+    await this.#append([
+      {
+        type: 'REFERENCES_REGISTERED',
+        workflowRunId,
+        referenceId,
+        from: { agentRunId, label: active.task?.name ?? active.agentId },
+        // The root of a chat reads as main, as it reads the results of its subtasks.
+        to:
+          this.#mode === 'CHAT' &&
+          projectMissions(this.#records).get(missionId)?.parentId === undefined
+            ? { kind: 'MAIN' }
+            : { kind: 'MISSION', missionId },
+        items: [...checked.items],
+      },
+    ]);
+    return { kind: 'HANDED', referenceId, notes: checked.notes };
+  }
+
+  /**
+   * A task has `ROUNDS_ASK_AHEAD` working rounds left (D91): the Workflow asks its parent for more
+   * with a request that asks for a decision, sent, woken on and owed an answer as any request is,
+   * and nothing of the task runs until the reply. The request wakes its parent past its limit of
+   * wakes and does not count toward it (D94). With no parent to ask, or one that has ended, the
+   * task goes on with the rounds it has.
+   */
+  async #onRounds(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'ROUNDS' }>,
+  ): Promise<void> {
+    // Told to stop or interrupted, it ends here, where its next round would have begun.
+    if (active.stopAfterRound !== undefined)
+      return this.#halt(workflowRunId, active, active.stopAfterRound);
+    const missions = projectMissions(this.#records);
+    const me = missions.get(active.missionId);
+    const parent = me?.parentId === undefined ? undefined : missions.get(me.parentId);
+    let turn: Extract<SessionLogRecord, { type: 'MODEL_TURN' }> | undefined;
+    for (const record of this.#records)
+      if (record.type === 'MODEL_TURN' && record.agentRunId === active.state.agentRunId)
+        turn = record;
+    // The request always wakes the parent, whatever its limit of wakes (D94).
+    if (
+      me === undefined ||
+      parent === undefined ||
+      parent.ended !== undefined ||
+      turn === undefined ||
+      this.#openRequests(me.missionId).length >= MAX_OPEN_REQUESTS
+    )
+      return this.#apply(
+        workflowRunId,
+        answerRounds(active.state, undefined, this.#context(active.scope)),
+      );
+    const requestId = `rounds_${active.state.agentRunId}`;
+    const changed =
+      active.changed.length === 0
+        ? 'It has changed no file yet.'
+        : `Files it changed so far: ${active.changed.slice(0, 12).join(', ')}${active.changed.length > 12 ? ` and ${String(active.changed.length - 12)} more` : ''}.`;
+    const text = `Task ${me.name} has used ${String(ending.round)} of its ${String(ending.maxRounds)} rounds; ${String(ROUNDS_ASK_AHEAD)} working rounds are left. The Workflow asks for it: ${String(ending.maxRounds)} more rounds, so that it need not wrap up its part unfinished. ${changed} It waits for your answer and does nothing meanwhile: grant true gives the rounds and it goes on; grant false leaves it the rounds it has, and it finishes with them.`;
+    await this.#append([
+      {
+        type: 'MISSION_MESSAGE',
+        workflowRunId,
+        from: me.missionId,
+        fromLabel: me.name,
+        to: [parent.missionId],
+        kind: 'request',
+        byWorkflow: true,
+        asksGrant: true,
+        text,
+        source: {
+          modelTurnRequestId: turn.requestId,
+          outputRef: turn.outputRef,
+          toolCallId: requestId,
+        },
+      },
+    ]);
+    this.#agents.set(active.state.agentRunId, { ...active, awaitingGrant: requestId });
+    const sessionId = this.#sessionIdOrThrow();
+    // What the interface misses is no reason to stop the work: a refusal is left as it is.
+    await this.#deps.gateway
+      .updateActivity(
+        {
+          requestId: newId('req'),
+          sessionId,
+          workflowRunId,
+          agentRunId: active.state.agentRunId,
+          phase: 'AWAITING_GRANT',
+        },
+        contextOf(sessionId, workflowRunId),
+      )
+      .catch(() => undefined);
+    return this.#advance(workflowRunId);
+  }
+
+  /**
+   * The request for more rounds `requestId` was answered, or left without an answer (D91): the
+   * task that waits on it starts its next round with what was granted.
+   */
+  async #grantAnswered(workflowRunId: string, requestId: string, grant: boolean): Promise<void> {
+    const waiting = [...this.#agents.values()].find((each) => each.awaitingGrant === requestId);
+    if (waiting === undefined) return;
+    const current: ActiveAgent = { ...waiting, awaitingGrant: undefined };
+    this.#agents.set(waiting.state.agentRunId, current);
+    if (current.stopAfterRound !== undefined)
+      return this.#halt(workflowRunId, current, current.stopAfterRound);
+    const granted = grant ? current.state.definitions.limits.maxRounds : 0;
+    await this.#apply(
+      workflowRunId,
+      answerRounds(current.state, granted, this.#context(current.scope)),
+    );
+  }
+
+  /**
+   * `send_message` (Orchestration 5): routed along the tree by name, recorded once, and answered at
+   * once. Who gets it reads it at its next assembly, or is woken by it.
+   */
+  async #onMessage(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'MESSAGE' }>,
+  ): Promise<void> {
+    const args = ending.arguments as SendMessageArgs;
+    const { toolCallId } = ending.source;
+    const answer = (refused: boolean, text: string) =>
+      this.#apply(
+        workflowRunId,
+        answerDelegatedCall(
+          active.state,
+          toolCallId,
+          {
+            refused,
+            spawn: false,
+            records: [answerRecord(active.state, refused ? 'NOT_SENT' : 'SENT', toolCallId, text)],
+          },
+          this.#context(active.scope),
+          this.#deps.config,
+        ),
+      );
+    const kind = args.kind ?? 'inform';
+    // A long text is not shown whole: the receiver reads its summary first (Orchestration 5.3).
+    if (messageIsLong(args.text) && (args.summary === undefined || args.summary.trim() === ''))
+      return answer(
+        true,
+        `Not sent: a text longer than ${String(MESSAGE_SHOWN_CHARS)} characters or ${String(MESSAGE_SHOWN_LINES)} lines needs a summary. The receiver is shown the summary and the beginning, and reads all of it with read_output.`,
+      );
+    // A reply is owed (Orchestration 5.3), so it never runs into the limit of a segment.
+    if (kind !== 'reply' && active.messages >= MAX_MESSAGES_PER_SEGMENT)
+      return answer(
+        true,
+        `Not sent: at most ${String(MAX_MESSAGES_PER_SEGMENT)} messages in one segment. Put what you still have to say into fewer messages: a message may be long.`,
+      );
+    const missions = projectMissions(this.#records);
+    const me = missions.get(active.missionId);
+    if (me === undefined) return answer(true, 'Not sent: this task is not in the task tree.');
+    const open = (each: MissionView) => each.ended === undefined;
+    let targets: readonly MissionView[];
+    /** The task the message was written for, when it had ended and another reads it (D92). */
+    let meantFor: MissionView | undefined;
+    // A reply answers a message sent to this task, a request or an inform, and goes back to the
+    // task that sent it (D25, Orchestration 5.3).
+    const request =
+      kind === 'reply'
+        ? this.#records.find(
+            (record): record is Extract<SessionLogRecord, { type: 'MISSION_MESSAGE' }> =>
+              record.type === 'MISSION_MESSAGE' &&
+              record.kind !== 'reply' &&
+              record.source.toolCallId === args.replyTo &&
+              record.to.includes(me.missionId),
+          )
+        : undefined;
+    if (kind === 'reply' && request === undefined)
+      return answer(
+        true,
+        `Not sent: replyTo must be the id of a message sent to you${args.replyTo === undefined ? '' : `; ${args.replyTo} is not one`}. Send it as inform instead.`,
+      );
+    // A request that asks for a decision is answered with it (D91).
+    if (request?.asksGrant === true && args.grant === undefined)
+      return answer(
+        true,
+        `Not sent: request ${request.source.toolCallId} asks for a decision. Reply with grant true to give what it asks for, or grant false to refuse it.`,
+      );
+    if (kind === 'request' && this.#openRequests(me.missionId).length >= MAX_OPEN_REQUESTS)
+      return answer(
+        true,
+        `Not sent: ${String(MAX_OPEN_REQUESTS)} of your requests are still unanswered. Wait for their replies (sleep until message) or send this as inform.`,
+      );
+    if (request !== undefined) {
+      const asker = missions.get(request.from);
+      if (asker === undefined || !open(asker))
+        return answer(
+          true,
+          'Not sent: the task that asked has already ended; it reads nothing more.',
+        );
+      targets = [asker];
+    } else if (args.to === 'parent') {
+      const parent = me.parentId === undefined ? undefined : missions.get(me.parentId);
+      if (parent === undefined) return answer(true, 'Not sent: this task has no parent task.');
+      targets = [parent];
+    } else if (args.to === 'children') targets = childrenOf(missions, me.missionId).filter(open);
+    else if (args.to === 'siblings') targets = siblingsOf(missions, me.missionId).filter(open);
+    else {
+      // A child or sibling by its name, or the parent by its own (D92): the name of the parent
+      // means the parent, as `parent` does.
+      const parent = me.parentId === undefined ? undefined : missions.get(me.parentId);
+      const named =
+        [...childrenOf(missions, me.missionId), ...siblingsOf(missions, me.missionId)]
+          .filter((each) => each.name === args.to)
+          .at(-1) ?? (parent?.name === args.to ? parent : undefined);
+      if (named === undefined)
+        return answer(
+          true,
+          `Not sent: no parent, child or sibling task is named ${args.to}. to is parent (or its name), children, siblings or the name of one of them.`,
+        );
+      if (open(named)) targets = [named];
+      else {
+        // A task that ended handed its result up: the nearest task above it that still runs
+        // took over its part, and reads the message in its place (D92).
+        let above = named.parentId === undefined ? undefined : missions.get(named.parentId);
+        while (above !== undefined && !open(above))
+          above = above.parentId === undefined ? undefined : missions.get(above.parentId);
+        // A child of the sender's own handed its result to the sender: nobody else to tell.
+        if (above === undefined || above.missionId === me.missionId)
+          return answer(
+            true,
+            `Not sent: task ${args.to} has already ended; it reads nothing more.${named.parentId === me.missionId ? ` To give it more work with all it knows, start it again: run_subagents with a task that has continues: "${args.to}" and the same agent.` : ''}`,
+          );
+        targets = [above];
+        meantFor = named;
+      }
+    }
+    if (targets.length === 0)
+      return answer(true, 'Not sent: there is no running task to send it to.');
+    // An interrupt goes down the tree only: to a child of the sender (D21).
+    const interrupt = args.interrupt === true;
+    if (interrupt && targets.some((each) => each.parentId !== me.missionId))
+      return answer(
+        true,
+        'Not sent: interrupt is only for your own subtasks. Send it without interrupt; it reaches them as information.',
+      );
+    if (args.references !== undefined && targets.length !== 1)
+      return answer(
+        true,
+        'Not sent: tool results can be attached for one task only. Name one task in to, or send it without references.',
+      );
+    // Attached tool results are handed over to the one receiver, as a result is (D25).
+    const handed =
+      args.references === undefined
+        ? undefined
+        : await this.#handToMission(
+            workflowRunId,
+            active,
+            targets[0]?.missionId ?? '',
+            args.references,
+          );
+    if (handed?.kind === 'REFUSED') return answer(true, handed.text);
+    const sending = this.#agents.get(active.state.agentRunId) ?? active;
+    this.#agents.set(active.state.agentRunId, { ...sending, messages: sending.messages + 1 });
+    await this.#append([
+      {
+        type: 'MISSION_MESSAGE',
+        workflowRunId,
+        from: me.missionId,
+        fromLabel: me.name,
+        to: targets.map((each) => each.missionId),
+        ...(interrupt ? { interrupt: true } : {}),
+        ...(kind === 'inform' ? {} : { kind }),
+        ...(request === undefined ? {} : { replyTo: request.source.toolCallId }),
+        ...(request?.asksGrant === true && args.grant !== undefined ? { grant: args.grant } : {}),
+        ...(meantFor === undefined ? {} : { meantFor: meantFor.name }),
+        ...(handed?.kind === 'HANDED' ? { referenceId: handed.referenceId } : {}),
+        // What was said goes into the log itself, for replay and audit (D56).
+        ...(args.summary === undefined ? {} : { summary: args.summary }),
+        text: args.text,
+        source: {
+          modelTurnRequestId: ending.source.modelTurnRequestId,
+          outputRef: ending.source.modelOutputRef,
+          toolCallId,
+        },
+      },
+    ]);
+    const current = this.#agents.get(active.state.agentRunId) ?? active;
+    await this.#apply(
+      workflowRunId,
+      answerDelegatedCall(
+        current.state,
+        toolCallId,
+        {
+          refused: false,
+          spawn: false,
+          records: [
+            answerRecord(
+              current.state,
+              'SENT',
+              toolCallId,
+              `${interrupt ? 'Interrupted' : kind === 'request' ? `Request ${toolCallId} sent to` : 'Sent to'} ${targets.map((each) => each.name).join(', ')}.${meantFor === undefined ? '' : ` Task ${meantFor.name} has ended and its result went up to ${targets.map((each) => each.name).join(', ')}, so the message went there instead.`}${kind === 'request' ? ' Its reply comes as a message; sleep until message to wait for it.' : ''}${handed?.kind === 'HANDED' && handed.notes.length > 0 ? ` ${handed.notes.join(' ')}` : ''}`,
+            ),
+          ],
+        },
+        this.#context(current.scope),
+        this.#deps.config,
+      ),
+    );
+    // The task that waits on the decision goes on with it.
+    if (request?.asksGrant === true)
+      await this.#grantAnswered(workflowRunId, request.source.toolCallId, args.grant === true);
+    if (interrupt)
+      for (const target of targets) await this.#interruptMission(workflowRunId, target);
+    return this.#advance(workflowRunId);
+  }
+
+  /**
+   * An interrupt reaches a task (D20): one that works ends its round and starts again at once;
+   * one that sleeps is woken now, whatever it waited for and however often it was woken.
+   */
+  async #interruptMission(workflowRunId: string, mission: MissionView): Promise<void> {
+    const running = [...this.#agents.values()].find((each) => each.missionId === mission.missionId);
+    if (running !== undefined) {
+      const halt = { kind: 'INTERRUPT', reason: 'interrupted by its parent' } as const;
+      this.#agents.set(running.state.agentRunId, { ...running, stopAfterRound: halt });
+      // One that waits for more rounds runs nothing whose end would halt it: it halts now (D91).
+      if (running.awaitingGrant !== undefined)
+        return this.#grantAnswered(workflowRunId, running.awaitingGrant, false);
+      await this.#haltAgentRun(workflowRunId, running.state.agentRunId);
+      return;
+    }
+    const sleeping = this.#sleeping(workflowRunId).find(
+      (each) => each.mission.missionId === mission.missionId,
+    );
+    if (sleeping !== undefined)
+      await this.#continueMission(workflowRunId, sleeping.node, [{ kind: 'INTERRUPTED' }]);
+  }
+
+  /** Answers a control call that is not a Unit, and the segment goes on. */
+  async #answerControl(
+    workflowRunId: string,
+    active: ActiveAgent,
+    toolCallId: string,
+    refused: boolean,
+    code: string,
+    text: string,
+  ): Promise<void> {
+    const shown = text.length <= 4000 ? text : `${text.slice(0, 3999)}…`;
+    await this.#apply(
+      workflowRunId,
+      answerDelegatedCall(
+        active.state,
+        toolCallId,
+        {
+          refused,
+          spawn: false,
+          records: [answerRecord(active.state, code, toolCallId, shown)],
+        },
+        this.#context(active.scope),
+        this.#deps.config,
+      ),
+    );
+  }
+
+  /**
+   * `stop_subagents` (Orchestration 5.1, D19): children of the caller stop with their subtree. A
+   * task that works stops after the round it is in; one that sleeps or has not started, at once.
+   */
+  async #onStop(
+    workflowRunId: string,
+    active: ActiveAgent,
+    ending: Extract<AgentEnding, { kind: 'STOP' }>,
+  ): Promise<void> {
+    const args = ending.arguments as StopSubagentsArgs;
+    const missions = projectMissions(this.#records);
+    const open = childrenOf(missions, active.missionId).filter((each) => each.ended === undefined);
+    const all = args.names.includes('all');
+    const targets = all ? open : open.filter((each) => args.names.includes(each.name));
+    const unknown = all
+      ? []
+      : args.names.filter((name) => !targets.some((each) => each.name === name));
+    if (unknown.length > 0 || targets.length === 0)
+      return this.#answerControl(
+        workflowRunId,
+        active,
+        ending.source.toolCallId,
+        true,
+        'NOT_STOPPED',
+        `Nothing stopped: ${unknown.length > 0 ? `no running subtask of yours is named ${unknown.join(', ')}` : 'none of your subtasks is running'}.`,
+      );
+    const reason = args.reason;
+    for (const target of targets) await this.#stopMission(workflowRunId, target, reason, missions);
+    await this.#answerControl(
+      workflowRunId,
+      this.#agents.get(active.state.agentRunId) ?? active,
+      ending.source.toolCallId,
+      false,
+      'STOPPING',
+      `Stopping ${targets.map((each) => each.name).join(', ')} with what they started. One that is working stops after its current step; you get each result as stopped.`,
+    );
+    return this.#advance(workflowRunId);
+  }
+
+  /** A task and everything below it come to an end (Orchestration 5.1). */
+  async #stopMission(
+    workflowRunId: string,
+    mission: MissionView,
+    reason: string,
+    missions: ReadonlyMap<string, MissionView>,
+  ): Promise<void> {
+    for (const child of childrenOf(missions, mission.missionId))
+      if (child.ended === undefined)
+        await this.#stopMission(workflowRunId, child, reason, missions);
+    const note = `stopped by its parent: ${reason}`;
+    const running = [...this.#agents.values()].find((each) => each.missionId === mission.missionId);
+    if (running !== undefined) {
+      this.#agents.set(running.state.agentRunId, {
+        ...running,
+        stopAfterRound: { kind: 'STOP', reason: note },
+      });
+      // One that waits for more rounds runs nothing whose end would halt it: it halts now (D91).
+      if (running.awaitingGrant !== undefined)
+        return this.#grantAnswered(workflowRunId, running.awaitingGrant, false);
+      await this.#haltAgentRun(workflowRunId, running.state.agentRunId);
+      return;
+    }
+    const sleeping = this.#sleeping(workflowRunId).find(
+      (each) => each.mission.missionId === mission.missionId,
+    );
+    if (sleeping !== undefined) {
+      await this.#closeSleeping(workflowRunId, sleeping.node, 'INTERRUPTED', note);
+      return;
+    }
+    // Not started yet: its nodes end without running.
+    const projected = projectGraph(this.#records, workflowRunId);
+    await this.#append(
+      mission.nodeIds
+        .filter(
+          (nodeId) =>
+            projected.view.get(nodeId)?.status === 'PENDING' || !projected.view.has(nodeId),
+        )
+        .filter((nodeId) => projected.nodes.has(nodeId))
+        .map((nodeId) => ({
+          type: 'NODE_ENDED' as const,
+          workflowRunId,
+          nodeId,
+          status: 'INTERRUPTED' as const,
+          result: resultOf({ status: 'FAILED', notes: [note] }),
+        })),
+    );
+  }
+
+  /**
+   * What a stopped or interrupted segment has in flight is cancelled now (5.1, 5.2): a command or
+   * a model call does not run to its end first. Each cancelled Unit answers INTERRUPTED(ABORTED);
+   * when none is left, the segment is halted.
+   */
+  async #haltAgentRun(workflowRunId: string, agentRunId: string): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.haltAgentRun(
+      { requestId: newId('req'), sessionId, workflowRunId, agentRunId },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`haltAgentRun refused: ${response.reasonCode}`);
+  }
+
+  /**
+   * The round of a segment told to stop has ended (5.1, 5.2): stopped, its task ends with what it
+   * did; interrupted, a new segment of its task starts at once and reads why at the end.
+   */
+  async #halt(
+    workflowRunId: string,
+    active: ActiveAgent,
+    halt: NonNullable<ActiveAgent['stopAfterRound']>,
+  ): Promise<void> {
+    if (halt.kind === 'STOP') {
+      await this.#endAgentRun(workflowRunId, active, 'FAILED');
+      await this.#endNode(
+        workflowRunId,
+        active.nodeId,
+        'INTERRUPTED',
+        resultOf({ status: 'FAILED', notes: [halt.reason, ...changedNote(active.changed)] }),
+      );
+      return this.#advance(workflowRunId);
+    }
+    await this.#endAgentRun(workflowRunId, active, 'YIELDED', true);
+    await this.#endNode(workflowRunId, active.nodeId, 'YIELDED');
+    const node = projectGraph(this.#records, workflowRunId).nodes.get(active.nodeId);
+    if (node !== undefined)
+      await this.#continueMission(workflowRunId, node, [{ kind: 'INTERRUPTED' }]);
+    return this.#advance(workflowRunId);
+  }
+
+  /**
+   * A task whose last segment has ended for good has ended: its `MISSION_ENDED` is written, once
+   * (Orchestration 3.2). A root task ends only by its own end or with the run, never here.
+   */
+  async #settleMissions(workflowRunId: string): Promise<void> {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const missions = projectMissions(this.#records);
+    const ended: NewLogRecord[] = [];
+    for (const mission of missions.values()) {
+      if (mission.ended !== undefined || mission.parentId === undefined) continue;
+      const last = mission.nodeIds.at(-1);
+      if (last === undefined || !projected.nodes.has(last)) continue;
+      const status = projected.view.get(last)?.status;
+      if (status === undefined || !isTerminal(status) || status === 'YIELDED') continue;
+      ended.push({
+        type: 'MISSION_ENDED',
+        workflowRunId,
+        missionId: mission.missionId,
+        status:
+          status === 'SUCCEEDED'
+            ? 'SUCCEEDED'
+            : status === 'INTERRUPTED'
+              ? 'INTERRUPTED'
+              : 'FAILED',
+      });
+    }
+    await this.#append(ended);
+    // A task that ended leaves its unanswered requests unanswered for good (D25): the tasks that
+    // asked are told, and woken if they sleep on messages.
+    const endedIds = new Set(
+      ended.flatMap((record) => (record.type === 'MISSION_ENDED' ? [record.missionId] : [])),
+    );
+    if (endedIds.size > 0) {
+      const replied = new Set(
+        this.#records.flatMap((record) =>
+          record.type === 'MISSION_MESSAGE' &&
+          record.kind === 'reply' &&
+          record.replyTo !== undefined
+            ? [record.replyTo]
+            : [],
+        ),
+      );
+      const unanswered: NewLogRecord[] = [];
+      for (const record of this.#records) {
+        if (record.type !== 'MISSION_MESSAGE' || record.kind !== 'request') continue;
+        if (replied.has(record.source.toolCallId)) continue;
+        const gone = record.to.filter((id) => endedIds.has(id));
+        for (const id of gone)
+          unanswered.push({
+            type: 'MESSAGE_UNANSWERED',
+            workflowRunId,
+            missionId: record.from,
+            requestToolCallId: record.source.toolCallId,
+            fromLabel: missions.get(id)?.name ?? 'a task',
+          });
+      }
+      await this.#append(unanswered);
+      // A task that waited on one of them for more rounds goes on with what it has (D91).
+      for (const record of unanswered)
+        if (record.type === 'MESSAGE_UNANSWERED')
+          await this.#grantAnswered(workflowRunId, record.requestToolCallId, false);
+    }
+    // A task that delivered leaves its background commands running: their end goes to the task
+    // above (Orchestration 6.4). One that was stopped or failed stops them.
+    await this.#stopJobsOf(
+      workflowRunId,
+      ended.flatMap((record) =>
+        record.type === 'MISSION_ENDED' && record.status !== 'SUCCEEDED' ? [record.missionId] : [],
+      ),
+    );
+  }
+
+  /**
+   * A delegation whose tasks have all ended is given back: the shares never claimed return to the
+   * caller, and its task may write in their scopes again (M2Design 7.3, Orchestration 8.2).
+   */
+  async #releaseFinishedDelegations(workflowRunId: string): Promise<void> {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const missions = projectMissions(this.#records);
+    const byDelegation = new Map<string, string[]>();
+    for (const edge of projected.graph.edges)
+      if (edge.kind === 'DELEGATE' && edge.call?.delegationId !== undefined)
+        byDelegation.set(edge.call.delegationId, [
+          ...(byDelegation.get(edge.call.delegationId) ?? []),
+          edge.to,
+        ]);
+    const sessionId = this.#sessionIdOrThrow();
+    for (const [delegationId, nodeIds] of byDelegation) {
+      if (this.#released.has(delegationId)) continue;
+      const done = nodeIds.every((nodeId) => {
+        const missionId = projected.nodes.get(nodeId)?.mission?.id;
+        return missionId !== undefined && missions.get(missionId)?.ended !== undefined;
+      });
+      if (!done) continue;
+      this.#released.add(delegationId);
+      await this.#deps.gateway.releaseDelegation(
+        { requestId: newId('req'), sessionId, workflowRunId, delegationId },
+        contextOf(sessionId, workflowRunId),
+      );
+    }
+  }
+
+  /**
+   * What wakes each sleeping task now (Orchestration 4.2, 4.4): the events since it went to sleep
+   * that it named, within the limit of wakes without the user. Pure in the log.
+   */
+  #wakeCauses(
+    mission: MissionView,
+    yielded: Extract<SessionLogRecord, { type: 'SEGMENT_YIELDED' }>,
+    missions: ReadonlyMap<string, MissionView>,
+  ): Extract<SessionLogRecord, { type: 'MISSION_WOKEN' }>['causes'] {
+    const after = (seq: number) => seq > yielded.seq;
+    // A task paused by a rewind (7.5) goes on when its parent sends it a message, and on nothing
+    // else: what else comes in is kept for that segment.
+    if (yielded.until.some((condition) => condition.kind === 'parent')) {
+      const word = this.#records.find(
+        (record) =>
+          record.type === 'MISSION_MESSAGE' &&
+          after(record.seq) &&
+          record.to.includes(mission.missionId) &&
+          record.from === mission.parentId,
+      );
+      if (word === undefined) return [];
+      return [
+        {
+          kind:
+            word.type === 'MISSION_MESSAGE' && word.interrupt === true ? 'INTERRUPTED' : 'MESSAGE',
+          seq: word.seq,
+        },
+      ];
+    }
+    // A task that waits for the user's answer is woken by it alone (4.4): what else comes in is
+    // kept for that segment, so the same question is not asked twice.
+    const asked = yielded.until.find((condition) => condition.kind === 'human');
+    if (asked !== undefined) {
+      const answered = this.#records.find(
+        (record) =>
+          record.type === 'NODE_ENDED' && record.nodeId === asked.nodeId && after(record.seq),
+      );
+      return answered === undefined ? [] : [{ kind: 'HUMAN', seq: answered.seq }];
+    }
+    // A message counts when the task has not seen it: after the last context it was given, even
+    // if it came just before it went to sleep.
+    let lastSeen = 0;
+    for (const record of this.#records)
+      if (
+        record.type === 'UNIT_SUBMITTED' &&
+        record.agentRunId === yielded.agentRunId &&
+        record.unitRef.id === 'context-assemble'
+      )
+        lastSeen = record.seq;
+    const causes: Extract<SessionLogRecord, { type: 'MISSION_WOKEN' }>['causes'][number][] = [];
+    const spawned = this.#spawnedNodes();
+    const children = childrenOf(missions, mission.missionId).filter((child) =>
+      child.nodeIds.some((id) => spawned.has(id)),
+    );
+    const endedAt = new Map<string, number>();
+    const messages: number[] = [];
+    /** Requests that ask for a decision (D91): they wake the task past its limit (D94). */
+    const decisions: number[] = [];
+    for (const record of this.#records) {
+      if (
+        record.type === 'MISSION_TIMER_DUE' &&
+        record.missionId === mission.missionId &&
+        after(record.seq)
+      ) {
+        if (record.timerId === `${yielded.nodeId}:timeout`)
+          causes.push({ kind: 'TIMEOUT', seq: record.seq });
+        else if (
+          record.timerId === `${yielded.nodeId}:timer` &&
+          !this.#wakeLimitReached(mission.missionId)
+        )
+          causes.push({ kind: 'TIMER', seq: record.seq });
+      }
+      if (record.type === 'MISSION_ENDED') endedAt.set(record.missionId, record.seq);
+      if (
+        record.type === 'MISSION_MESSAGE' &&
+        record.to.includes(mission.missionId) &&
+        record.seq > lastSeen
+      )
+        (record.asksGrant === true ? decisions : messages).push(record.seq);
+      if (
+        record.type === 'MESSAGE_UNANSWERED' &&
+        record.missionId === mission.missionId &&
+        record.seq > lastSeen
+      )
+        messages.push(record.seq);
+    }
+    const endedWith = new Map(
+      this.#records.flatMap((record) =>
+        record.type === 'MISSION_ENDED' ? [[record.missionId, record.status] as const] : [],
+      ),
+    );
+    for (const condition of yielded.until) {
+      if (condition.kind === 'children') {
+        const watched = children.filter(
+          (child) => condition.names === undefined || condition.names.includes(child.name),
+        );
+        if (watched.length === 0) continue;
+        const ends = watched.map((child) => endedAt.get(child.missionId));
+        const allEnded = ends.every((seq) => seq !== undefined);
+        const anyNew = ends.some((seq) => seq !== undefined && after(seq));
+        if (condition.mode === 'all' ? allEnded : anyNew || allEnded)
+          causes.push({ kind: 'CHILDREN', seq: Math.max(...ends.map((seq) => seq ?? 0)) });
+      }
+      if (condition.kind === 'siblings') {
+        const watched = siblingsOf(missions, mission.missionId).filter(
+          (sibling) =>
+            sibling.nodeIds.some((id) => spawned.has(id)) &&
+            (condition.names === undefined || condition.names.includes(sibling.name)),
+        );
+        if (watched.length === 0) continue;
+        const ends = watched.map((sibling) => endedAt.get(sibling.missionId));
+        const allEnded = ends.every((seq) => seq !== undefined);
+        const anyNew = ends.some((seq) => seq !== undefined && after(seq));
+        if (condition.mode === 'all' ? allEnded : anyNew)
+          causes.push({ kind: 'SIBLINGS', seq: Math.max(...ends.map((seq) => seq ?? 0)) });
+      }
+    }
+    // A subtask that failed or was stopped wakes its parent whatever it waits for (D28): the parent
+    // has to decide what to do about it now, not after the others.
+    if (!causes.some((cause) => cause.kind === 'CHILDREN')) {
+      const failed = children
+        .map((child) => ({ child, seq: endedAt.get(child.missionId) }))
+        .filter(
+          ({ child, seq }) =>
+            seq !== undefined && after(seq) && endedWith.get(child.missionId) !== 'SUCCEEDED',
+        );
+      if (failed.length > 0)
+        causes.push({ kind: 'CHILDREN', seq: Math.max(...failed.map(({ seq }) => seq ?? 0)) });
+    }
+    // A background command it is told of wakes a sleeping task (Orchestration 6.4): its own, or
+    // one of a task below that ended before it. Only `jobs (all)` over named jobs waits for all of
+    // them; the limit of wakes without the user holds.
+    const jobs = jobsHeldBy(this.#records, mission.missionId, projectMissions(this.#records));
+    const allOf = yielded.until.find(
+      (condition) => condition.kind === 'jobs' && condition.mode === 'all',
+    );
+    const waitsForAll =
+      allOf?.kind === 'jobs'
+        ? jobs.filter((job) => allOf.jobIds === undefined || allOf.jobIds.includes(job.name))
+        : [];
+    const allDone = waitsForAll.every((job) => job.ended !== undefined);
+    const told = this.#records.filter(
+      (record): record is Extract<SessionLogRecord, { type: 'JOB_ENDED' }> =>
+        record.type === 'JOB_ENDED' &&
+        after(record.seq) &&
+        (record.toMissionId ?? record.missionId) === mission.missionId &&
+        (allDone ||
+          !waitsForAll.some(
+            (job) => job.jobId === record.jobId && job.missionId === record.missionId,
+          )),
+    );
+    if (told.length > 0 && !this.#wakeLimitReached(mission.missionId))
+      causes.push({ kind: 'JOB', seq: Math.max(...told.map((record) => record.seq)) });
+    // A message wakes a sleeping task whatever it waited for, within the limit (D20). A request
+    // that asks for a decision always does, and does not count toward the limit (D94): a task
+    // waits on the answer, and each AgentRun asks once, so it cannot loop.
+    if (decisions.length > 0) causes.push({ kind: 'MESSAGE', seq: decisions[0] ?? yielded.seq });
+    else if (messages.length > 0 && !this.#wakeLimitReached(mission.missionId))
+      causes.push({ kind: 'MESSAGE', seq: messages[0] ?? yielded.seq });
+    return causes;
+  }
+
+  /** Wakes by messages, timers and jobs since the last word of the user (Orchestration 4.4). */
+  #wakeLimitReached(missionId: string): boolean {
+    let count = 0;
+    // A wake by a request that asks for a decision is not counted (D94).
+    const decisions = new Set<number>();
+    const missions = projectMissions(this.#records);
+    for (const record of this.#records) {
+      if (record.type === 'HUMAN_ANSWERED') count = 0;
+      // A subtask of it that ended is the work going on (D95): what the limit stops is tasks that
+      // wake each other with nothing ending. In a long task the user may say nothing for an hour.
+      if (record.type === 'MISSION_ENDED' && missions.get(record.missionId)?.parentId === missionId)
+        count = 0;
+      if (record.type === 'MISSION_MESSAGE' && record.asksGrant === true) decisions.add(record.seq);
+      if (
+        record.type === 'MISSION_WOKEN' &&
+        record.missionId === missionId &&
+        record.causes.some(
+          (cause) =>
+            (cause.kind === 'MESSAGE' && (cause.seq === undefined || !decisions.has(cause.seq))) ||
+            cause.kind === 'TIMER' ||
+            cause.kind === 'JOB',
+        )
+      )
+        count += 1;
+    }
+    return count >= MAX_CONSECUTIVE_WAKES;
+  }
+
+  /** The tasks that sleep now: their last segment yielded and nobody took over yet. */
+  #sleeping(workflowRunId: string): readonly {
+    readonly mission: MissionView;
+    readonly node: GraphNodeRecord;
+    readonly yielded: Extract<SessionLogRecord, { type: 'SEGMENT_YIELDED' }>;
+  }[] {
+    const projected = projectGraph(this.#records, workflowRunId);
+    const missions = projectMissions(this.#records);
+    const found: {
+      mission: MissionView;
+      node: GraphNodeRecord;
+      yielded: Extract<SessionLogRecord, { type: 'SEGMENT_YIELDED' }>;
+    }[] = [];
+    for (const mission of missions.values()) {
+      if (mission.ended !== undefined) continue;
+      const last = mission.nodeIds.at(-1);
+      const node = last === undefined ? undefined : projected.nodes.get(last);
+      if (node === undefined || projected.view.get(node.nodeId)?.status !== 'YIELDED') continue;
+      const yielded = [...this.#records]
+        .reverse()
+        .find(
+          (record): record is Extract<SessionLogRecord, { type: 'SEGMENT_YIELDED' }> =>
+            record.type === 'SEGMENT_YIELDED' && record.nodeId === node.nodeId,
+        );
+      if (yielded !== undefined) found.push({ mission, node, yielded });
+    }
+    return found;
+  }
+
+  /**
+   * Wakes every sleeping task whose wait is over: the reason is written, then the segment that
+   * takes over, which is ready at once (Orchestration 4.3). When nothing can move any more, the
+   * highest sleeping task is woken to decide what to do (4.4).
+   */
+  async #wakeMissions(workflowRunId: string): Promise<boolean> {
+    if (this.#interrupted) return false;
+    const missions = projectMissions(this.#records);
+    let woke = false;
+    for (const { mission, node, yielded } of this.#sleeping(workflowRunId)) {
+      const causes = this.#wakeCauses(mission, yielded, missions);
+      if (causes.length === 0) continue;
+      await this.#continueMission(workflowRunId, node, causes);
+      woke = true;
+    }
+    if (woke) return true;
+    const sleeping = this.#sleeping(workflowRunId);
+    if (sleeping.length === 0 || this.#agents.size > 0 || this.#waitingForHuman(workflowRunId))
+      return false;
+    // A timer it set itself will move the work; the timeout every sleep has does not count.
+    const due = new Set(
+      this.#records.flatMap((record) =>
+        record.type === 'MISSION_TIMER_DUE' ? [record.timerId] : [],
+      ),
+    );
+    if (
+      sleeping.some(
+        ({ node, yielded }) =>
+          yielded.until.some((condition) => condition.kind === 'timer') &&
+          !due.has(`${node.nodeId}:timer`),
+      )
+    )
+      return false;
+    // A background command that still runs will move the work too (Orchestration 6.4).
+    if (runningJobs(this.#records, workflowRunId).length > 0) return false;
+    const highest = [...sleeping].sort((a, b) => a.mission.depth - b.mission.depth)[0];
+    if (highest === undefined) return false;
+    const stalls = this.#records.filter(
+      (record) =>
+        record.type === 'MISSION_WOKEN' &&
+        record.missionId === highest.mission.missionId &&
+        record.causes.some((cause) => cause.kind === 'STALLED'),
+    ).length;
+    if (stalls >= MAX_STALLED_WAKES) {
+      // Woken again and again with nothing to wait for: it ends, so whoever waits for it can go on.
+      await this.#closeSleeping(workflowRunId, highest.node, 'FAILED');
+      return true;
+    }
+    await this.#continueMission(workflowRunId, highest.node, [{ kind: 'STALLED' }]);
+    return true;
+  }
+
+  /** A question or an open input that waits for the user: the run is not stuck while it waits. */
+  #waitingForHuman(workflowRunId: string): boolean {
+    const projected = projectGraph(this.#records, workflowRunId);
+    return [...projected.nodes.values()].some(
+      (node) => node.kind === 'HUMAN' && projected.view.get(node.nodeId)?.status === 'RUNNING',
+    );
+  }
+
+  /** The segment that takes over a sleeping task, with why it woke. */
+  async #continueMission(
+    workflowRunId: string,
+    yielded: GraphNodeRecord,
+    causes: Extract<SessionLogRecord, { type: 'MISSION_WOKEN' }>['causes'],
+  ): Promise<void> {
+    const missionId = yielded.mission?.id;
+    if (missionId === undefined) throw new Error('a segment that slept belongs to no task');
+    await this.#append([{ type: 'MISSION_WOKEN', workflowRunId, missionId, causes: [...causes] }]);
+    const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+    await this.#extend(
+      workflowRunId,
+      revision,
+      'WAKE',
+      continuationRevision(workflowRunId, revision, yielded),
+    );
+  }
+
+  /**
+   * A sleeping task that cannot go on (the run is interrupted, or it stalled): a segment takes over
+   * and ends at once, with no AgentRun, so the task and whatever waits for it come to an end.
+   */
+  async #closeSleeping(
+    workflowRunId: string,
+    yielded: GraphNodeRecord,
+    status: 'FAILED' | 'INTERRUPTED',
+    note?: string,
+  ): Promise<void> {
+    const revision = projectGraph(this.#records, workflowRunId).lastRevision + 1;
+    const content = continuationRevision(workflowRunId, revision, yielded);
+    await this.#extend(workflowRunId, revision, 'WAKE', content);
+    const node = content.nodes[0];
+    if (node === undefined) throw new Error('a continuation makes one node');
+    await this.#append([
+      { type: 'NODE_STARTED', workflowRunId, nodeId: node.nodeId, path: node.path },
+      {
+        type: 'NODE_ENDED',
+        workflowRunId,
+        nodeId: node.nodeId,
+        status,
+        ...(yielded.mission?.parentId === undefined
+          ? {}
+          : {
+              result: resultOf({
+                status: 'FAILED',
+                notes: [
+                  note ??
+                    (status === 'INTERRUPTED'
+                      ? 'stopped: the run was interrupted while it slept'
+                      : 'stopped: it slept with nothing left that could wake it'),
+                ],
+              }),
+            }),
+      },
+    ]);
+    // Its task will not wake: the Kernel gives back its roots and what is left of its share.
+    if (yielded.mission !== undefined) await this.#closeMission(workflowRunId, yielded.mission.id);
+  }
+
+  async #closeMission(workflowRunId: string, missionId: string): Promise<void> {
+    await this.#withdrawQuestionsOf(workflowRunId, missionId);
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.closeMission(
+      { requestId: newId('req'), sessionId, workflowRunId, missionId },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`closeMission refused: ${response.reasonCode}`);
+  }
+
+  /**
+   * The questions a task asked that are still open end with it (Orchestration 5.1): their nodes end
+   * as interrupted and the Kernel takes them back from the user.
+   */
+  async #withdrawQuestionsOf(workflowRunId: string, missionId: string): Promise<void> {
+    const projected = projectGraph(this.#records, workflowRunId);
+    for (const node of projected.nodes.values()) {
+      if (node.kind !== 'HUMAN' || node.ask === undefined) continue;
+      const status = projected.view.get(node.nodeId)?.status;
+      if (status === undefined || isTerminal(status)) continue;
+      const caller = projected.graph.edges.find(
+        (edge) => edge.kind === 'DELEGATE' && edge.to === node.nodeId,
+      )?.from;
+      if (caller === undefined || projected.nodes.get(caller)?.mission?.id !== missionId) continue;
+      await this.#withdrawQuestion(workflowRunId, node.nodeId);
+    }
+  }
+
+  /** One open question ends as interrupted and is taken back from the user. */
+  async #withdrawQuestion(workflowRunId: string, nodeId: string): Promise<void> {
+    await this.#append([{ type: 'NODE_ENDED', workflowRunId, nodeId, status: 'INTERRUPTED' }]);
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.withdrawQuestion(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        humanRequestId: asHumanRequestId(nodeId),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`withdrawQuestion refused: ${response.reasonCode}`);
+  }
+
+  async #restoreMission(workflowRunId: string, missionId: string, tokens?: number): Promise<void> {
+    const sessionId = this.#sessionIdOrThrow();
+    const response = await this.#deps.gateway.restoreMission(
+      {
+        requestId: newId('req'),
+        sessionId,
+        workflowRunId,
+        missionId,
+        ...(tokens === undefined ? {} : { tokens }),
+      },
+      contextOf(sessionId, workflowRunId),
+    );
+    if (response.outcome === 'REJECTED' && response.reasonCode !== 'RUN_BLOCKED')
+      throw new Error(`restoreMission refused: ${response.reasonCode}`);
+  }
+}
+
+/**
+ * The calls an AgentRun made before a cut and had not got the result of then (Orchestration 7.5):
+ * each is answered as not done, so the history it goes on from holds no call without a result.
+ */
+function unansweredAtCut(
+  before: readonly SessionLogRecord[],
+  agentRunId: string,
+  workflowRunId: string,
+): NewLogRecord[] {
+  const calls: string[] = [];
+  const answered = new Set<string>();
+  const submitted = new Map<string, string>();
+  for (const record of before) {
+    if (record.type === 'MODEL_TURN' && record.agentRunId === agentRunId)
+      for (const call of record.toolCalls) calls.push(call.toolCallId);
+    if (record.type === 'FEEDBACK' && record.toolCallId !== undefined)
+      answered.add(record.toolCallId);
+    if (record.type === 'NODE_RESUMED') answered.add(record.call.toolCallId);
+    if (record.type === 'UNIT_SUBMITTED' && record.inputSource.kind === 'TOOL_CALL')
+      submitted.set(record.requestId, record.inputSource.toolCallId);
+    if (record.type === 'UNIT_COMPLETED' || record.type === 'UNIT_INTERRUPTED') {
+      const toolCallId = submitted.get(record.requestId);
+      if (toolCallId !== undefined) answered.add(toolCallId);
+    }
+  }
+  return calls
+    .filter((toolCallId) => !answered.has(toolCallId))
+    .map((toolCallId) => ({
+      type: 'FEEDBACK' as const,
+      workflowRunId,
+      agentRunId,
+      code: 'INTERRUPTED',
+      message:
+        'Not done: the work went back to a checkpoint before this call finished. Do it again if it is still needed.',
+      toolCallId,
+    }));
+}
+
+/** The command a run_command call ran, from the Unit it submitted; the call id when not found. */
+function commandOfCall(records: readonly SessionLogRecord[], toolCallId: string): string {
+  for (const record of records)
+    if (
+      record.type === 'UNIT_SUBMITTED' &&
+      record.inputSource.kind === 'TOOL_CALL' &&
+      record.inputSource.toolCallId === toolCallId
+    ) {
+      const { command } = (record.inputSource.workflowFields ?? {}) as {
+        readonly command?: unknown;
+      };
+      if (typeof command === 'string') return command.replace(/\s+/gu, ' ').slice(0, 200);
+    }
+  return toolCallId;
+}

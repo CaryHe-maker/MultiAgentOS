@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: chat-finish
+version: v1.0.0
+digest: b65da30d12f4b61ac9dd616dd5b4f893ffc84ef8253f076133d148d3513347cf
+description: Control tool that ends a subtask of chat with its answer (Orchestration D112).
+purpose: CONTROL
+modelName: finish_subagent
+modelDescription: >-
+  End your task with your answer: summary is what the caller reads first, report the detail. An answer written as plain text when nothing of yours still runs ends your task the same way.
+parametersContract:
+  kind: contract
+  id: workflow.ExplorerResult
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

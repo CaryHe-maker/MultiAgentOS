@@ -1,21 +1,36 @@
 import { Type, type Static, type TSchema } from 'typebox';
-import {
-  AssembleContextPackSchema,
-  ModelToolSpecSchema,
-  OrientContextPackSchema,
-} from '../context/context-pack.js';
+import { AssembleContextPackSchema, ModelToolSpecSchema } from '../context/context-pack.js';
+import { StatusFactsSchema } from '../context/history-entry.js';
+import { ModelToolCallSchema } from '../executor/model-tool-call.js';
+import { RepositoryListInputSchema } from '../executor/repository-list.js';
 import { SEARCH_MODES } from '../context/repository.js';
 import { FileReadInputSchema } from '../executor/file-read.js';
-import { IdSchemas } from '../platform-common/ids.js';
+import { CommandExecutorInputSchema, GitInspectInputSchema } from '../executor/command.js';
+import { FileEditInputSchema, FileWriteInputSchema } from '../executor/file-write.js';
+import { WebFetchInputSchema, WebSearchInputSchema } from '../executor/web.js';
+import { IdSchemas, ToolCallIdSchema } from '../platform-common/ids.js';
+import { ReasonCodeSchema } from '../platform-common/reason-code.js';
 import { ExclusionRuleSchema } from '../platform-common/repository-exclusions.js';
+import { SandboxScopeSchema } from '../platform-common/sandbox.js';
 import { TimestampSchema, closed, count, text } from '../platform-common/schema-helpers.js';
-import { HandoffBriefSchema } from '../workflow/handoff.js';
-import { StatusFactsSchema, StepRecordSchema } from '../workflow/step-record.js';
 
 const RepositoryScopeSchema = closed({
   kind: Type.Literal('REPOSITORY'),
   /** The realpath of the repository root. */
   repositoryRoot: text(4096),
+  exclusions: Type.Array(ExclusionRuleSchema),
+  /**
+   * Present for `external.read`: the root is a folder outside the workspace that the user allowed,
+   * and this call stays below `below` (relative to it, '' for all of it). Paths are shown in full
+   * and project instructions are not looked for (ExecutorSet 5e).
+   */
+  external: Type.Optional(closed({ below: Type.String({ maxLength: 1024 }) })),
+});
+/** Derived by Core from the ceiling of the AgentRun: what a write may touch (ExecutorSet 5b). */
+const WorkspaceScopeSchema = closed({
+  kind: Type.Literal('WORKSPACE'),
+  repositoryRoot: text(4096),
+  writableRoots: Type.Array(text(1024), { minItems: 1 }),
   exclusions: Type.Array(ExclusionRuleSchema),
 });
 const modelScope = {
@@ -31,32 +46,20 @@ const ModelScopeSchema = Type.Union([
   closed({ ...modelScope, thinking: Type.Literal('ENABLED'), thinkingEffort: text(32) }),
 ]);
 const NoScopeSchema = closed({ kind: Type.Literal('NONE') });
-/** Derived by Core: REPOSITORY from the Lease, MODEL from the pinned Model and Agent. */
+/** Derived by Core: REPOSITORY and WORKSPACE from a Lease, MODEL from the pinned Model and Agent. */
 export const ExecutionScopeSchema = Type.Union(
-  [RepositoryScopeSchema, ModelScopeSchema, NoScopeSchema],
-  { $id: 'kernel.execution.ExecutionScope.v0' },
+  [
+    RepositoryScopeSchema,
+    WorkspaceScopeSchema,
+    SandboxScopeSchema,
+    ModelScopeSchema,
+    NoScopeSchema,
+  ],
+  { $id: 'kernel.execution.ExecutionScope.v1' },
 );
 export type ExecutionScope = Static<typeof ExecutionScopeSchema>;
 
 const limits = { deadline: TimestampSchema, maxOutputBytes: count(1) };
-const PlainLimitsSchema = closed(limits);
-const OrientLimitsSchema = closed({ ...limits, maxFiles: count(1) });
-const ModelLimitsSchema = closed({ ...limits, maxOutputTokens: count(1) });
-/**
- * `maxFiles` is present exactly for REPOSITORY_ORIENT and `maxOutputTokens` exactly for MODEL;
- * every other kind has neither.
- */
-export const ExecutionLimitsSchema = Type.Union(
-  [PlainLimitsSchema, OrientLimitsSchema, ModelLimitsSchema],
-  { $id: 'kernel.execution.ExecutionLimits.v0' },
-);
-export type ExecutionLimits = Static<typeof ExecutionLimitsSchema>;
-
-export const OrientExecutorInputSchema = closed(
-  { objective: text(4000), tokenBudget: count(1) },
-  'kernel.execution.OrientExecutorInput.v0',
-);
-export type OrientExecutorInput = Static<typeof OrientExecutorInputSchema>;
 
 /** The search input with defaults filled in. */
 export const SearchExecutorInputSchema = closed(
@@ -65,35 +68,118 @@ export const SearchExecutorInputSchema = closed(
     mode: Type.Enum(SEARCH_MODES),
     maxItems: Type.Integer({ minimum: 1, maximum: 50 }),
     tokenBudget: count(1),
+    /** Only files below this directory, relative to the root. */
+    path: Type.Optional(text(1024)),
   },
-  'kernel.execution.SearchExecutorInput.v0',
+  'kernel.execution.SearchExecutorInput.v1',
 );
 export type SearchExecutorInput = Static<typeof SearchExecutorInputSchema>;
 
-/** `outputText` is the resolved artifact of an OK TOOL_RESULT step, and of nothing else. */
-const ResolvedStepSchema = Type.Refine(
-  closed({ step: StepRecordSchema, outputText: Type.Optional(Type.String()) }),
-  ({ step, outputText }) =>
-    (step.kind === 'TOOL_RESULT' && step.status === 'OK') === (outputText !== undefined),
-  () => 'outputText must be present exactly for an OK TOOL_RESULT step',
+/** `maxBytes` is `min(previewMaxBytes, maxOutputBytes)` (M2Design 8.2). */
+const PreviewLimitsSchema = closed({ maxBytes: count(1), maxLines: count(1) });
+const toolLimits = {
+  ...limits,
+  preview: PreviewLimitsSchema,
+  maxFullOutputBytes: count(1),
+};
+const PlainLimitsSchema = closed(toolLimits);
+const ModelLimitsSchema = closed({ ...limits, maxOutputTokens: count(1) });
+const AssembleLimitsSchema = closed(limits);
+export const ExecutionLimitsSchema = Type.Union(
+  [PlainLimitsSchema, ModelLimitsSchema, AssembleLimitsSchema],
+  { $id: 'kernel.execution.ExecutionLimits.v1' },
 );
-export type ResolvedStep = Static<typeof ResolvedStepSchema>;
+export type ExecutionLimits = Static<typeof ExecutionLimitsSchema>;
 
-/** ContextAssembleInput after Execution resolved the references and the pinned definitions. */
+const ResolvedHistoryEntrySchema = Type.Union([
+  closed({
+    seq: count(1),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
+    kind: Type.Enum(['HUMAN', 'NOTE']),
+    text: Type.String(),
+  }),
+  closed({
+    seq: count(1),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
+    kind: Type.Literal('MODEL_TURN'),
+    text: Type.Optional(Type.String()),
+    toolCalls: Type.Array(ModelToolCallSchema),
+    reasoningContent: Type.Optional(Type.String()),
+  }),
+  closed({
+    seq: count(1),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
+    kind: Type.Literal('TOOL_RESULT'),
+    toolCallId: ToolCallIdSchema,
+    toolName: text(64),
+    status: Type.Enum(['OK', 'REJECTED', 'FAILED', 'INTERRUPTED']),
+    reasonCode: Type.Optional(ReasonCodeSchema),
+    /** The preview; a tool that gave none is worded by the Executor from its status. */
+    text: Type.Optional(Type.String()),
+  }),
+  closed({
+    seq: count(1),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
+    kind: Type.Literal('PROJECT_INSTRUCTIONS'),
+    path: text(512),
+    text: Type.String(),
+    trusted: Type.Boolean(),
+  }),
+  closed({
+    seq: count(1),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
+    kind: Type.Literal('FEEDBACK'),
+    text: Type.String(),
+    toolCallId: Type.Optional(ToolCallIdSchema),
+  }),
+  /** The summary of a compaction, in words; it is shown to the model as material, not as an order. */
+  closed({
+    seq: count(1),
+    category: Type.Enum(['PINNED', 'NORMAL', 'INHERITED']),
+    kind: Type.Literal('SUMMARY'),
+    text: Type.String(),
+  }),
+]);
+export type ResolvedHistoryEntry = Static<typeof ResolvedHistoryEntrySchema>;
+
+/** ContextAssembleInput.v1 after Execution resolved references and pinned definitions. */
 export const AssembleExecutorInputSchema = Type.Refine(
   closed(
     {
-      objective: text(4000),
       final: Type.Boolean(),
+      /**
+       * What the request may hold besides the INHERITED part (D100): a task that started with its
+       * caller's context is not charged for it. The pack's own budget is this plus that part, at
+       * most `capTokens`.
+       */
       tokenBudget: count(1),
+      /** The most the whole request may hold: the model's window less the output and a margin. */
+      capTokens: Type.Optional(count(1)),
       instructions: Type.String({ maxLength: 100000 }),
       toolSpecs: Type.Array(ModelToolSpecSchema),
-      handoff: Type.Optional(HandoffBriefSchema),
-      orientPack: Type.Optional(OrientContextPackSchema),
-      history: Type.Array(ResolvedStepSchema),
+      /** Of a final call: the end tools it may call, which its status names (D102). */
+      finishTools: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: 8 })),
+      history: Type.Array(ResolvedHistoryEntrySchema),
       status: StatusFactsSchema,
+      /**
+       * A request for the summary of a compaction instead of a call of the AgentRun (M2Design 9.6):
+       * PREFIX is the history as it is with the instruction after it, TEXT is the history written
+       * out as one transcript, without tools, from which the oldest whole model turns are left
+       * until it is estimated under `targetTokens`.
+       */
+      compaction: Type.Optional(
+        closed({
+          mode: Type.Enum(['PREFIX', 'TEXT']),
+          instruction: Type.String({ maxLength: 20000 }),
+          targetTokens: Type.Optional(count(1)),
+        }),
+      ),
+      /** The AgentRun's last measured request; Kernel fills it, Workflow never holds tokens. */
+      tokenCalibration: Type.Optional(
+        closed({ measuredInputTokens: count(1), estimatedInputTokens: count(1) }),
+      ),
     },
-    'kernel.execution.AssembleExecutorInput.v0',
+    'kernel.execution.AssembleExecutorInput.v1',
   ),
   (input) => input.final === input.status.final,
   () => 'final must equal status.final',
@@ -101,10 +187,48 @@ export const AssembleExecutorInputSchema = Type.Refine(
 export type AssembleExecutorInput = Static<typeof AssembleExecutorInputSchema>;
 
 export const ModelExecutorInputSchema = closed(
-  { contextPack: AssembleContextPackSchema, final: Type.Boolean() },
-  'kernel.execution.ModelExecutorInput.v0',
+  {
+    contextPack: AssembleContextPackSchema,
+    final: Type.Boolean(),
+    finalMode: Type.Optional(Type.Enum(['AUTO', 'FORCED'])),
+    /**
+     * Of a final call: the end tools it may call (D102). The request lists every tool, so these,
+     * not every control tool, are the answers that count; a forced call is forced to the first.
+     */
+    finishTools: Type.Optional(Type.Array(Type.String({ maxLength: 64 }), { maxItems: 8 })),
+    /** A summary request: no tool may be called, and these sections must be in the answer. */
+    compaction: Type.Optional(closed({ requiredSections: Type.Array(text(100), { minItems: 1 }) })),
+  },
+  'kernel.execution.ModelExecutorInput.v1',
 );
 export type ModelExecutorInput = Static<typeof ModelExecutorInputSchema>;
+
+/** Tool results to cut to head and tail (M2Design 9.6): the text is the preview the model sees now. */
+export const PruneExecutorInputSchema = closed(
+  {
+    headBytes: count(1),
+    tailBytes: count(1),
+    items: Type.Array(closed({ toolCallId: ToolCallIdSchema, text: Type.String() }), {
+      minItems: 1,
+      maxItems: 500,
+    }),
+  },
+  'kernel.execution.PruneExecutorInput.v1',
+);
+export type PruneExecutorInput = Static<typeof PruneExecutorInputSchema>;
+
+/** `read_output` after Execution resolved `fullRef`; the Executor never sees a reference. */
+export const OutputReadExecutorInputSchema = closed(
+  {
+    toolCallId: ToolCallIdSchema,
+    content: Type.String(),
+    offset: Type.Optional(count(1)),
+    limit: Type.Optional(count(1)),
+    pattern: Type.Optional(text(500)),
+  },
+  'kernel.execution.OutputReadExecutorInput.v1',
+);
+export type OutputReadExecutorInput = Static<typeof OutputReadExecutorInputSchema>;
 
 const request = <K extends string, I extends TSchema, S extends TSchema, L extends TSchema>(
   executionKind: K,
@@ -113,6 +237,7 @@ const request = <K extends string, I extends TSchema, S extends TSchema, L exten
   limitsOf: L,
 ) =>
   closed({
+    sessionId: IdSchemas.sessionId,
     workflowRunId: IdSchemas.workflowRunId,
     unitAttemptId: IdSchemas.unitAttemptId,
     executionId: IdSchemas.executionId,
@@ -121,30 +246,31 @@ const request = <K extends string, I extends TSchema, S extends TSchema, L exten
     input,
     scope,
     limits: limitsOf,
-    // Back-off of a technical retry: the Supervisor starts the Executor only after it.
     notBefore: Type.Optional(TimestampSchema),
   });
 
-/** One variant per executionKind, which fixes the input, the scope and the limits together. */
 export const ExecutionRequestSchema = Type.Union(
   [
-    request(
-      'REPOSITORY_ORIENT',
-      OrientExecutorInputSchema,
-      RepositoryScopeSchema,
-      OrientLimitsSchema,
-    ),
     request(
       'REPOSITORY_SEARCH',
       SearchExecutorInputSchema,
       RepositoryScopeSchema,
       PlainLimitsSchema,
     ),
+    request('REPOSITORY_LIST', RepositoryListInputSchema, RepositoryScopeSchema, PlainLimitsSchema),
     request('FILE_READ', FileReadInputSchema, RepositoryScopeSchema, PlainLimitsSchema),
-    request('CONTEXT_ASSEMBLE', AssembleExecutorInputSchema, NoScopeSchema, PlainLimitsSchema),
+    request('CONTEXT_ASSEMBLE', AssembleExecutorInputSchema, NoScopeSchema, AssembleLimitsSchema),
+    request('CONTEXT_PRUNE', PruneExecutorInputSchema, NoScopeSchema, AssembleLimitsSchema),
     request('MODEL', ModelExecutorInputSchema, ModelScopeSchema, ModelLimitsSchema),
+    request('FILE_WRITE', FileWriteInputSchema, WorkspaceScopeSchema, PlainLimitsSchema),
+    request('FILE_EDIT', FileEditInputSchema, WorkspaceScopeSchema, PlainLimitsSchema),
+    request('OUTPUT_READ', OutputReadExecutorInputSchema, NoScopeSchema, PlainLimitsSchema),
+    request('COMMAND', CommandExecutorInputSchema, SandboxScopeSchema, PlainLimitsSchema),
+    request('GIT_INSPECT', GitInspectInputSchema, RepositoryScopeSchema, PlainLimitsSchema),
+    // The provider and its key belong to the Executor, so a web call has no scope of its own.
+    request('WEB_SEARCH', WebSearchInputSchema, NoScopeSchema, PlainLimitsSchema),
+    request('WEB_FETCH', WebFetchInputSchema, NoScopeSchema, PlainLimitsSchema),
   ],
-  { $id: 'kernel.execution.ExecutionRequest.v0' },
+  { $id: 'kernel.execution.ExecutionRequest.v1' },
 );
 export type ExecutionRequest = Static<typeof ExecutionRequestSchema>;
-export type ExecutorInput = ExecutionRequest['input'];

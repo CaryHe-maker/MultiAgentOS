@@ -1,0 +1,1104 @@
+import {
+  applyCompactions,
+  type ArtifactRef,
+  type CompactionRecords,
+  type ContextHistoryEntry,
+  type SessionLogRecord,
+} from '@multiagentos/contracts';
+import { answerOf, callResultsOf, handoverFieldsOf } from '../spawn/spawn-graph.js';
+import { registeredOf } from '../handover/handover.js';
+import { outcomeOf } from '../spawn/task-results.js';
+import { missionStateOf, projectMissions, treeView } from '../graph/mission-tree.js';
+import { jobEndedNotice, jobOfRequest } from '../graph/mission-jobs.js';
+import { owedReplies, replyReminder } from '../graph/mission-replies.js';
+import { rolledBackRanges } from './rolled-back.js';
+import { workspaceChangedNote } from '../workspace/workspace-binding.js';
+
+/** What a SubAgent is given: its task and the results of the tasks it waits for (M2Design 3.6). */
+export interface TaskScope {
+  readonly name: string;
+  readonly agent: string;
+  readonly goal: string;
+  readonly writeScope: readonly string[];
+  readonly inputs: readonly ArtifactRef[];
+  readonly dependencies: readonly Extract<ContextHistoryEntry, { kind: 'SUBAGENT_RESULT' }>[];
+  /**
+   * A step of a template (Orchestration 3.5) works from what the user asked as well as from its
+   * step; a spawned task works from its task alone.
+   */
+  readonly withPrompt?: boolean;
+  /** The playbook of a specialist, in words (Orchestration 3.9). */
+  readonly playbook?: string;
+  /** The call that started it, when its goal is cut here (D56). */
+  readonly fullFrom?: { readonly outputRef: ArtifactRef; readonly toolCallId: string };
+  /**
+   * The ended tasks this one takes up again (`continues`, Orchestration 5.3): their segments are
+   * its history, under the header of the earliest; its own goal answers their finishing call.
+   */
+  readonly continued?: {
+    readonly missions: readonly string[];
+    readonly first: Omit<TaskScope, 'continued'>;
+  };
+  /**
+   * The task starts with the context of the task that started it (a phase with `context:
+   * inherit`, Orchestration 3.9, D35): that task's view up to the call, then its own task as the
+   * answer to the call.
+   */
+  readonly inherited?: {
+    /** The record that started this task: the view it inherits ends before it. */
+    readonly cut: number;
+    /** The call that started it, which its task answers. */
+    readonly toolCallId: string;
+    /** The Agent the phase names: what the task is, whatever Agent runs it. */
+    readonly as: string;
+    /** The tasks started by the same call. */
+    readonly siblings: readonly string[];
+    /** The view it comes from: a task's, a step's of a template, or main's of a chat (D53). */
+    readonly from: ProjectionScope;
+  };
+}
+
+/**
+ * Whose view a projection is. With `missionId`, it is the view of a task: every segment of it, and
+ * what was sent to it (Orchestration 3.4, 9.5); main of a chat is the root task of the Session.
+ */
+export type ProjectionScope =
+  | { readonly kind: 'MAIN'; readonly missionId?: string }
+  | {
+      readonly kind: 'NODE';
+      readonly workflowRunId: string;
+      readonly agentRunId: string;
+      readonly missionId?: string;
+      readonly task?: TaskScope;
+    };
+
+/** What main is told when the previous run was cut short, and why (M2Design 4.5). */
+function interruptedNote(
+  reason: Extract<SessionLogRecord, { type: 'RUN_INTERRUPTED' }>['reason'],
+): string {
+  const cause = {
+    MEMORY_PRESSURE: 'the system ran short of memory',
+    USER_ABORT: 'the user stopped it',
+    INPUT_TIMEOUT: 'it ran longer than the time allowed for the work of one message',
+    TURN_TIMEOUT: 'it ran longer than the time allowed for the work of one message',
+    PAUSE_TIMEOUT: 'it stayed paused for too long',
+  }[reason];
+  return `The previous run was interrupted because ${cause}. Work in flight was cancelled; check the workspace before relying on it.`;
+}
+
+function runtimeNote(context: Extract<SessionLogRecord, { type: 'REQUEST_CONTEXT' }>): string {
+  const { workingDirectory, sandbox, currentDate, git } = context.runtimeContext;
+  const noGit =
+    git === false
+      ? '\nGit: this folder is not a git repository, so git history cannot be read (git_inspect is not offered).'
+      : '';
+  return `Working directory: ${workingDirectory}\nSandbox: ${sandbox}\nCurrent date: ${currentDate}${noGit}`;
+}
+
+/** What a task reads first when it wakes: why, and that it goes on where it stopped. */
+function wokenNote(causes: readonly string[]): string {
+  const said: Record<string, string> = {
+    CHILDREN: 'subtasks you started have ended (their results are just above)',
+    SIBLINGS: 'the sibling tasks you waited for have ended (see the notices above)',
+    JOB: 'a background command of yours has ended',
+    MESSAGE: 'a message came for you (just above)',
+    TIMER: 'the time you set has passed',
+    TIMEOUT: 'you slept as long as you allowed yourself',
+    HUMAN: 'the user answered',
+    STALLED:
+      'nothing else could move: every task was waiting, so you are woken to decide what to do',
+    ROLLED_BACK: 'the work was rolled back to a checkpoint',
+    RESUMED: 'the work was resumed after the process stopped',
+    INTERRUPTED: 'your parent interrupted you (its message is just above): deal with it first',
+  };
+  const reasons = [...new Set(causes)].map((cause) => said[cause] ?? cause.toLowerCase());
+  return `You were woken: ${reasons.join('; ')}. This is a new segment of the same task: your earlier work is above. Continue from your note and what came in.`;
+}
+
+export interface ProjectionOptions {
+  /**
+   * The material of a compaction: what the provider counted on every model turn (`measured`),
+   * and the request and the full output of every tool result. Kernel wants them, the model
+   * never sees them, and an ordinary projection must stay as it is for the digest.
+   */
+  readonly material?: boolean;
+  /**
+   * The context is for a last round (M2Design 7.3): it is not reminded of unanswered requests,
+   * since its call must be alone and is not refused for them (Orchestration 5.3).
+   */
+  readonly final?: boolean;
+}
+
+/** The longest NOTE the contract takes. */
+const NOTE_MAX = 2000;
+const clip = (text: string, max: number): string =>
+  text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+
+/** A NOTE is at most 2000 characters; a workspace can differ in hundreds of files. */
+const DIVERGED_NOTE_MAX = 1600;
+const DIVERGED_PATH_MAX = 200;
+
+/** Names as many of the changed files as fit, and says how many more there are. */
+export function divergedNote(files: readonly string[]): string {
+  const head =
+    'These files changed outside this session since its last turn; read them again before relying on them: ';
+  const named: string[] = [];
+  let length = head.length;
+  for (const file of files) {
+    const path = file.length > DIVERGED_PATH_MAX ? `${file.slice(0, DIVERGED_PATH_MAX)}…` : file;
+    // Leave room for ", " and for the sentence that counts the rest.
+    if (length + path.length + 2 > DIVERGED_NOTE_MAX) break;
+    named.push(path);
+    length += path.length + 2;
+  }
+  const rest = files.length - named.length;
+  return `${head}${named.join(', ')}${rest > 0 ? ` (and ${String(rest)} more; use git status to see them all)` : ''}`;
+}
+
+/** What a task taken up again is asked now, as the answer to the call it finished with. */
+function continuedText(task: TaskScope): string {
+  const lines = [
+    `Your result went to your caller, and it started you again on this task, with all your work above. What you are asked now: ${task.goal}`,
+  ];
+  if (task.writeScope.length > 0) lines.push(`You may write: ${task.writeScope.join(', ')}`);
+  lines.push('Finish again with your finishing call when it is done.');
+  return lines.join('\n');
+}
+
+/** What a task that inherits a context is told where it becomes itself (D100). */
+function inheritedText(task: TaskScope): string {
+  const inherited = task.inherited;
+  const lines = [
+    `From here on you are a different task: "${task.name}", a ${inherited?.as ?? 'worker'} that the task above started with its last call. Everything above is what that task had read and done up to that call. You have it so that you need not read it again; it is not your work to continue.`,
+    'What changes for you:',
+    '- You do NOT follow the playbook or the phases above, and you do not finish that task. You do only the goal below.',
+    inherited?.as === 'lead'
+      ? '- Your part is yours to split: start subtasks of your own with run_subagents; they start with your context.'
+      : '- You start no subtasks: run_subagents and stop_subagents are refused. You do the work yourself.',
+    inherited?.as === 'explorer' || task.writeScope.length === 0
+      ? '- You change no file: you read, search and report.'
+      : `- You may write only: ${task.writeScope.join(', ')}. Everything else is read-only for you.`,
+    ...(inherited === undefined || inherited.siblings.length === 0
+      ? []
+      : [
+          `- Started with you by the same call, each with its own goal: ${inherited.siblings.join(', ')}. Their parts are not yours.`,
+        ]),
+    `Your goal: ${task.goal}`,
+    ...(task.fullFrom === undefined
+      ? []
+      : ['(Your goal is cut here; it stands whole in the call above, under your name.)']),
+  ];
+  lines.push(
+    'When it is done, finish with your finishing call: your result goes to the task that started you.',
+  );
+  return lines.join('\n');
+}
+
+/**
+ * The view of a task that inherits (D35): the view of the task that started it as it stood at
+ * the call, the task itself as the answer to that call, then its own work. What it did before a
+ * compaction of its own is folded by its own compaction records, over the whole.
+ */
+function projectInherited(
+  records: readonly SessionLogRecord[],
+  scope: Extract<ProjectionScope, { kind: 'NODE' }>,
+  task: TaskScope,
+  inherited: NonNullable<TaskScope['inherited']>,
+  options: ProjectionOptions,
+): readonly ContextHistoryEntry[] {
+  const before = records.filter((record) => record.seq < inherited.cut);
+  // No reminder of that task's unanswered requests: they are not this task's to answer. A task
+  // that itself started with its caller's context passes on all of it (D58): a worker of a lead
+  // sees what the root read, what the lead read, and the lead's call.
+  const fromTask = inherited.from.kind === 'NODE' ? inherited.from.task : undefined;
+  const aboveEntries =
+    inherited.from.kind === 'NODE' && fromTask?.inherited !== undefined
+      ? projectInherited(before, inherited.from, fromTask, fromTask.inherited, {
+          ...options,
+          final: true,
+        })
+      : (() => {
+          const own = projectOwn(before, inherited.from, { ...options, final: true });
+          return applyCompactions(own.entries, own.compaction);
+        })();
+  // The calls of the turn that started this task: each needs its answer, or the history stops.
+  const turn = [...before]
+    .reverse()
+    .find(
+      (record): record is Extract<SessionLogRecord, { type: 'MODEL_TURN' }> =>
+        record.type === 'MODEL_TURN' &&
+        record.toolCalls.some((call) => call.toolCallId === inherited.toolCallId),
+    );
+  const answered = new Set(
+    aboveEntries.flatMap((entry) =>
+      (entry.kind === 'FEEDBACK' ||
+        entry.kind === 'TOOL_RESULT' ||
+        entry.kind === 'HUMAN_ANSWER') &&
+      entry.toolCallId !== undefined
+        ? [entry.toolCallId]
+        : [],
+    ),
+  );
+  const open = (turn?.toolCalls ?? [])
+    .map((call) => call.toolCallId)
+    .filter((id) => !answered.has(id));
+  // Every call of that turn is answered as part of what the task inherits; who the task is now
+  // comes after, as an entry of its own (D100), not as the answer to a call.
+  const told: ContextHistoryEntry[] = open.map((toolCallId) => ({
+    seq: inherited.cut,
+    category: 'INHERITED' as const,
+    kind: 'FEEDBACK' as const,
+    toolCallId,
+    text:
+      toolCallId === inherited.toolCallId
+        ? 'Started. The task you are from here on is told next.'
+        : 'This call belongs to the task above; its result is not yours.',
+  }));
+  // A task taken up again is told what its owner was told; its new goal comes later.
+  const switched: ContextHistoryEntry = {
+    seq: inherited.cut,
+    category: 'INHERITED',
+    kind: 'SWITCH',
+    text: inheritedText(task.continued?.first ?? task),
+  };
+  const plain = Object.fromEntries(
+    Object.entries(task).filter(([key]) => key !== 'inherited'),
+  ) as unknown as TaskScope;
+  const own = projectOwn(records, { ...scope, task: plain }, options);
+  // What it inherited stays as it was, byte for byte, so the request keeps the cached prefix
+  // (D100): its own compactions fold only what it did itself, after the switch.
+  return [
+    ...aboveEntries.map((entry) => ({ ...entry, category: 'INHERITED' as const })),
+    ...told,
+    switched,
+    ...applyCompactions(
+      // Its task is told by the switch above, and it knows the plan from the context it has.
+      own.entries.filter(
+        (entry) => entry.seq >= inherited.cut && entry.kind !== 'TASK' && entry.kind !== 'PLAN',
+      ),
+      own.compaction,
+    ),
+  ];
+}
+
+/**
+ * What an AgentRun sees (Module/Workflow 8), as a pure function of the log: the same prefix gives
+ * the same entries and a later call only appends to an earlier one (invariants 7 and 27). The root
+ * of a Turn-chat sees every input of the Session and its work, across runs; a template node sees
+ * the run's goal and its own steps. Tool results name their preview only; `fullRef` never enters
+ * a projection. The category is the one field that may change: a prompt is PINNED while its input
+ * is the current one.
+ */
+export function projectHistory(
+  records: readonly SessionLogRecord[],
+  scope: ProjectionScope,
+  options: ProjectionOptions = {},
+): readonly ContextHistoryEntry[] {
+  const inherited = scope.kind === 'NODE' ? scope.task?.inherited : undefined;
+  if (scope.kind === 'NODE' && scope.task !== undefined && inherited !== undefined)
+    return projectInherited(records, scope, scope.task, inherited, options);
+  const own = projectOwn(records, scope, options);
+  return applyCompactions(own.entries, own.compaction);
+}
+
+function projectOwn(
+  records: readonly SessionLogRecord[],
+  scope: ProjectionScope,
+  options: ProjectionOptions = {},
+): { readonly entries: ContextHistoryEntry[]; readonly compaction: CompactionRecords } {
+  const mainRuns = new Set<string>();
+  /** The AgentRuns of the ended tasks a continued task takes up. */
+  const pastRuns = new Set<string>();
+  /** The AgentRun that runs a node: what a node-level record is read for. */
+  const runOfNode = new Map<string, string>();
+  const unitOwners = new Map<string, { toolCallId: string }>();
+  const toolNames = new Map<string, string>();
+  const entries: ContextHistoryEntry[] = [];
+  /** Notes of the user that wait for the next assembly of the AgentRun they are for. */
+  const notes: ContextHistoryEntry[] = [];
+  /** The job a command's result started, by its request (Orchestration 6.1). */
+  const jobs = jobOfRequest(records);
+  const jobCommands = new Map<string, string>();
+  /** Calls that already have their answer: a second one would break the history. */
+  const answered = new Set<string>();
+  const instructions = new Set<string>();
+  /** The AgentRun an assembly was for, and the head of the last assembly of each AgentRun. */
+  const assemblyOwner = new Map<string, string>();
+  const lastHead = new Map<string, string>();
+  const compaction: CompactionRecords = { pruned: [], compacted: [], revoked: new Set() };
+  const isTarget = (target: { kind: 'MAIN' } | { kind: 'AGENT_RUN'; agentRunId: string }) =>
+    scope.kind === 'MAIN'
+      ? target.kind === 'MAIN'
+      : target.kind === 'AGENT_RUN' &&
+        (target.agentRunId === scope.agentRunId || mainRuns.has(target.agentRunId));
+  /** The task whose view this is, when it is one (Orchestration 3.4). */
+  const ownMission = scope.missionId;
+  /** The ended tasks it takes up again (`continues`): their segments are its history too. */
+  const continued = scope.kind === 'NODE' ? scope.task?.continued : undefined;
+  const pastMissions = new Set(continued?.missions ?? []);
+  /** The calls of the last turn of those tasks: their finishing call is answered by the new goal. */
+  let pastCalls: readonly string[] = [];
+  let continuedNoted = false;
+  /** What the view knows of every task: to tell a child's result and its last segment. */
+  const missionInfo = new Map<
+    string,
+    {
+      readonly parentId?: string;
+      readonly name: string;
+      readonly agent: string;
+      /** It took its caller's turn over: its result is the result of the call (D115). */
+      readonly answersCall?: true;
+      last?: string;
+    }
+  >();
+  const nodeMission = new Map<string, string>();
+  let taskShown = false;
+  let treeShown = false;
+  let planShown = false;
+  // A continued task has the parent of the task it takes up: before it exists, that one's.
+  const ownParentOf = (): string | undefined =>
+    ownMission === undefined
+      ? undefined
+      : (
+          missionInfo.get(ownMission) ??
+          [...pastMissions].map((id) => missionInfo.get(id)).find((info) => info !== undefined)
+        )?.parentId;
+  /** Siblings already told of, so a sibling is announced once (Orchestration 3.7). */
+  const announced = new Set<string>();
+  /** The order tasks were written in, for results delivered together (M2Design 3.6). */
+  const writtenOrder = new Map<string, number>();
+  const resultOrder = new Map<ContextHistoryEntry, number>();
+  /**
+   * What waited for the next assembly joins the history: results in the order their tasks were
+   * written, so the context does not depend on which ended first, then the rest in log order.
+   */
+  const flush = () => {
+    const results = notes
+      .filter((entry) => entry.kind === 'SUBAGENT_RESULT')
+      .sort((a, b) => (resultOrder.get(a) ?? 0) - (resultOrder.get(b) ?? 0));
+    entries.push(...results, ...notes.filter((entry) => entry.kind !== 'SUBAGENT_RESULT'));
+    notes.length = 0;
+  };
+  let modelId = 'unknown';
+  /** Where the user's latest input is: what it and the notes after it say stays pinned. */
+  let currentInput: number | undefined;
+  let lastNote: string | undefined;
+
+  // What a way back took back (Orchestration 7.5): an undo from the input it undid, a rewind from
+  // the call that made the checkpoint, up to the rollback, nothing is shown; the tasks it
+  // cancelled hand nothing over afterwards.
+  const rewinds = rolledBackRanges(records);
+  const takenBack = new Set(
+    records.flatMap((record) => (record.type === 'ROLLED_BACK' ? record.cancelledMissionIds : [])),
+  );
+  const undoneBefore = legacyUndone(records);
+  for (const record of records) {
+    if (rewinds.some((rewind) => record.seq >= rewind.from && record.seq < rewind.to)) continue;
+    if (undoneBefore.has(record.seq)) continue;
+    if (
+      (record.type === 'MISSION_ENDED' && takenBack.has(record.missionId)) ||
+      (record.type === 'MISSION_MESSAGE' && takenBack.has(record.from))
+    )
+      continue;
+    switch (record.type) {
+      case 'ROLLED_BACK':
+        if (record.undo === true) {
+          // An undo is the user's, in a chat: main is told what it no longer sees.
+          if (ownMission !== undefined && missionInfo.get(ownMission)?.parentId !== undefined)
+            break;
+          entries.push({
+            seq: record.seq,
+            category: 'NORMAL',
+            kind: 'NOTE',
+            text: 'The user undid the last exchange: its messages and steps are gone from this history, and the files it changed are back as they were.',
+          });
+          break;
+        }
+        if (ownMission === undefined) break;
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text:
+            record.resumed === true
+              ? missionInfo.get(ownMission)?.parentId === undefined
+                ? `The process stopped in the middle of this work, and it goes on now from the checkpoint "${record.label}": what came after it is taken back, and ${String(record.files)} file(s) are as they were then. Background commands that ran then were stopped; run them again if they are still needed. Every subtask that was there then is paused where it was: send it a message (send_message) to let it go on from there, or stop it (stop_subagents); view_tasks shows them. A question that was open then is asked again. Decide how to go on.`
+                : `The process stopped in the middle of this work, and it goes on now from the checkpoint "${record.label}": what you did after it is taken back, and the files are as they were then. Background commands that ran then were stopped. You were paused there until your parent let you go on (its message is below): continue from where you were.`
+              : missionInfo.get(ownMission)?.parentId === undefined
+                ? `The work went back to the checkpoint "${record.label}": what came after it is taken back, and ${String(record.files)} file(s) are as they were then. The subtasks started after it are gone. Every subtask that was there then is paused where it was: send it a message (send_message) to let it go on from there, or stop it (stop_subagents); view_tasks shows them. A question that was open then is asked again. Decide how to go on.`
+                : `The work went back to the checkpoint "${record.label}": what you did after it is taken back, and the files are as they were then. You were paused there until your parent let you go on (its message is below): continue from where you were.`,
+        });
+        break;
+      case 'AGENT_RUN_REGISTERED':
+        runOfNode.set(record.nodeId, record.agentRunId);
+        if (scope.kind === 'NODE') {
+          // A task's view is every segment of it; without one, the AgentRun's own.
+          const past = record.missionId !== undefined && pastMissions.has(record.missionId);
+          const member =
+            ownMission !== undefined
+              ? record.missionId === ownMission || past || record.agentRunId === scope.agentRunId
+              : record.agentRunId === scope.agentRunId;
+          if (!member) break;
+          mainRuns.add(record.agentRunId);
+          if (past) pastRuns.add(record.agentRunId);
+          // The task is told once, at its first segment; a later one finds it above. A continued
+          // task begins with the header of the task it takes up, as that task's context did.
+          const header = continued?.first ?? scope.task;
+          if (header !== undefined && !taskShown) {
+            taskShown = true;
+            entries.push({
+              seq: record.seq,
+              category: 'PINNED',
+              kind: 'TASK',
+              name: header.name,
+              agent: header.agent,
+              goal: header.goal,
+              writeScope: [...header.writeScope],
+              inputs: [...header.inputs],
+              ...(header.playbook === undefined ? {} : { playbook: header.playbook }),
+              ...(header.fullFrom === undefined ? {} : { fullFrom: header.fullFrom }),
+            });
+            for (const dependency of header.dependencies)
+              entries.push({ ...dependency, seq: record.seq });
+          }
+          // Its first own segment: the finishing call of the task it takes up is answered with
+          // what it is asked now, so the history stays whole and the new goal comes last.
+          if (
+            continued !== undefined &&
+            scope.task !== undefined &&
+            !continuedNoted &&
+            record.missionId === ownMission
+          ) {
+            continuedNoted = true;
+            const open = pastCalls.filter((id) => !answered.has(id));
+            open.forEach((toolCallId, index) => {
+              answered.add(toolCallId);
+              entries.push({
+                seq: record.seq,
+                category: 'NORMAL',
+                kind: 'FEEDBACK',
+                toolCallId,
+                text: index === 0 ? continuedText(scope.task as TaskScope) : 'Delivered.',
+              });
+            });
+          }
+          // A task below the root reads the plan of the work right after its task (D24); a later
+          // plan comes to it as a notice.
+          if (ownParentOf() !== undefined && !planShown) {
+            planShown = true;
+            const plan = latestPlan(
+              records.slice(0, records.indexOf(record) + 1),
+              record.workflowRunId,
+            );
+            if (plan !== undefined)
+              entries.push({
+                seq: record.seq,
+                category: 'PINNED',
+                kind: 'PLAN',
+                outputRef: plan.source.outputRef,
+                toolCallId: plan.source.toolCallId,
+              });
+          }
+          // After its task, a task below the root is shown where it stands in the tree, once, as
+          // the log was then
+          // (Orchestration 3.7); changes come as notices after it.
+          const ownParent = ownParentOf();
+          if (ownParent !== undefined && !treeShown) {
+            treeShown = true;
+            const before = records.slice(0, records.indexOf(record) + 1);
+            entries.push({
+              seq: record.seq,
+              category: 'PINNED',
+              kind: 'NOTE',
+              text: clip(
+                // As the task of this segment saw it: for a continued task, the one it takes up.
+                treeView(
+                  projectMissions(before),
+                  record.missionId ?? ownMission ?? '',
+                  missionStateOf(before),
+                ),
+                NOTE_MAX,
+              ),
+            });
+          }
+        } else if (
+          ownMission !== undefined && record.missionId !== undefined
+            ? record.missionId === ownMission
+            : record.parentAgentRunId === undefined
+        ) {
+          mainRuns.add(record.agentRunId);
+        }
+        break;
+      case 'GRAPH_EXTENDED':
+        for (const node of record.nodes) {
+          if (node.mission === undefined || node.kind !== 'AGENT') continue;
+          // A new sibling, once this task knows where it stands, is told of when it is added.
+          const ownParent = ownParentOf();
+          if (
+            treeShown &&
+            ownParent !== undefined &&
+            node.mission.parentId === ownParent &&
+            node.mission.id !== ownMission &&
+            !missionInfo.has(node.mission.id) &&
+            !announced.has(node.mission.id)
+          ) {
+            announced.add(node.mission.id);
+            notes.push({
+              seq: record.seq,
+              category: 'NORMAL',
+              kind: 'NOTE',
+              text: clip(
+                `A sibling task was started: ${node.name} (${node.agentRef?.id ?? 'unknown'})${node.spawn?.role === undefined ? '' : ` — ${node.spawn.role}`}.`,
+                NOTE_MAX,
+              ),
+            });
+          }
+          nodeMission.set(node.nodeId, node.mission.id);
+          if (!writtenOrder.has(node.mission.id))
+            writtenOrder.set(node.mission.id, writtenOrder.size);
+          if (!missionInfo.has(node.mission.id))
+            missionInfo.set(node.mission.id, {
+              ...(node.mission.parentId === undefined ? {} : { parentId: node.mission.parentId }),
+              name: node.name,
+              agent: node.agentRef?.id ?? 'unknown',
+              ...(node.spawn?.standsIn === true ? { answersCall: true as const } : {}),
+            });
+        }
+        break;
+      case 'NODE_STARTED': {
+        const missionId = nodeMission.get(record.nodeId);
+        const info = missionId === undefined ? undefined : missionInfo.get(missionId);
+        if (info !== undefined) info.last = record.nodeId;
+        break;
+      }
+      case 'MISSION_ENDED': {
+        // A child of this task has ended: its result waits for the next assembly of the task,
+        // whichever segment that is (Orchestration 4.3).
+        const info = missionInfo.get(record.missionId);
+        const ownParent =
+          ownMission === undefined ? undefined : missionInfo.get(ownMission)?.parentId;
+        if (
+          treeShown &&
+          ownParent !== undefined &&
+          info?.parentId === ownParent &&
+          record.missionId !== ownMission
+        ) {
+          notes.push({
+            seq: record.seq,
+            category: 'NORMAL',
+            kind: 'NOTE',
+            text: `A sibling task has ended: ${info.name} (${record.status.toLowerCase()}).`,
+          });
+          break;
+        }
+        if (ownMission === undefined || info?.parentId !== ownMission) break;
+        // Its result comes back as the result of the call that started it (D115).
+        if (info.answersCall === true) break;
+        const outcome =
+          info.last === undefined ? undefined : outcomeOf(records, record.workflowRunId, info.last);
+        const status =
+          outcome?.status ??
+          (record.status === 'SUCCEEDED' ? ('DONE' as const) : ('FAILED' as const));
+        const result: ContextHistoryEntry = {
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'SUBAGENT_RESULT',
+          name: info.name,
+          agent: info.agent,
+          status,
+          notes: [...(outcome?.notes ?? [])],
+          ...(outcome?.outputRef === undefined ? {} : { outputRef: outcome.outputRef }),
+          ...(outcome?.toolCallId === undefined ? {} : { toolCallId: outcome.toolCallId }),
+          ...(outcome === undefined ? {} : handoverFieldsOf(records, outcome)),
+        };
+        resultOrder.set(result, writtenOrder.get(record.missionId) ?? 0);
+        notes.push(result);
+        break;
+      }
+      case 'MISSION_MESSAGE':
+        if (
+          ownMission === undefined ||
+          !record.to.some((each) => each === ownMission || pastMissions.has(each))
+        )
+          break;
+        notes.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'MESSAGE',
+          from: record.fromLabel,
+          ...(record.interrupt === true ? { interrupt: true } : {}),
+          ...(record.kind === undefined ? {} : { messageKind: record.kind }),
+          ...(record.replyTo === undefined ? {} : { replyTo: record.replyTo }),
+          ...(record.referenceId === undefined
+            ? {}
+            : messageReferences(records, record.referenceId)),
+          outputRef: record.source.outputRef,
+          toolCallId: record.source.toolCallId,
+          // The Workflow wrote it for its sender (D91): the words are in the record.
+          ...(record.byWorkflow === true && record.text !== undefined
+            ? { text: record.text.slice(0, 4000) }
+            : {}),
+          ...(record.asksGrant === true ? { asksGrant: true } : {}),
+          ...(record.meantFor === undefined ? {} : { meantFor: record.meantFor }),
+        });
+        break;
+      case 'MESSAGE_UNANSWERED':
+        if (record.missionId !== ownMission) break;
+        notes.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: `Task ${record.fromLabel} ended without answering your request ${record.requestToolCallId}; no reply will come.`,
+        });
+        break;
+      case 'PLAN_REGISTERED':
+        // A plan written after the task began reaches it at its next assembly.
+        if (!planShown || ownParentOf() === undefined) break;
+        notes.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'PLAN',
+          outputRef: record.source.outputRef,
+          toolCallId: record.source.toolCallId,
+        });
+        break;
+      case 'JOB_STARTED':
+        // Every task's: a job a subtask left running may end here (Orchestration 6.4).
+        jobCommands.set(`${record.missionId}/${record.jobId}`, record.command);
+        break;
+      case 'JOB_ENDED': {
+        // A job's end reaches the task told of it at the next assembly (Orchestration 6.4): the
+        // one that started it, or the nearest above it when that one had ended.
+        if ((record.toMissionId ?? record.missionId) !== ownMission) break;
+        const own = record.toMissionId === undefined || record.toMissionId === record.missionId;
+        // Named as job_list and job_kill name it here: by the path of the subtasks that ended.
+        const path: string[] = [];
+        for (
+          let at: string | undefined = record.missionId;
+          !own && at !== undefined && at !== ownMission;
+          at = missionInfo.get(at)?.parentId
+        )
+          path.unshift(missionInfo.get(at)?.name ?? 'subtask');
+        const name = own ? record.jobId : `${path.join('/')}/${record.jobId}`;
+        const handed = own
+          ? ''
+          : `It was started by the subtask ${missionInfo.get(record.missionId)?.name ?? 'that ended'}, which has ended. `;
+        notes.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: clip(
+            `${handed}${jobEndedNotice(record, jobCommands.get(`${record.missionId}/${record.jobId}`) ?? 'a command', name)}`,
+            NOTE_MAX,
+          ),
+        });
+        break;
+      }
+      case 'MISSION_WOKEN':
+        if (record.missionId !== ownMission) break;
+        notes.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: wokenNote(record.causes.map((cause) => cause.kind)),
+        });
+        break;
+      case 'HUMAN_ANSWERED':
+        if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
+        if (record.kind === 'steer') {
+          // A note is for one AgentRun, or for main's next input when its target had ended.
+          const mine =
+            scope.kind === 'NODE'
+              ? record.attachedAgentRunId !== undefined && mainRuns.has(record.attachedAgentRunId)
+              : record.attachedAgentRunId === undefined || mainRuns.has(record.attachedAgentRunId);
+          if (!mine) break;
+          const note: ContextHistoryEntry = {
+            seq: record.seq,
+            category: 'NORMAL',
+            kind: 'HUMAN',
+            contentRef: record.contentRef,
+          };
+          // It joins the history where the AgentRun next assembles it, after the results of the
+          // round in flight (a result must follow its call), and earlier entries stay as they were.
+          if (record.attachedAgentRunId === undefined) entries.push(note);
+          else notes.push(note);
+          break;
+        }
+        if (record.kind === 'prompt') currentInput = record.seq;
+        if (record.kind !== 'prompt') {
+          // The answer to a question that slept (Orchestration 4.1): the call was answered when
+          // the segment ended, so the answer comes to the next segment as what the user said.
+          const resume = records
+            .filter(
+              (each): each is Extract<SessionLogRecord, { type: 'GRAPH_EXTENDED' }> =>
+                each.type === 'GRAPH_EXTENDED' && each.workflowRunId === record.workflowRunId,
+            )
+            .flatMap((each) => each.edges)
+            .find((edge) => edge.kind === 'RESUME' && edge.from === record.nodeId);
+          const toolCallId = resume?.call?.toolCallId;
+          if (
+            resume !== undefined &&
+            toolCallId !== undefined &&
+            answered.has(toolCallId) &&
+            mainRuns.has(runOfNode.get(resume.to) ?? '')
+          )
+            notes.push(
+              {
+                seq: record.seq,
+                category: 'NORMAL',
+                kind: 'NOTE',
+                text: 'The user answered the question you asked with ask_user; the answer follows.',
+              },
+              {
+                seq: record.seq,
+                category: 'NORMAL',
+                kind: 'HUMAN',
+                contentRef: record.contentRef,
+              },
+            );
+          break;
+        }
+        // A SubAgent works from its task, not from what the user said.
+        if (scope.kind === 'NODE' && scope.task !== undefined && scope.task.withPrompt !== true)
+          break;
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'HUMAN',
+          contentRef: record.contentRef,
+        });
+        break;
+      case 'REQUEST_CONTEXT':
+        if (!mainRuns.has(record.agentRunId)) break;
+        modelId = record.modelRef.id;
+        if (runtimeNote(record) !== lastNote) {
+          lastNote = runtimeNote(record);
+          entries.push({
+            seq: record.seq,
+            category: 'NORMAL',
+            kind: 'NOTE',
+            text: lastNote,
+          });
+        }
+        break;
+      case 'UNIT_SUBMITTED':
+        // The assembly of a round takes the notes that arrived since the last one.
+        if (mainRuns.has(record.agentRunId) && record.unitRef.id === 'context-assemble') {
+          flush();
+          assemblyOwner.set(record.requestId, record.agentRunId);
+        }
+        if (mainRuns.has(record.agentRunId) && record.inputSource.kind === 'TOOL_CALL') {
+          unitOwners.set(record.requestId, {
+            toolCallId: record.inputSource.toolCallId,
+          });
+        }
+        break;
+      case 'CONTEXT_ASSEMBLED': {
+        const owner = assemblyOwner.get(record.requestId);
+        if (owner !== undefined) lastHead.set(owner, record.headDigest);
+        break;
+      }
+      case 'TOOL_RESULTS_PRUNED':
+        if (isTarget(record.target)) compaction.pruned.push(record);
+        break;
+      case 'CONTEXT_COMPACTED':
+        if (isTarget(record.target)) compaction.compacted.push(record);
+        break;
+      case 'CONTEXT_COMPACTION_REVOKED':
+        compaction.revoked.add(record.compactionId);
+        break;
+      case 'MODEL_TURN': {
+        if (!mainRuns.has(record.agentRunId)) break;
+        for (const call of record.toolCalls) toolNames.set(call.toolCallId, call.toolName);
+        if (pastRuns.has(record.agentRunId))
+          pastCalls = record.toolCalls.map((call) => call.toolCallId);
+        const head = lastHead.get(record.agentRunId);
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'MODEL_TURN',
+          modelId,
+          outputRef: record.outputRef,
+          ...(record.reasoningRef === undefined ? {} : { reasoningRef: record.reasoningRef }),
+          replayable: record.replayable,
+          ...(options.material === true && record.usage !== undefined && head !== undefined
+            ? {
+                measured: {
+                  inputTokens: record.usage.inputTokens,
+                  outputTokens: record.usage.outputTokens,
+                  headDigest: head,
+                },
+              }
+            : {}),
+        });
+        break;
+      }
+      case 'UNIT_COMPLETED': {
+        const owner = unitOwners.get(record.requestId);
+        if (owner === undefined) break;
+        const jobId = jobs.get(record.requestId);
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'TOOL_RESULT',
+          toolCallId: owner.toolCallId,
+          toolName: toolNames.get(owner.toolCallId) ?? 'unknown',
+          status: record.status,
+          ...(jobId === undefined ? {} : { jobId }),
+          ...(record.outputRef === undefined ? {} : { outputRef: record.outputRef }),
+          ...(record.reasonCode === undefined ? {} : { reasonCode: record.reasonCode }),
+          ...(options.material === true
+            ? {
+                requestId: record.requestId,
+                ...(record.fullRef === undefined ? {} : { fullRef: record.fullRef }),
+              }
+            : {}),
+        });
+        break;
+      }
+      case 'UNIT_INTERRUPTED': {
+        // A pause or an abort is answered by Workflow itself, or the Unit is submitted again.
+        if (record.reason === 'PAUSED' || record.reason === 'ABORTED') break;
+        const owner = unitOwners.get(record.requestId);
+        if (owner === undefined) break;
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'TOOL_RESULT',
+          toolCallId: owner.toolCallId,
+          toolName: toolNames.get(owner.toolCallId) ?? 'unknown',
+          status: 'INTERRUPTED',
+        });
+        break;
+      }
+      case 'WORKSPACE_REVERTED': {
+        // An undo of a log written before checkpoints replaced Turns: what it took back was left
+        // out above; the log keeps every record (Module/Workflow 7).
+        const reverted = new Set(record.revertedTurnIds);
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: `The user undid the last ${String(reverted.size)} turn(s): their messages and steps are gone from this history, and the files they changed are back as they were.`,
+        });
+        break;
+      }
+      case 'WORKSPACE_BOUND': {
+        // The folder changed (M2Design 2.3): the project instructions loaded so far were the old
+        // folder's, and they are read again from the new one.
+        for (let i = entries.length - 1; i >= 0; i -= 1)
+          if (entries[i]?.kind === 'PROJECT_INSTRUCTIONS') entries.splice(i, 1);
+        instructions.clear();
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: workspaceChangedNote(record.previousRoot, record.repositoryRoot),
+        });
+        break;
+      }
+      case 'WORKSPACE_DIVERGED':
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: divergedNote(record.files),
+        });
+        break;
+      case 'RUN_INTERRUPTED':
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: interruptedNote(record.reason),
+        });
+        break;
+      case 'PROJECT_FILE_LOADED':
+        // Appended at the end like any new fact, so a later call keeps the earlier prefix;
+        // the same content is not repeated in a later run.
+        if (scope.kind === 'NODE' && record.workflowRunId !== scope.workflowRunId) break;
+        if (record.agentRunId !== undefined) {
+          const own =
+            scope.kind === 'NODE'
+              ? record.agentRunId === scope.agentRunId
+              : mainRuns.has(record.agentRunId);
+          if (!own) break;
+        }
+        if (!('ref' in record)) {
+          entries.push({
+            seq: record.seq,
+            category: 'NORMAL',
+            kind: 'NOTE',
+            text: `${record.path} exists but was not loaded, because of the limit on such files; read_file can read it.`,
+          });
+          break;
+        }
+        if (instructions.has(`${record.path}\0${record.sha256}`)) break;
+        // A file has one place: what it says now takes the place of what it said before.
+        for (let i = entries.length - 1; i >= 0; i -= 1) {
+          const earlier = entries[i];
+          if (earlier?.kind === 'PROJECT_INSTRUCTIONS' && earlier.path === record.path)
+            entries.splice(i, 1);
+        }
+        for (const key of [...instructions])
+          if (key.startsWith(`${record.path}\0`)) instructions.delete(key);
+        instructions.add(`${record.path}\0${record.sha256}`);
+        entries.push({
+          seq: record.seq,
+          category: 'PINNED',
+          kind: 'PROJECT_INSTRUCTIONS',
+          path: record.path,
+          ref: record.ref,
+          trusted: record.trusted ?? false,
+        });
+        break;
+      case 'FEEDBACK':
+        if (!mainRuns.has(record.agentRunId)) break;
+        if (record.toolCallId !== undefined) answered.add(record.toolCallId);
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'FEEDBACK',
+          text: record.message,
+          ...(record.toolCallId === undefined ? {} : { toolCallId: record.toolCallId }),
+        });
+        break;
+      case 'NODE_RESUMED': {
+        // The call it woke from is answered by what its tasks came to, in the order they were
+        // written (M2Design 3.3, 3.6): a pure function of the log, so no record of it is kept.
+        if (!mainRuns.has(runOfNode.get(record.nodeId) ?? '')) break;
+        // A run that was interrupted answered its open calls itself.
+        if (answered.has(record.call.toolCallId)) break;
+        answered.add(record.call.toolCallId);
+        // A question to the user: the answer is the result of the call.
+        const answer = answerOf(
+          records,
+          record.workflowRunId,
+          record.nodeId,
+          record.call.toolCallId,
+        );
+        if (answer !== undefined) {
+          entries.push({
+            seq: record.seq,
+            category: 'NORMAL',
+            kind: 'HUMAN_ANSWER',
+            toolCallId: record.call.toolCallId,
+            question: answer.kind,
+            contentRef: answer.contentRef,
+          });
+          break;
+        }
+        const results = callResultsOf(
+          records,
+          record.workflowRunId,
+          record.nodeId,
+          record.call.toolCallId,
+        );
+        const count = (...statuses: string[]) =>
+          results.filter((result) => statuses.includes(result.status)).length;
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'FEEDBACK',
+          text: `${String(results.length)} subtask(s) finished: ${String(count('DONE'))} done, ${String(count('PARTIAL', 'BLOCKED'))} partial or blocked, ${String(count('FAILED'))} failed, ${String(count('SKIPPED'))} skipped. Their results follow, in the order you wrote the tasks.`,
+          toolCallId: record.call.toolCallId,
+        });
+        for (const result of results)
+          entries.push({
+            seq: record.seq,
+            category: 'NORMAL',
+            kind: 'SUBAGENT_RESULT',
+            name: result.name,
+            agent: result.agent,
+            status: result.status,
+            notes: [...result.notes],
+            ...(result.outputRef === undefined ? {} : { outputRef: result.outputRef }),
+            ...(result.toolCallId === undefined ? {} : { toolCallId: result.toolCallId }),
+            ...(result.referenceId === undefined ? {} : { referenceId: result.referenceId }),
+            ...(result.references === undefined ? {} : { references: [...result.references] }),
+          });
+        break;
+      }
+      case 'STALE_UNITS_SETTLED':
+        entries.push({
+          seq: record.seq,
+          category: 'NORMAL',
+          kind: 'NOTE',
+          text: 'The previous process ended before this work finished.',
+        });
+        break;
+      default:
+        break;
+    }
+  }
+  // A note that came after the last assembly is the last thing in the history.
+  flush();
+  // Requests an earlier round read and did not answer: the reminder comes last (Orchestration 5.3).
+  // A compaction does not keep it, and a last round is not reminded.
+  const reminder =
+    ownMission === undefined || options.material === true || options.final === true
+      ? undefined
+      : replyReminder(owedReplies(records, ownMission));
+  if (reminder !== undefined)
+    entries.push({
+      seq: records.at(-1)?.seq ?? 0,
+      category: 'NORMAL',
+      kind: 'NOTE',
+      text: reminder,
+    });
+  const shown = entries.map((entry) =>
+    entry.kind === 'HUMAN' &&
+    (scope.kind === 'NODE' || (currentInput !== undefined && entry.seq >= currentInput))
+      ? { ...entry, category: 'PINNED' as const }
+      : entry,
+  );
+  return { entries: shown, compaction };
+}
+
+/** The plan of the work as it stood: the last one the run registered (Orchestration 5.3). */
+function latestPlan(
+  records: readonly SessionLogRecord[],
+  workflowRunId: string,
+): Extract<SessionLogRecord, { type: 'PLAN_REGISTERED' }> | undefined {
+  let found: Extract<SessionLogRecord, { type: 'PLAN_REGISTERED' }> | undefined;
+  for (const record of records)
+    if (record.type === 'PLAN_REGISTERED' && record.workflowRunId === workflowRunId) found = record;
+  return found;
+}
+
+/** The handover a message carries, as its entry shows it (D25). */
+function messageReferences(
+  records: readonly SessionLogRecord[],
+  referenceId: string,
+): { referenceId?: string; references?: { toolCallId: string; tool: string }[] } {
+  const handover = registeredOf(records, referenceId);
+  return handover === undefined
+    ? {}
+    : {
+        referenceId: handover.referenceId,
+        references: handover.items.map(({ toolCallId, tool }) => ({ toolCallId, tool })),
+      };
+}
+
+/**
+ * What an undo of a log written before checkpoints replaced Turns took back (Module/Workflow 7):
+ * every record of the Turns it names that came before it. A record that names no Turn belongs to
+ * the one whose start it follows.
+ */
+function legacyUndone(records: readonly SessionLogRecord[]): ReadonlySet<number> {
+  const undone = new Set<number>();
+  const reverts = records.filter(
+    (record): record is Extract<SessionLogRecord, { type: 'WORKSPACE_REVERTED' }> =>
+      record.type === 'WORKSPACE_REVERTED',
+  );
+  if (reverts.length === 0) return undone;
+  let current: string | undefined;
+  for (const record of records) {
+    if (record.type === 'TURN_STARTED') current = record.turnId;
+    const turn = ('turnId' in record ? record.turnId : undefined) ?? current;
+    if (turn === undefined) continue;
+    if (reverts.some((revert) => revert.seq > record.seq && revert.revertedTurnIds.includes(turn)))
+      undone.add(record.seq);
+  }
+  return undone;
+}

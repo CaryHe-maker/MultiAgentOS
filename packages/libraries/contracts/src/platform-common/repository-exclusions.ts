@@ -2,7 +2,7 @@ import { Type } from 'typebox';
 import { text } from './schema-helpers.js';
 
 /**
- * Exclusion rules of repository access (M1Interface 3.5). Core shows them to the user and puts
+ * Exclusion rules of repository access. Core shows them to the user and puts
  * them into every REPOSITORY scope; the Executors apply them. Both sides use this one list and
  * this one matcher, so the range the user agreed to is the range that is read.
  *
@@ -85,12 +85,17 @@ function matchFrom(
 }
 
 /**
- * True when `path` (relative to the repository root, `/`-separated) is hit by any rule.
- * Throws for an invalid rule: the Schemas keep invalid rules out, so one here is a defect.
+ * True when `path` (relative to the repository root, `/`-separated) or a directory on the way to
+ * it is hit by any rule: `**\/.env*` also covers `.envs/production`, and a walk never enters what
+ * a read could otherwise reach. Throws for an invalid rule: the Schemas keep invalid rules out, so
+ * one here is a defect.
  */
 export function isExcluded(path: string, rules: readonly string[]): boolean {
   const segments = path.split('/');
-  return rules.some((rule) => compile(rule)(segments));
+  return segments.some((_, index) => {
+    const prefix = segments.slice(0, index + 1);
+    return rules.some((rule) => compile(rule)(prefix));
+  });
 }
 
 /**

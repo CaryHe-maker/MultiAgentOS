@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: subagent-fork
+version: v1.0.0
+digest: 5a8a431c93f0001eb0363bced1b22d6c0cf9d487375bd7116a87730b0becdf8a
+description: Control tool of chat that starts one subtask with the caller's context (Orchestration D112).
+purpose: CONTROL
+modelName: subagent_fork
+modelDescription: >-
+  Delegate a task to a subagent that starts with this conversation: use it when the task builds on what you have read and done, so the prompt says only what to do. Give writeScope (the paths it may change) when it changes files. Returns its id at once; you are told when it ends, with its answer.
+parametersContract:
+  kind: contract
+  id: workflow.DelegateArgs
+  version: v1
+riskClass: MEDIUM
+sideEffect: WORKSPACE_WRITE
+isIdempotent: false
+contentStatus: FINAL

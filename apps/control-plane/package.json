@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "multiagentos": "./dist/bin.js"
+    "mas": "./dist/bin.js"
   },
   "dependencies": {
     "@multiagentos/agent-tool-pool": "workspace:*",

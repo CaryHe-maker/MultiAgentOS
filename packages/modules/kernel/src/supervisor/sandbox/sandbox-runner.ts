@@ -1,0 +1,525 @@
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import {
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { release, totalmem } from 'node:os';
+import { dirname, join, posix } from 'node:path';
+import {
+  StopUnconfirmedError,
+  approvalDigestOf,
+  type DetachedExit,
+  type DetachedProcess,
+  buildSandboxEnvironment,
+  countSandboxDenials,
+  type SandboxRefusal,
+  type SandboxRunResult,
+  type SandboxRunner,
+  type SandboxScope,
+} from '@multiagentos/contracts';
+import { PRLIMIT_PATH, buildBwrapArgs } from './bwrap-args.js';
+import { sanitizeGitConfig } from './git-config.js';
+import { landlockArgs, landlockWritable, probeLandlock } from './landlock.js';
+import { signalSession } from './session-processes.js';
+
+/**
+ * Starts a command in `bwrap` and ends it (M2Design 4.7, 6.1; Kernel/Supervisor 5). It checks
+ * again, before it starts anything, that what runs is what the user approved. The process is a
+ * session leader inside its own PID namespace: SIGTERM goes to the group `bwrap` reports as
+ * `child-pid`, SIGKILL to the outer group, which ends the namespace and everything in it.
+ */
+export interface SandboxRunnerDeps {
+  /** An existing empty regular file to mask files with. */
+  readonly emptyFile: string;
+  readonly cancelGraceMs: number;
+  readonly killGraceMs: number;
+  /** The real home directory; it is hidden from the command. */
+  readonly home: string;
+  readonly hostEnv?: Readonly<Record<string, string | undefined>>;
+  readonly bwrapPath?: string;
+  readonly shell?: string;
+  readonly now?: () => number;
+  /** Size of the private /tmp of a command; default 512 MiB. */
+  readonly tmpBytes?: number;
+  /** Processes a command may add to what the user already runs; default 2048. */
+  readonly maxProcesses?: number;
+  /** Size of the biggest file a command may write; default 2 GiB. */
+  readonly maxFileBytes?: number;
+  /** Memory a command may fill; default half of the machine's memory. */
+  readonly maxDataBytes?: number;
+  /**
+   * The Python that restricts the writes of an unisolated command with Landlock (D79); probed
+   * when not given, `false` to run such commands without it.
+   */
+  readonly landlock?: string | false;
+}
+
+export interface TrackedSandboxRunner extends SandboxRunner {
+  /** Ends every live command at once; synchronous and safe to repeat. */
+  killAll(): void;
+  /** Number of commands still running. */
+  active(): number;
+  /** Whether an unisolated command writes only where its task may (Landlock, D79). */
+  readonly unisolatedWritesEnforced: boolean;
+}
+
+const STATUS_FD = 3;
+const PRLIMIT = PRLIMIT_PATH;
+
+/** `--size` for a tmpfs came with bubblewrap 0.8.0; Ubuntu 22.04 has 0.6.1. */
+function supportsTmpfsSize(bwrapPath: string): boolean {
+  try {
+    const text = spawnSync(bwrapPath, ['--version'], { encoding: 'utf8' }).stdout;
+    const match = /(\d+)\.(\d+)\.(\d+)/u.exec(text);
+    if (match === null) return false;
+    const [major, minor] = [Number(match[1]), Number(match[2])];
+    return major > 0 || minor >= 8;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Since Linux 5.14 the process limit counts the processes of the user namespace `bwrap` makes;
+ * before, it counted every process of the user, so the user's other processes are added.
+ */
+function countsPerNamespace(): boolean {
+  const [major = 0, minor = 0] = release()
+    .split('.')
+    .map((part) => Number.parseInt(part, 10));
+  return major > 5 || (major === 5 && minor >= 14);
+}
+
+/** Processes of the current user, anywhere: the limit counts all of them, not the command's. */
+function userProcesses(): number {
+  const uid = process.getuid?.();
+  let count = 0;
+  try {
+    for (const name of readdirSync('/proc')) {
+      if (!/^\d+$/u.test(name)) continue;
+      try {
+        if (statSync(`/proc/${name}`).uid === uid) count += 1;
+      } catch {
+        // Gone while counting.
+      }
+    }
+  } catch {
+    return 1_000;
+  }
+  return count;
+}
+
+/** The credential-free copy of `.git/config` for one command, and how to remove it. */
+function gitConfigCopy(
+  repositoryRoot: string,
+  directory: string,
+  emptyFile: string,
+): { path: string; remove: () => void } | undefined {
+  const original = posix.join(repositoryRoot, '.git/config');
+  if (!existsSync(original)) return undefined;
+  try {
+    const text = readFileSync(original, 'utf8');
+    const folder = mkdtempSync(join(directory, 'gitconfig-'));
+    const path = join(folder, 'config');
+    writeFileSync(path, sanitizeGitConfig(text), { mode: 0o644 });
+    return { path, remove: () => rmSync(folder, { recursive: true, force: true }) };
+  } catch {
+    // It is there and cannot be copied: the command sees an empty file, never the original.
+    return { path: emptyFile, remove: () => undefined };
+  }
+}
+
+const isDirectory = (path: string): boolean => {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+/** True when the path is there, a dangling link included. */
+function present(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A write root that does not exist yet: its nearest existing parent is a real directory inside. */
+function missingInside(root: string, relative: string): boolean {
+  let parent = posix.dirname(relative);
+  while (parent !== '.' && parent !== '/' && !present(posix.join(root, parent)))
+    parent = posix.dirname(parent);
+  const absolute = parent === '.' ? root : posix.join(root, parent);
+  return insideRepository(root, parent) === absolute && isDirectory(absolute);
+}
+
+/** Why a workdir or write root cannot be used: it must be a real directory inside the repository. */
+function insideRepository(root: string, relative: string): string | undefined {
+  const absolute = relative === '' || relative === '.' ? root : posix.join(root, relative);
+  try {
+    const real = realpathSync(absolute);
+    return real === root || real.startsWith(`${root}/`) ? real : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function checkBeforeStart(scope: SandboxScope, command: string): SandboxRefusal | undefined {
+  const { profile } = scope;
+  const digest = approvalDigestOf({
+    command,
+    workdir: profile.workdir,
+    network: profile.network,
+    writableRoots: profile.writableRoots,
+    backend: scope.backend,
+  });
+  if (digest !== scope.approvalDigest) return 'APPROVAL_MISMATCH';
+  let root: string;
+  try {
+    root = realpathSync(profile.repositoryRoot);
+  } catch {
+    return 'WORKDIR_INVALID';
+  }
+  if (root !== profile.repositoryRoot) return 'WORKDIR_INVALID';
+  const workdir = insideRepository(root, profile.workdir);
+  if (workdir === undefined || !isDirectory(workdir)) return 'WORKDIR_INVALID';
+  for (const writable of profile.writableRoots) {
+    const absolute = writable === '.' ? root : posix.join(root, writable);
+    // A write root the task has not created yet is not bound (a command cannot write it, the
+    // write tools can); the nearest part of it that exists must be a real directory inside.
+    if (!present(absolute)) {
+      if (!missingInside(root, writable)) return 'WORKDIR_INVALID';
+      continue;
+    }
+    // A write root that is a link would let the bind land somewhere else.
+    if (insideRepository(root, writable) !== absolute) return 'WORKDIR_INVALID';
+  }
+  return undefined;
+}
+
+export function createSandboxRunner(deps: SandboxRunnerDeps): TrackedSandboxRunner {
+  const live = new Set<ChildProcess>();
+  const hostEnv = deps.hostEnv ?? process.env;
+  const bwrap = deps.bwrapPath ?? 'bwrap';
+  const tmpSizeSupported = supportsTmpfsSize(bwrap);
+  const landlock = deps.landlock === false ? undefined : (deps.landlock ?? probeLandlock());
+
+  /** The unisolated commands among the live ones: they are ended by their session (D84). */
+  const sessions = new WeakSet<ChildProcess>();
+
+  const run: SandboxRunner['run'] = (options) =>
+    new Promise<SandboxRunResult>((resolve, reject) => {
+      const { scope, command, signal } = options;
+      if (process.platform === 'win32') {
+        resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' });
+        return;
+      }
+      const refusal = checkBeforeStart(scope, command);
+      if (refusal !== undefined) {
+        resolve({ kind: 'REFUSED', reason: refusal });
+        return;
+      }
+      const environment = buildSandboxEnvironment(hostEnv, deps.home);
+      if (!environment.ok) {
+        resolve({ kind: 'REFUSED', reason: 'ENV_ASSERTION_FAILED' });
+        return;
+      }
+      if (signal.aborted) {
+        resolve(ranNothing(scope));
+        return;
+      }
+      // `UNISOLATED` is what the user approved when the sandbox is not available: the same shell,
+      // the same whitelisted environment and the same work directory, but no isolation.
+      const unisolated = scope.backend === 'UNISOLATED';
+      const gitConfig = unisolated
+        ? undefined
+        : gitConfigCopy(scope.profile.repositoryRoot, dirname(deps.emptyFile), deps.emptyFile);
+      const args = buildBwrapArgs({
+        ...(tmpSizeSupported ? { tmpBytes: deps.tmpBytes ?? 512 * 1024 * 1024 } : {}),
+        ...(existsSync(PRLIMIT)
+          ? {
+              limits: {
+                maxProcesses:
+                  (deps.maxProcesses ?? 2048) + (countsPerNamespace() ? 0 : userProcesses()),
+                maxFileBytes: deps.maxFileBytes ?? 2 * 1024 * 1024 * 1024,
+                maxDataBytes: deps.maxDataBytes ?? Math.floor(totalmem() / 2),
+              },
+            }
+          : {}),
+        ...(gitConfig === undefined ? {} : { gitConfig: gitConfig.path }),
+        profile: scope.profile,
+        command,
+        home: deps.home,
+        emptyFile: deps.emptyFile,
+        statusFd: STATUS_FD,
+        env: environment.env,
+        ...(deps.shell === undefined ? {} : { shell: deps.shell }),
+        exists: existsSync,
+      });
+      let child: ChildProcess;
+      try {
+        // Without isolation the writes are still held to the task's (D79), where Landlock works.
+        const shell = deps.shell ?? '/bin/bash';
+        const plain = { file: shell, args: ['-c', command] };
+        const started =
+          landlock === undefined
+            ? plain
+            : landlockArgs(landlock, landlockWritable(scope.profile, deps.home), shell, command);
+        child = unisolated
+          ? spawn(started.file, started.args, {
+              cwd: workdirOf(scope),
+              detached: true,
+              shell: false,
+              windowsHide: true,
+              env: environment.env,
+              stdio: ['ignore', 'pipe', 'pipe'],
+            })
+          : spawn(bwrap, args, {
+              detached: true,
+              shell: false,
+              windowsHide: true,
+              env: {},
+              stdio: ['ignore', 'pipe', 'pipe', 'pipe'],
+            });
+      } catch {
+        gitConfig?.remove();
+        resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' });
+        return;
+      }
+      live.add(child);
+      if (unisolated) sessions.add(child);
+
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let truncated = false;
+      let innerPid: number | undefined = unisolated ? child.pid : undefined;
+      let timedOut = false;
+      let stopRequested = false;
+      let exited = false;
+      let started = false;
+      let settled = false;
+      const timers: NodeJS.Timeout[] = [];
+
+      // Once detached, what it prints goes to the job table instead (Orchestration 6.1).
+      let detached:
+        { output?: (chunk: Buffer) => void; exit?: (exit: DetachedExit) => void } | undefined;
+      let pendingExit: DetachedExit | undefined;
+      /** What it printed between the hand-over and the listener. */
+      const early: Buffer[] = [];
+      const capture = (chunk: Buffer) => {
+        started = true;
+        if (detached !== undefined) {
+          if (detached.output === undefined) early.push(chunk);
+          else detached.output(chunk);
+          return;
+        }
+        const room = options.maxOutputBytes - size;
+        if (chunk.byteLength > room) {
+          truncated = true;
+          if (room > 0) chunks.push(chunk.subarray(0, room));
+          size = options.maxOutputBytes;
+          return;
+        }
+        chunks.push(chunk);
+        size += chunk.byteLength;
+      };
+      child.stdout?.on('data', capture);
+      child.stderr?.on('data', capture);
+      let status = '';
+      child.stdio[STATUS_FD]?.on('data', (chunk: Buffer) => {
+        status = (status + chunk.toString('utf8')).slice(-512);
+        const match = /"child-pid"\s*:\s*(\d+)/u.exec(status);
+        if (match?.[1] !== undefined) innerPid = Number(match[1]);
+      });
+
+      const sendGroup = (pid: number | undefined, kill: NodeJS.Signals) => {
+        if (pid === undefined) return;
+        // An unisolated command is stopped by its session: what moved to another group, as the
+        // program under `timeout` does, is in it too (D84). bwrap's namespace holds the rest.
+        if (unisolated) {
+          signalSession(pid, kill);
+          return;
+        }
+        try {
+          process.kill(-pid, kill);
+        } catch {
+          // Already gone.
+        }
+      };
+      const settle = (finish: () => void) => {
+        if (settled) return;
+        settled = true;
+        for (const timer of timers) clearTimeout(timer);
+        signal.removeEventListener('abort', stop);
+        gitConfig?.remove();
+        live.delete(child);
+        finish();
+      };
+      const ended = (exit: DetachedExit) => {
+        if (detached === undefined) return;
+        for (const timer of timers) clearTimeout(timer);
+        gitConfig?.remove();
+        live.delete(child);
+        if (detached.exit === undefined) pendingExit = exit;
+        else detached.exit(exit);
+      };
+      /**
+       * Hands the running command over (Orchestration 6.1): the execution ends with what it
+       * printed so far, and the process runs on, no longer tied to the execution's signal.
+       */
+      const detach = (promoted: boolean) => {
+        if (settled || exited || detached !== undefined) return;
+        settled = true;
+        for (const timer of timers.splice(0)) clearTimeout(timer);
+        signal.removeEventListener('abort', stop);
+        detached = {};
+        const handle: DetachedProcess = {
+          onOutput: (listener) => {
+            if (detached === undefined) return;
+            detached.output = listener;
+            for (const chunk of early.splice(0)) listener(chunk);
+          },
+          onExit: (listener) => {
+            if (detached === undefined) return;
+            detached.exit = listener;
+            if (pendingExit !== undefined) listener(pendingExit);
+          },
+          stop: () => stop(),
+        };
+        resolve({
+          kind: 'DETACHED',
+          output: output(),
+          backend: scope.backend,
+          promoted,
+          process: handle,
+        });
+      };
+      const output = () => Buffer.concat(chunks).toString('utf8');
+
+      /** SIGTERM to the command's own group, SIGKILL to the outer group, then wait for the exit. */
+      function stop(): void {
+        if (stopRequested || exited) return;
+        stopRequested = true;
+        sendGroup(innerPid, 'SIGTERM');
+        if (innerPid === undefined) child.kill('SIGTERM');
+        timers.push(
+          setTimeout(() => {
+            if (exited) return;
+            sendGroup(child.pid, 'SIGKILL');
+            child.kill('SIGKILL');
+            timers.push(
+              setTimeout(() => {
+                if (exited) return;
+                if (detached !== undefined) {
+                  ended({ exitCode: null, signal: null, stopped: true, unconfirmed: true });
+                  return;
+                }
+                settle(() => reject(new StopUnconfirmedError(child.pid)));
+              }, deps.killGraceMs),
+            );
+          }, deps.cancelGraceMs),
+        );
+      }
+
+      signal.addEventListener('abort', stop, { once: true });
+      timers.push(
+        setTimeout(() => {
+          if (options.detach?.promoteOnTimeout === true) {
+            detach(true);
+            return;
+          }
+          timedOut = true;
+          stop();
+        }, options.timeoutMs),
+      );
+
+      child.on('error', () => {
+        exited = true;
+        if (detached !== undefined) {
+          ended({ exitCode: null, signal: null, stopped: stopRequested, unconfirmed: false });
+          return;
+        }
+        settle(() => resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' }));
+      });
+      child.on('close', (exitCode, exitSignal) => {
+        exited = true;
+        if (detached !== undefined) {
+          ended({ exitCode, signal: exitSignal, stopped: stopRequested, unconfirmed: false });
+          return;
+        }
+        settle(() => {
+          const text = output();
+          // bwrap itself failing to set up its namespaces says so before the command prints.
+          if (
+            !unisolated &&
+            !started &&
+            exitCode === 1 &&
+            /bwrap: /u.test(text) &&
+            innerPid === undefined
+          ) {
+            resolve({ kind: 'REFUSED', reason: 'SANDBOX_UNAVAILABLE' });
+            return;
+          }
+          resolve({
+            kind: 'RAN',
+            exitCode,
+            signal: exitSignal,
+            output: text,
+            truncated,
+            timedOut,
+            denials: countSandboxDenials(text),
+            backend: scope.backend,
+          });
+        });
+      });
+      if (options.detach?.immediately === true) detach(false);
+    });
+
+  return {
+    run,
+    killAll: () => {
+      for (const child of live) {
+        if (child.pid === undefined) continue;
+        if (sessions.has(child)) {
+          signalSession(child.pid, 'SIGKILL');
+          continue;
+        }
+        try {
+          process.kill(-child.pid, 'SIGKILL');
+        } catch {
+          child.kill('SIGKILL');
+        }
+      }
+    },
+    active: () => live.size,
+    unisolatedWritesEnforced: landlock !== undefined,
+  };
+}
+
+const workdirOf = (scope: SandboxScope): string =>
+  scope.profile.workdir === '' || scope.profile.workdir === '.'
+    ? scope.profile.repositoryRoot
+    : posix.join(scope.profile.repositoryRoot, scope.profile.workdir);
+
+function ranNothing(scope: SandboxScope): SandboxRunResult {
+  return {
+    kind: 'RAN',
+    exitCode: null,
+    signal: 'SIGTERM',
+    output: '',
+    truncated: false,
+    timedOut: false,
+    denials: 0,
+    backend: scope.backend,
+  };
+}

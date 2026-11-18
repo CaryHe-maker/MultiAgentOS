@@ -1,8 +1,8 @@
 # MultiAgentOS 当前依赖
 
-> 清单日期：2026-09-28。版本事实源为各 `package.json`；完整解析结果以 `pnpm-lock.yaml` 为准。
+> 清单日期：2026-11-19（M2 V1.1）。版本事实源为各 `package.json`；完整解析结果以 `pnpm-lock.yaml` 为准。
 
-目标运行平台已确定为 Ubuntu LTS，具体版本和系统能力由 MVP 明确。
+目标运行平台为 Ubuntu 24.04 LTS（以及 Windows 上的 WSL2）；命令沙盒需要 bubblewrap，检索在有 `rg` 时使用 ripgrep。
 
 ## 1. 运行环境
 
@@ -11,7 +11,8 @@
 | Node.js | `24.19.0`; `>=24.19.0 <25` |
 | pnpm | `11.25.0` |
 | TypeScript module | ESM / NodeNext |
-| Git | 仅测试工具使用（准备固定任务集的仓库内容并比对）；M1 产品代码不调用 git |
+| Git | 工作区快照（影子 git 仓库，M2Design 第 4.6 节）与只读 git 工具使用；没有 git 时启动预设降为 `readonly` |
+| bubblewrap、ripgrep | 可选：命令沙盒（没有时按 `kernel.sandbox.unavailable` 处理）；更快的检索（没有时用内置扫描） |
 
 ## 2. 根开发依赖
 
@@ -37,8 +38,16 @@
 | `packages/libraries/executor-set` | `ai` | `7.0.107` | 模型调用抽象 |
 | `packages/libraries/executor-set` | `@ai-sdk/openai` | `4.0.71` | OpenAI adapter |
 | `packages/libraries/executor-set` | `@ai-sdk/anthropic` | `4.0.58` | Anthropic adapter |
+| `packages/libraries/executor-set` | `web-tree-sitter` | `0.27.1` | 解析 shell 命令（只读判定、拆分子命令与前缀） |
+| `packages/libraries/executor-set` | `tree-sitter-bash` | `0.25.1` | bash 语法（不执行它的安装脚本，`allowBuilds`） |
 | `apps/control-plane` | `dotenv` | `18.0.1` | 本地配置加载 |
 | `apps/cli` | `commander` | `15.0.0` | CLI 参数解析 |
+| `apps/cli` | `ink` | `8.0.0` | 终端界面（对话的记录区、活动区与输入框） |
+| `apps/cli` | `react` | `19.3.1` | Ink 的组件模型 |
+| `apps/cli` | `string-width` | `8.3.0` | 终端显示宽度（打了补丁，`patches/string-width@8.3.0.patch`） |
+| `apps/cli` | `wrap-ansi` | `10.0.2` | 带样式文字的折行 |
+
+`apps/cli` 另有开发依赖 `@types/react`（`19.3.0`）与 `ink-testing-library`（`4.0.0`）。
 
 其余 workspace 仅声明 `@multiagentos/*: workspace:*` 内部依赖。
 Provider SDK 只由 ExecutorSet 的 model-call Executor（`packages/libraries/executor-set/src/model-call`）导入，API 池归 Kernel.Scheduler；`dotenv` 只由组合根 `apps/control-plane` 导入。

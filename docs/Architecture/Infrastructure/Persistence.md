@@ -10,17 +10,21 @@ ModuleHost 统一管理其生命周期；数据的解释、写入和恢复决策
 
 | Owner | 权威状态 |
 |---|---|
-| UserInteraction | 会话关联、交互状态与展示偏好 |
-| Workflow | 业务图、AgentRun、业务尝试、验收、检查点与恢复决定 |
-| Core | 授权、私有 Lease、控制操作与准入决定；多实例部署时的分片租约 |
+| UserInteraction | 展示偏好、界面草稿与输入历史；不含任何 Session 信息 |
+| Workflow | 业务图、AgentRun、业务尝试、验收、检查点与恢复决定；会话日志（SessionLogStore）与 Session 列表 |
+| Core | 授权、私有 Lease、控制操作与准入决定；Session 引用与用户按内容作出的长期信任决定（系统级）；多实例部署时的分片租约 |
 | Scheduler | 调用机会分配及调度关联 |
-| Execution | 执行尝试、执行队列、步骤、效果核对及长期上下文运行状态 |
+| Execution | 执行尝试、执行队列、步骤、效果核对及长期上下文运行状态；工作区快照索引与产物归属（Session 级） |
 | Monitor | 资源预留、结算、未知消耗与观测关联 |
 | Supervisor | 监管关系、生命周期、执行实例、Executor 子进程与恢复协调事实 |
 
 实际执行完成、结果被接受和业务验收分别保存，不合并为含义模糊的终态。
 对象正文由 ArtifactStore 保存，领域状态保留必要引用及其业务含义。
 派生视图、索引与缓存不能反向覆盖事实源。
+
+**会话日志与产物正文的边界**：SessionLogStore 是 Workflow 的只追加会话日志，唯一写入者是 Workflow，只保存结构化记录与产物引用；
+正文（工具输出、模型输出、用户输入的正文、报告与回复）只在 ArtifactStore 中，唯一写入者是 Execution。两者只经产物引用相连，
+Workflow 需要保存正文时经 Kernel 交给 Execution 写入，再把返回的引用写进日志。两者的机制都由 Persistence 提供。
 
 Core 的 Lease 持久状态仍属于 Core 私有边界；
 Persistence 的生命周期管理不产生面向其他组件的 Lease 读取能力。
@@ -38,7 +42,7 @@ Persistence 的生命周期管理不产生面向其他组件的 Lease 读取能�
 同一 Kernel 内的协调可以利用共同组织带来的便利，
 但不得因此模糊状态归属或把未完成交接隐藏起来。
 
-按运行分片部署时，每次写入携带分片 epoch，存储层拒绝 epoch 过期的写入，
+按 Session 分片部署时，每次写入携带分片 epoch，存储层拒绝 epoch 过期的写入，
 使失去分片的 Kernel 核心实例不能覆盖新 Owner 的状态。
 
 ## 4. 重建与演进

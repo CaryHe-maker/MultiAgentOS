@@ -1,9 +1,6 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { ModelDefinition } from '@multiagentos/contracts';
 import { FileDefinitionSource } from './adapters/file/file-definition-source.js';
-import { buildCatalogIndex, planSeal } from './domain/catalog-index.js';
+import { DefinitionCatalog, buildCatalogIndex, planSeal } from './catalog/catalog.js';
 import { DEFAULT_DEFINITIONS_DIRECTORY } from './definitions-directory.js';
 
 /**
@@ -20,93 +17,235 @@ describe('shipped definitions', () => {
     expect(planSeal(snapshot).patches).toEqual([]);
   });
 
-  it('are exactly the definitions of AgentToolPool section 4, older versions included', async () => {
-    const result = buildCatalogIndex(await load());
-    if (!result.ok) throw new Error('catalog did not load');
-    expect([...result.index.definitions.keys()].sort()).toEqual([
-      'AGENT:code-viewer@v1.0.0',
-      'AGENT:code-viewer@v1.1.0',
-      'AGENT:planner@v1.0.0',
-      'AGENT:planner@v1.1.0',
+  it('are exactly the definitions of AgentToolPool section 3', async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    expect(
+      catalog
+        .list()
+        .map((each) => `${each.kind}:${each.id}@${each.version}`)
+        .sort(),
+    ).toEqual([
+      'AGENT:chat-sub@v1.0.0',
+      'AGENT:chat@v1.0.0',
+      'AGENT:explorer@v1.0.0',
+      'AGENT:lead@v1.0.0',
+      'AGENT:main@v1.0.0',
+      'AGENT:worker@v1.0.0',
       'MODEL:deepseek-flash@v1.0.0',
-      'MODEL:deepseek-v4-pro@v1.0.0',
-      'PROMPT:code-viewer-system@v1.0.0',
-      'PROMPT:code-viewer-system@v1.1.0',
-      'PROMPT:planner-system@v1.0.0',
-      'TOOL:finish-analysis@v1.0.0',
-      'TOOL:handoff-to-code-viewer@v1.0.0',
+      'PROMPT:chat-sub-system@v1.0.0',
+      'PROMPT:chat-system@v1.0.0',
+      'PROMPT:compaction-system@v1.0.0',
+      'PROMPT:explorer-system@v1.0.0',
+      'PROMPT:lead-system@v1.0.0',
+      'PROMPT:main-system@v1.0.0',
+      'PROMPT:worker-system@v1.0.0',
+      'TEMPLATE:acceptance@v1.0.0',
+      'TEMPLATE:fix-verify@v1.0.0',
+      'TEMPLATE:integrate@v1.0.0',
+      'TEMPLATE:mission@v1.0.0',
+      'TEMPLATE:research@v1.0.0',
+      'TEMPLATE:review@v1.0.0',
+      'TOOL:ask-user@v1.0.0',
+      'TOOL:ask-user@v1.1.0',
+      'TOOL:chat-finish@v1.0.0',
+      'TOOL:edit-file@v1.0.0',
+      'TOOL:edit-file@v1.1.0',
+      'TOOL:finish-explorer@v1.0.0',
+      'TOOL:finish-worker@v1.0.0',
+      'TOOL:git-inspect@v1.0.0',
+      'TOOL:git-inspect@v1.1.0',
+      'TOOL:job-kill@v1.0.0',
+      'TOOL:job-kill@v1.1.0',
+      'TOOL:job-list@v1.0.0',
+      'TOOL:job-list@v1.1.0',
+      'TOOL:job-output@v1.0.0',
+      'TOOL:job-output@v1.1.0',
+      'TOOL:lead-run-subagents@v1.0.0',
+      'TOOL:list-external-files@v1.0.0',
+      'TOOL:list-external-files@v1.1.0',
+      'TOOL:list-files@v1.0.0',
+      'TOOL:list-files@v1.1.0',
+      'TOOL:mission@v1.0.0',
+      'TOOL:read-external-file@v1.0.0',
+      'TOOL:read-external-file@v1.1.0',
       'TOOL:read-file@v1.0.0',
+      'TOOL:read-file@v1.1.0',
+      'TOOL:read-output@v1.0.0',
+      'TOOL:read-output@v1.1.0',
+      'TOOL:reply@v1.0.0',
+      'TOOL:reply@v1.1.0',
+      'TOOL:run-command@v1.0.0',
+      'TOOL:run-command@v1.1.0',
+      'TOOL:run-subagents@v1.0.0',
+      'TOOL:search-external-repository@v1.0.0',
+      'TOOL:search-external-repository@v1.1.0',
       'TOOL:search-repository@v1.0.0',
+      'TOOL:search-repository@v1.1.0',
+      'TOOL:send-message@v1.0.0',
+      'TOOL:send-message@v1.1.0',
+      'TOOL:sleep@v1.0.0',
+      'TOOL:sleep@v1.1.0',
+      'TOOL:stop-subagents@v1.0.0',
+      'TOOL:stop-subagents@v1.1.0',
+      'TOOL:subagent-fork@v1.0.0',
+      'TOOL:subagent@v1.0.0',
+      'TOOL:update-todos@v1.0.0',
+      'TOOL:update-todos@v1.1.0',
+      'TOOL:view-tasks@v1.0.0',
+      'TOOL:view-tasks@v1.1.0',
+      'TOOL:web-fetch@v1.0.0',
+      'TOOL:web-fetch@v1.1.0',
+      'TOOL:web-search@v1.0.0',
+      'TOOL:web-search@v1.1.0',
+      'TOOL:write-file@v1.0.0',
+      'TOOL:write-file@v1.1.0',
       'UNIT:context-assemble@v1.0.0',
+      'UNIT:external-list@v1.0.0',
+      'UNIT:external-list@v1.1.0',
+      'UNIT:external-read@v1.0.0',
+      'UNIT:external-read@v1.1.0',
+      'UNIT:external-search@v1.0.0',
+      'UNIT:external-search@v1.1.0',
+      'UNIT:file-edit@v1.0.0',
+      'UNIT:file-edit@v1.1.0',
       'UNIT:file-read@v1.0.0',
+      'UNIT:file-read@v1.1.0',
+      'UNIT:file-write@v1.0.0',
+      'UNIT:file-write@v1.1.0',
+      'UNIT:git-inspect@v1.0.0',
+      'UNIT:git-inspect@v1.1.0',
+      'UNIT:message-publish@v1.0.0',
       'UNIT:model-call@v1.0.0',
-      'UNIT:report-publish@v1.0.0',
-      'UNIT:repository-orient@v1.0.0',
+      'UNIT:output-read@v1.0.0',
+      'UNIT:output-read@v1.1.0',
+      'UNIT:repository-list@v1.0.0',
+      'UNIT:repository-list@v1.1.0',
       'UNIT:repository-search@v1.0.0',
+      'UNIT:repository-search@v1.1.0',
+      'UNIT:run-command@v1.0.0',
+      'UNIT:run-command@v1.1.0',
+      'UNIT:web-fetch@v1.0.0',
+      'UNIT:web-fetch@v1.1.0',
+      'UNIT:web-search@v1.0.0',
+      'UNIT:web-search@v1.1.0',
     ]);
   });
 
-  it('price DeepSeek models as published on 2026-09-28', async () => {
-    const result = buildCatalogIndex(await load());
-    if (!result.ok) throw new Error('catalog did not load');
-    const model = (id: string) =>
-      result.index.definitions.get(`MODEL:${id}@v1.0.0`) as ModelDefinition;
+  it('price DeepSeek flash as published on 2026-09-28', async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    const model = catalog.latest('MODEL', 'deepseek-flash');
+    if (model === undefined) throw new Error('deepseek-flash is missing');
     // USD per 1M tokens, off-peak: cache hit / cache miss / output.
-    const usd = (definition: ModelDefinition) =>
-      Object.values(definition.pricing.offPeak).map((micro) => micro / 1_000_000);
-    expect(usd(model('deepseek-flash'))).toEqual([0.003, 0.15, 0.6]);
-    expect(usd(model('deepseek-v4-pro'))).toEqual([0.022, 0.66, 1.98]);
-    for (const id of ['deepseek-flash', 'deepseek-v4-pro'])
-      expect(model(id).pricing.peak).toMatchObject({
-        ratePercent: 200,
-        weekdays: [1, 2, 3, 4, 5],
-        windows: [
-          { start: '01:00', end: '04:00' },
-          { start: '06:00', end: '10:00' },
-        ],
-      });
+    expect(Object.values(model.pricing.offPeak).map((micro) => micro / 1_000_000)).toEqual([
+      0.003, 0.15, 0.6,
+    ]);
+    expect(model.pricing.peak).toMatchObject({
+      ratePercent: 200,
+      weekdays: [1, 2, 3, 4, 5],
+      windows: [
+        { start: '01:00', end: '04:00' },
+        { start: '06:00', end: '10:00' },
+      ],
+    });
+  });
+  it('let every Agent that starts tasks start every Agent it may name (2026-11-14)', async () => {
+    // A task can do no more than its parent (Kernel: CAPABILITY_NOT_SUBSET), so an Agent offered
+    // to a spawner but beyond its capabilities can never be started: a lead could not start the
+    // explorers of the reviewer's and the researcher's playbooks.
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
+    );
+    const definitions = catalog.list();
+    const agents = definitions.flatMap((each) => (each.kind === 'AGENT' ? [each] : []));
+    const byId = new Map(agents.map((agent) => [agent.id, agent]));
+    const spawnable = agents.filter((agent) => agent.spawnable !== undefined);
+    const missing = (parent: string, child: string): string[] => {
+      const has = new Set(byId.get(parent)?.capabilities ?? []);
+      return (byId.get(child)?.capabilities ?? []).filter((capability) => !has.has(capability));
+    };
+    const gaps: string[] = [];
+    for (const spawner of agents.filter((agent) => agent.actions.spawn !== undefined))
+      for (const child of spawnable) {
+        const lacking = missing(spawner.id, child.id);
+        if (lacking.length > 0) gaps.push(`${spawner.id} -> ${child.id}: ${lacking.join(', ')}`);
+      }
+    // A specialist is a lead that starts the Agents of its playbook's phases.
+    for (const template of definitions) {
+      if (template.kind !== 'TEMPLATE' || template.playbook === undefined) continue;
+      for (const phase of template.playbook.phases) {
+        if (phase.tasks === undefined) continue;
+        const lacking = missing('lead', phase.tasks.agent);
+        if (lacking.length > 0)
+          gaps.push(`${template.id}/${phase.name} -> ${phase.tasks.agent}: ${lacking.join(', ')}`);
+      }
+    }
+    expect(gaps).toEqual([]);
   });
 
-  it('match every definition file that AgentToolPool quotes', async () => {
-    const document = await readFile(
-      join(
-        DEFAULT_DEFINITIONS_DIRECTORY,
-        '..',
-        '..',
-        '..',
-        '..',
-        'docs',
-        'M1',
-        'Library',
-        'AgentToolPool.md',
-      ),
-      'utf8',
+  it('give main and lead the handbook of ways to split work (Orchestration D30)', async () => {
+    const catalog = await DefinitionCatalog.load(
+      new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
-    // Comments and blank lines may differ; every other line must be the same.
-    const lines = (text: string) =>
-      text
-        .split('\n')
-        .map((line) => line.trimEnd())
-        .filter((line) => line.trim() !== '' && !line.trimStart().startsWith('#'));
-    const quoted = [...document.matchAll(/```yaml\n([\s\S]*?)```/gu)].map(
-      (match) => match[1] ?? '',
-    );
-    let compared = 0;
-    for (const block of quoted) {
-      const kind = /^kind: (\w+)$/mu.exec(block)?.[1];
-      const id = /^id: ([\w-]+)$/mu.exec(block)?.[1];
-      const version = /^version: (v[\d.]+)$/mu.exec(block)?.[1];
-      if (kind === undefined || id === undefined || version === undefined) continue;
-      const file = join(
-        DEFAULT_DEFINITIONS_DIRECTORY,
-        `${kind.toLowerCase()}s`,
-        id,
-        `${version}.yaml`,
-      );
-      expect(lines(block), `${kind} ${id}@${version}`).toEqual(lines(await readFile(file, 'utf8')));
-      compared += 1;
+    const promptOf = (id: string) => {
+      const prompt = catalog.latest('PROMPT', id);
+      if (prompt === undefined) throw new Error(`${id} is missing`);
+      return prompt.template;
+    };
+    // A short list of ways, as dsh and other agents keep it (D68): the system keeps the rules.
+    for (const way of ['Fan out and join', 'Explore, then build', 'Alone']) {
+      expect(promptOf('main-system')).toContain(`- ${way}:`);
+      expect(promptOf('lead-system')).toContain(`- ${way}:`);
     }
-    // Every definition but the two sealed models, which the document lists in a table.
-    expect(compared).toBe(14);
+    expect(promptOf('lead-system')).toContain('- Interface first:');
+    // Prompts stay short (D68): the check is the project's own, at the strength the task needs.
+    for (const id of ['main-system', 'lead-system', 'worker-system', 'explorer-system'])
+      expect(promptOf(id).length).toBeLessThan(4500);
+    expect(promptOf('worker-system')).toContain('do not build extra test harnesses');
+    // Only the root starts a lead, as a worker with split (D88, D93): the way is main's alone.
+    expect(promptOf('main-system')).toContain('- Workers with split: true for large parts:');
+    expect(promptOf('lead-system')).not.toContain('split: true');
+    const mission = catalog.latest('TEMPLATE', 'mission');
+    expect(JSON.stringify(mission?.nodes)).toContain('table of decisions');
+    // The root of a long task decides by a table and reads a manual of the system, not solved
+    // tasks (Orchestration D37, 2026-11-14): how each tool is called, what comes back, what next.
+    const guide = mission?.nodes.find((node) => node.kind === 'AGENT' && node.guide !== undefined);
+    const text = guide?.kind === 'AGENT' ? (guide.guide ?? '') : '';
+    expect(text).toContain('Decisions, by what you see.');
+    for (const entry of [
+      'run_subagents: parts to build',
+      'continues: give a finished part back',
+      'sleep: wait without spending anything.',
+      'send_message: talk to your subtasks',
+      'Background commands:',
+      'stop_subagents {names:',
+    ])
+      expect(text).toContain(entry);
+    // Every specialist is in the manual with what to write for it (Orchestration D39), and a
+    // general shape of a large task and a counter-example where splitting does not pay are there.
+    for (const specialist of ['fixer:', 'reviewer:', 'tester:', 'integrator:', 'researcher:'])
+      expect(text).toContain(`\n    ${specialist} `);
+    expect(text).not.toContain('sub_mission');
+    expect(text).toContain('Counter-example, do not split:');
+    // The goal tells the root what the system is for and how it is judged.
+    expect(JSON.stringify(mission?.nodes)).toContain('judged by how soon the goal is delivered');
+    // The manual is short and asks for no more checking than the project's own (D68).
+    expect(text.length).toBeLessThan(5000);
+    expect(text).toContain('do not run them again');
+    // The manual carries placeholders, not the content of solved tasks.
+    for (const word of ['Whole task', 'toolchain', 'latexmk', 'HH_', 'run.sh', 'flight'])
+      expect(text).not.toContain(word);
+    // Every pre-orchestrated template carries several examples of its speciality for its root, the
+    // first from a small language toolchain.
+    for (const id of ['fix-verify', 'review', 'acceptance', 'integrate', 'research']) {
+      const template = catalog.latest('TEMPLATE', id);
+      const example = template?.kind === 'TEMPLATE' ? (template.playbook?.example ?? '') : '';
+      expect(example).toContain('small language toolchain');
+      expect(example).not.toContain('HH_');
+      expect(example.match(/^Example \d\./gmu)?.length).toBeGreaterThanOrEqual(3);
+    }
   });
 });

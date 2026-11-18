@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: list-files
+version: v1.1.0
+digest: 5b2bc4a589a8cba89afb0775212e501aff8f1e9c593875756b1dcadd989e14b2
+description: Model-facing directory listing, served by the repository-list unit. Turn-chat text.
+purpose: UNIT
+modelName: list_files
+modelDescription: >-
+  List repository files as a tree with file counts per directory. path is relative to the repository root; depth 1 to 3; glob filters paths.
+parametersContract:
+  kind: contract
+  id: executor.RepositoryListInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

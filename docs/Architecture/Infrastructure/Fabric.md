@@ -14,13 +14,13 @@ Module 与组件边界不直接等同于进程边界。
 
 | 通讯主体 | 组成 | 进程 |
 |---|---|---|
-| Kernel 核心 | Core、Monitor、Scheduler、Execution（模块化单体） | 同一进程；可按 WorkflowRun 分片为多个实例 |
+| Kernel 核心 | Core、Monitor、Scheduler、Execution（模块化单体） | 同一进程；可按 Session 分片为多个实例 |
 | Supervisor | Supervisor 及其管理的 Executor 子进程 | 独立进程 |
 | Gateway | Gateway | 逻辑上独立；是否独立成进程由各 MVP 决定 |
 | Workflow | Workflow Module | 独立通讯主体 |
 | UserInteraction | UserInteraction Module 的各交互载体 | 独立通讯主体 |
 
-按运行分片后，跨运行的资源分配可以由全局容量服务承担。
+按 Session 分片后，跨 Session 的资源分配与系统级状态可以由全局服务承担。
 Persistence、ArtifactStore 等基础设施提供存储机制，不作为通讯主体。
 
 通讯主体内部可以直接函数调用，但 Kernel 核心内的组件仍按模块隔离，只经职责接口与内部 syscall 交互
@@ -31,9 +31,9 @@ Persistence、ArtifactStore 等基础设施提供存储机制，不作为通讯�
 
 | 通信 | 参与方 | 边界 |
 |---|---|---|
-| 外部系统调用 | Workflow、UserInteraction → Gateway → Kernel 核心 | 经 Gateway 检查后进入 Core；分片部署时由 Gateway 按 `workflowRunId` 路由 |
+| 外部系统调用 | Workflow、UserInteraction → Gateway → Kernel 核心 | 经 Gateway 检查后进入 Core；分片部署时由 Gateway 按 `sessionId` 路由 |
 | Kernel 核心内部协作 | Core、Monitor、Scheduler、Execution | 内部 syscall 与职责接口调用，以函数调用完成，不经 Fabric；按组件模块化隔离 |
-| 执行派发 | Kernel 核心 ↔ Supervisor | 执行请求、取消、执行事实与心跳；执行事实携带运行、尝试与执行实例标识，以运行控制状态版本防护；执行事实进入运行 actor 后由 Execution 处理，用量与违规经 Execution 的结果检查交给 Core |
+| 执行派发 | Kernel 核心 ↔ Supervisor | 执行请求、取消、执行事实与心跳；执行事实携带运行、尝试与执行实例标识，以运行控制状态版本防护；执行事实进入 Session actor 后由 Execution 处理，用量与违规经 Execution 的结果检查交给 Core |
 | 执行载体 | Supervisor ↔ Executor 子进程 | 属于 Supervisor 内部，Executor 子进程不与其他主体通信 |
 | 事件交付 | Core 的 Outbox → Workflow、UserInteraction 的 Inbox | 单向投递，有序、可去重，语义见 [Protocol](../Protocol.md) 第 6 节 |
 | 产物访问 | 获准主体 → ArtifactStore 的受控访问边界 | 不以通信可达替代内容授权 |
@@ -43,7 +43,7 @@ Persistence、ArtifactStore 等基础设施提供存储机制，不作为通讯�
 主体代码不能修改，接收方不采信请求中自报的身份。
 Lease 内容不进入公共通信或观测通道，只由 Core 维护。
 
-进入 Kernel 核心的消息按运行排队，控制类消息（取消、授权回答、运行超时、收敛兜底到点、Supervisor 上报的终止或违规）
+进入 Kernel 核心的消息按 Session 排队，控制类消息（取消、授权回答、超时到点、收敛兜底到点、Supervisor 上报的终止或违规）
 优先于工作类消息处理，见 [Kernel](../Module/Kernel.md) 3.2。
 
 ## 4. 受理与交接

@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: git-inspect
+version: v1.1.0
+digest: 7a6305cc978a07df2595c4fa17376e5a591e38f712ab3c27ca6430589833271c
+description: Model-facing read-only git inspection, served by the git-inspect unit. Turn-chat text.
+purpose: UNIT
+modelName: git_inspect
+modelDescription: >-
+  Read the git state without changing it: status, diff, log, show or blame.
+parametersContract:
+  kind: contract
+  id: executor.GitInspectInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

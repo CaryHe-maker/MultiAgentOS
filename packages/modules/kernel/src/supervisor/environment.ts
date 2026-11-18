@@ -1,9 +1,14 @@
-import type {
-  ExecutionRequest,
-  ExecutorEnvironment,
-  ProviderCredentials,
-  SubprocessRunner,
+import {
+  DENY_SANDBOX,
+  type ExecutionRequest,
+  type ExecutorEnvironment,
+  type ModelProgress,
+  type ProviderCredentials,
+  type SandboxRunner,
+  type SubprocessRunner,
 } from '@multiagentos/contracts';
+import { modelProgressOf } from './model-progress.js';
+import { createSandboxedGit } from './sandbox/sandboxed-git.js';
 
 /** A capability that refuses without touching a credential or starting a process. */
 const DENY_CREDENTIALS: ProviderCredentials = {
@@ -24,12 +29,16 @@ const DENY_SUBPROCESS: SubprocessRunner = {
 export interface ExecutorEnvironmentDeps {
   readonly credentials: ProviderCredentials;
   readonly subprocess: SubprocessRunner;
+  readonly sandbox: SandboxRunner;
   readonly now: () => Date;
+  /** Where the thinking of a streaming model call goes; absent means the call is not streamed. */
+  readonly progress?: (progress: ModelProgress) => void;
 }
 
 /**
- * Builds the smallest environment an Executor needs (docs/M1/Kernel/Supervisor.md 4):
- * only MODEL receives credentials and only REPOSITORY_SEARCH receives the real runner.
+ * Builds the smallest environment an Executor needs:
+ * only MODEL and the web tools receive credentials, REPOSITORY_SEARCH and GIT_INSPECT receive the real runner of
+ * `rg` and `git`, and only COMMAND receives the sandbox.
  */
 export function createExecutorEnvironment(
   request: ExecutionRequest,
@@ -40,8 +49,23 @@ export function createExecutorEnvironment(
     scope: request.scope,
     limits: request.limits,
     signal,
-    subprocess: request.executionKind === 'REPOSITORY_SEARCH' ? deps.subprocess : DENY_SUBPROCESS,
-    credentials: request.executionKind === 'MODEL' ? deps.credentials : DENY_CREDENTIALS,
+    subprocess:
+      request.executionKind === 'GIT_INSPECT' && request.scope.kind === 'REPOSITORY'
+        ? createSandboxedGit(deps.subprocess, deps.sandbox, request.scope.repositoryRoot)
+        : request.executionKind === 'REPOSITORY_SEARCH' || request.executionKind === 'GIT_INSPECT'
+          ? deps.subprocess
+          : DENY_SUBPROCESS,
+    sandbox: request.executionKind === 'COMMAND' ? deps.sandbox : DENY_SANDBOX,
+    // The model provider's key also serves the web tools, since DeepSeek's interface takes it.
+    credentials:
+      request.executionKind === 'MODEL' ||
+      request.executionKind === 'WEB_SEARCH' ||
+      request.executionKind === 'WEB_FETCH'
+        ? deps.credentials
+        : DENY_CREDENTIALS,
+    ...(request.executionKind === 'MODEL' && deps.progress !== undefined
+      ? { progress: modelProgressOf(request, deps.progress, deps.now) }
+      : {}),
     now: deps.now,
   };
 }

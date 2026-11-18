@@ -2,8 +2,8 @@ import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 /**
- * A small repository with one file of every kind the repository Executors must tell apart
- * (docs/M1/Library/ExecutorSet.md 3). Paths are relative to the root and use `/`.
+ * A small repository with one file of every kind the repository Executors must tell apart.
+ * Paths are relative to the root and use `/`.
  */
 export const FIXTURE_FILES = Object.freeze({
   /** Ordinary text files: part of the file set and the snapshot. */

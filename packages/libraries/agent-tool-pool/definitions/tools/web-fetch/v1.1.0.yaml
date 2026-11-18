@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: web-fetch
+version: v1.1.0
+digest: 81314398d035309dd1fa9996029363483d91ac63e28cbc823ea3df8f5709fd93
+description: Model-facing page fetch, served by the web-fetch unit. Turn-chat text.
+purpose: UNIT
+modelName: web_fetch
+modelDescription: >-
+  Fetch one public http(s) page and return it as Markdown.
+parametersContract:
+  kind: contract
+  id: executor.WebFetchInput
+  version: v1
+riskClass: LOW
+sideEffect: EXTERNAL
+isIdempotent: true
+contentStatus: FINAL

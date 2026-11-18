@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: search-external-repository
+version: v1.1.0
+digest: d0c549e1286ee68cf8fb06c7a04a97c3550a5b2a2f938118c6b14a4da35112f7
+description: Model-facing search of a folder outside the repository, served by the external-search unit. Turn-chat text.
+purpose: UNIT
+modelName: search_external_repository
+modelDescription: >-
+  Search a folder outside the repository. path is absolute, exactly as the user or a file gave it.
+parametersContract:
+  kind: contract
+  id: context.RepositorySearchInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

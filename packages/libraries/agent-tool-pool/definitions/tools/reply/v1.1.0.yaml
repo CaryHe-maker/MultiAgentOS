@@ -1,0 +1,19 @@
+schemaVersion: v1
+kind: TOOL
+id: reply
+version: v1.1.0
+digest: f88a3b08344062fea98928793d982a0dabf5f247d20dc0c8740fffafa0d9e722
+description: Control tool that ends a Turn of main with its reply to the user. Turn-chat text.
+purpose: CONTROL
+modelName: reply
+modelDescription: >-
+  Send your answer to the user and end your work for this message; call it alone. text is Markdown in the language of the user.
+parametersContract:
+  kind: contract
+  id: workflow.ReplyArgs
+  version: v1
+answer: true
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

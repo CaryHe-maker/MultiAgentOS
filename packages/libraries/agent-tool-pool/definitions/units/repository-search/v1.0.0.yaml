@@ -1,19 +1,26 @@
-schemaVersion: v0
+schemaVersion: v1
 kind: UNIT
 id: repository-search
 version: v1.0.0
-digest: db72f5b56284b3990695502377e1fe231de86546c6fdd815d88d7bb95ab18fad
+digest: c112d0034db0818c2fd3da078af4d54ba8f3c10f2038180095336acdcc6107b6
 description: Search the repository snapshot and build a SEARCH ContextPack.
 executionKind: REPOSITORY_SEARCH
-protectedCapabilities: [repo.read]
-inputContract: { kind: contract, id: context.RepositorySearchInput, version: v0 }
-outputContract: { kind: contract, id: context.RepositorySearchOutput, version: v0 }
+protectedCapabilities:
+  - repo.read
+inputContract:
+  kind: contract
+  id: context.RepositorySearchInput
+  version: v1
+outputContract:
+  kind: contract
+  id: context.RepositorySearchOutput
+  version: v1
 toolRefs:
-  - { id: search-repository, version: v1.0.0 }
+  - id: search-repository
+    version: v1.0.0
 effect: READ_ONLY
 isIdempotent: true
 failurePolicy:
-  USER_DECLINED: FINAL_CALL
   OUT_OF_SCOPE: RETURN_TO_MODEL
   INVALID_QUERY: RETURN_TO_MODEL
   LIMIT_EXCEEDED: RETURN_TO_MODEL

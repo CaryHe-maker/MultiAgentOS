@@ -1,8 +1,7 @@
-import { createHash } from 'node:crypto';
 import { lstat, readdir, readFile, writeFile } from 'node:fs/promises';
 import { extname, join, relative, sep } from 'node:path';
 import { isMap, parseDocument } from 'yaml';
-import type { DefinitionKind } from '@multiagentos/contracts';
+import { sha256Hex, type DefinitionKind } from '@multiagentos/contracts';
 import type { CatalogIssue } from '../../domain/catalog-issue.js';
 import type {
   SealPatch,
@@ -26,6 +25,7 @@ const KIND_DIRECTORIES: Readonly<Record<string, DefinitionKind>> = {
   tools: 'TOOL',
   models: 'MODEL',
   prompts: 'PROMPT',
+  templates: 'TEMPLATE',
 };
 const STATUS_FILE = 'status.yaml';
 const IGNORED_ROOT_FILES = new Set(['README.md']);
@@ -44,7 +44,13 @@ export class FileDefinitionSource implements SealableDefinitionSource {
     const documents: SourceDocument[] = [];
     const issues: CatalogIssue[] = [];
     let statusDocument: SourceDocument | undefined;
-    const files = await this.#listFiles(this.rootDirectory, issues);
+    // In the order of their origins, the whole path: `agents/chat/` and `agents/chat-sub/` sort the
+    // same way whatever the directories they are in.
+    const files = (await this.#listFiles(this.rootDirectory, issues)).sort((left, right) => {
+      const a = toOrigin(this.rootDirectory, left);
+      const b = toOrigin(this.rootDirectory, right);
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
     for (const file of files) {
       const origin = toOrigin(this.rootDirectory, file);
       const document = await this.#readDocument(file, origin, issues);
@@ -195,7 +201,7 @@ function toOrigin(root: string, path: string): string {
 }
 
 function hashText(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
+  return sha256Hex(text);
 }
 
 function errorMessage(error: unknown): string {

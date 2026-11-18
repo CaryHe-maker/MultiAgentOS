@@ -1,0 +1,26 @@
+schemaVersion: v1
+kind: TOOL
+id: run-command
+version: v1.0.0
+digest: af02ad4d537e625c8e7726d76c117a5549a662bca0ce7258453e5e8861148c95
+description: Model-facing command execution, served by the run-command unit.
+purpose: UNIT
+modelName: run_command
+modelDescription: >-
+  Run one bash command in the repository and get its exit code and output. Each call starts a
+  fresh shell: give workdir (relative to the repository root) instead of cd. It runs in a sandbox
+  without network that cannot read secrets or write outside the repository; .git, .multiagentos and
+  AGENTS.md are read-only. network true asks the user for internet. timeoutMs defaults to 120000, at
+  most 600000; a command still running then moves to the background (promoteOnTimeout false stops it
+  instead). runInBackground starts a long command and returns its job id at once; you are told when it
+  ends, job_output reads it, job_kill stops it. A non-zero exit code is a result, not an error. A long
+  output is cut in the middle; read_output reads the rest. Use read_file and edit_file, not commands,
+  to read or change files.
+parametersContract:
+  kind: contract
+  id: executor.RunCommandArgs
+  version: v1
+riskClass: HIGH
+sideEffect: EXTERNAL
+isIdempotent: false
+contentStatus: FINAL

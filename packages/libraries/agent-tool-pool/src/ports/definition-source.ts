@@ -29,7 +29,7 @@ export interface DefinitionSource {
   load(): Promise<SourceSnapshot>;
 }
 
-/** A source whose drafts can be sealed in place (only the file adapter in M1). */
+/** A source whose drafts can be sealed in place (only the file adapter). */
 export interface SealableDefinitionSource extends DefinitionSource {
   writeDigests(patches: readonly SealPatch[]): Promise<void>;
 }

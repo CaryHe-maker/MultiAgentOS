@@ -1,7 +1,7 @@
 import type { ModelScope } from './language-model.js';
 
 /**
- * Where the one HTTP request of a model call got to. ExecutorSet 4.5 needs this to tell
+ * Where the one HTTP request of a model call got to. ExecutorSet needs this to tell
  * NOT_SENT (the provider cannot have processed the request) from UNKNOWN.
  */
 export interface RequestProgress {
@@ -31,7 +31,7 @@ const BEFORE_SENDING = new Set([
   'ERR_TLS_CERT_ALTNAME_INVALID',
 ]);
 
-export function failedBeforeSending(error: unknown): boolean {
+function failedBeforeSending(error: unknown): boolean {
   let current: unknown = error;
   for (let depth = 0; typeof current === 'object' && current !== null && depth < 5; depth += 1) {
     const { code, cause } = current as { code?: unknown; cause?: unknown };
@@ -45,12 +45,16 @@ export function failedBeforeSending(error: unknown): boolean {
 /**
  * Wraps the fetch handed to the provider SDK. It records how far the request got and, for
  * DeepSeek's OpenAI-compatible API, writes the thinking switch into the body, which the OpenAI
- * adapter has no option for (M0 sent the same field: `thinking: { type: 'disabled' }`).
+ * adapter has no option for (`thinking: { type: 'disabled' }`).
  */
 export function trackedFetch(
   inner: typeof globalThis.fetch,
   scope: ModelScope,
   progress: RequestProgress,
+  /** `reasoning_content` of each assistant message, in order (ExecutorSet 6.3). */
+  replay: readonly (string | undefined)[] = [],
+  /** Sees the bytes of a streamed answer as they arrive, before the SDK has read them. */
+  tap?: (bytes: Uint8Array) => void,
 ): typeof globalThis.fetch {
   return async (input, init) => {
     progress.started = true;
@@ -60,15 +64,53 @@ export function trackedFetch(
       parsed['thinking'] = { type: scope.thinking === 'ENABLED' ? 'enabled' : 'disabled' };
       if (scope.thinking === 'ENABLED' && scope.thinkingEffort !== undefined)
         parsed['reasoning_effort'] = scope.thinkingEffort;
+      let assistant = 0;
+      for (const message of (parsed['messages'] ?? []) as {
+        role?: string;
+        reasoning_content?: string;
+      }[]) {
+        if (message.role !== 'assistant') continue;
+        const reasoning = replay[assistant];
+        assistant += 1;
+        if (reasoning !== undefined) message.reasoning_content = reasoning;
+      }
       request = { ...init, body: JSON.stringify(parsed) };
     }
     try {
       const response = await inner(input, request);
       progress.responded = true;
-      return response;
+      return tap === undefined ? response : tapped(response, tap);
     } catch (error) {
       progress.failedBeforeSending = failedBeforeSending(error);
       throw error;
     }
   };
+}
+
+/**
+ * The same response with its body passed through `tap`, a chunk at a time, as it comes off the
+ * network. The provider SDK reads ahead until the first piece of an answer before it hands the
+ * stream on, so thinking, which comes first, would reach nobody until it is over; this sees it at
+ * once. A failure of `tap` never reaches the body.
+ */
+function tapped(response: Response, tap: (bytes: Uint8Array) => void): Response {
+  const type = response.headers.get('content-type') ?? '';
+  if (response.body === null || !type.includes('text/event-stream')) return response;
+  const body = response.body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(chunk, controller) {
+        try {
+          tap(chunk);
+        } catch {
+          // Watching must not change what the call receives.
+        }
+        controller.enqueue(chunk);
+      },
+    }),
+  );
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }

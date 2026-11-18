@@ -1,0 +1,2135 @@
+{
+ "tools": {
+  "sort": "sort (GNU coreutils) 9.7",
+  "grep": "grep (GNU grep) 3.11",
+  "sed": "sed (GNU sed) 4.9"
+ },
+ "cases": [
+  {
+   "name": "grep_basic",
+   "argv": [
+    "grep",
+    "apple"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\napple 3 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_bre_vs_ere",
+   "argv": [
+    "grep",
+    "a\\(p\\)\\1"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\napple 3 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_ere_alternation",
+   "argv": [
+    "grep",
+    "-E",
+    "red|green$"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\ncherry 7 red\napple 3 green\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_fixed",
+   "argv": [
+    "grep",
+    "-F",
+    "a.e"
+   ],
+   "stdin": "a.e\nabe\n",
+   "files": {},
+   "out": [],
+   "stdout": "a.e\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_options_icnv",
+   "argv": [
+    "grep",
+    "-i",
+    "-n",
+    "the"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "1:The quick brown fox jumps over the lazy dog.\n5:the end? THE END!\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_count_invert",
+   "argv": [
+    "grep",
+    "-vc",
+    "e"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "0\n",
+   "exit": 1,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_only_matching",
+   "argv": [
+    "grep",
+    "-o",
+    "fo*"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "fo\nfoo\nfoo\nfoo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_word_line",
+   "argv": [
+    "grep",
+    "-w",
+    "foo"
+   ],
+   "stdin": "foo\nfood\na foo b\nfoo_x\n",
+   "files": {},
+   "out": [],
+   "stdout": "foo\na foo b\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_line_exact",
+   "argv": [
+    "grep",
+    "-x",
+    "-E",
+    "[a-z]+"
+   ],
+   "stdin": "abc\nabc1\nxyz\n",
+   "files": {},
+   "out": [],
+   "stdout": "abc\nxyz\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_files_with_names",
+   "argv": [
+    "grep",
+    "-n",
+    "e",
+    "a.txt",
+    "b.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "a.txt:1:apple 3 red\na.txt:2:banana 12 yellow\na.txt:3:cherry 7 red\na.txt:4:apple 3 green\na.txt:5:date 10 brown\na.txt:6:Elder 2 purple\na.txt:7:fig 12 green\nb.txt:1:The quick brown fox jumps over the lazy dog.\nb.txt:2:A second line, with commas, and more.\nb.txt:4:\ttabbed line\there\nb.txt:5:the end? THE END!\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_l_L",
+   "argv": [
+    "grep",
+    "-l",
+    "red",
+    "a.txt",
+    "b.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "a.txt\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_L",
+   "argv": [
+    "grep",
+    "-L",
+    "red",
+    "a.txt",
+    "b.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "b.txt\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_context",
+   "argv": [
+    "grep",
+    "-n",
+    "-C1",
+    "cherry\\|fig",
+    "a.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "2-banana 12 yellow\n3:cherry 7 red\n4-apple 3 green\n--\n6-Elder 2 purple\n7:fig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_after_before",
+   "argv": [
+    "grep",
+    "-A1",
+    "-B2",
+    "date",
+    "a.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "cherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_max_count",
+   "argv": [
+    "grep",
+    "-m2",
+    "e"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\nbanana 12 yellow\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_multiple_e_and_f",
+   "argv": [
+    "grep",
+    "-e",
+    "fig",
+    "-e",
+    "^b",
+    "-f",
+    "pats"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {
+    "pats": "Elder\n"
+   },
+   "out": [],
+   "stdout": "banana 12 yellow\nElder 2 purple\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_quiet_status_found",
+   "argv": [
+    "grep",
+    "-q",
+    "fig"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_quiet_status_missing",
+   "argv": [
+    "grep",
+    "-q",
+    "zzz"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "",
+   "exit": 1,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_missing_file",
+   "argv": [
+    "grep",
+    "-s",
+    "x",
+    "nofile"
+   ],
+   "stdin": "",
+   "files": {},
+   "out": [],
+   "stdout": "",
+   "exit": 2,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_classes_and_anchors",
+   "argv": [
+    "grep",
+    "-E",
+    "^[[:upper:]][[:alpha:]]+ [[:digit:]]+ [[:lower:]]+$"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "Elder 2 purple\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_bre_interval_and_star",
+   "argv": [
+    "grep",
+    "x\\{2,3\\}y*$"
+   ],
+   "stdin": "xy\nxxy\nxxxyyy\nxxxx\n",
+   "files": {},
+   "out": [],
+   "stdout": "xxy\nxxxyyy\nxxxx\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_ere_backref_plus",
+   "argv": [
+    "grep",
+    "-E",
+    "(ab)+c\\b"
+   ],
+   "stdin": "ababc d\nabc\nac\nabcd\n",
+   "files": {},
+   "out": [],
+   "stdout": "ababc d\nabc\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_o_with_n_i",
+   "argv": [
+    "grep",
+    "-o",
+    "-n",
+    "-i",
+    "the"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "1:The\n1:the\n5:the\n5:THE\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_h_H",
+   "argv": [
+    "grep",
+    "-H",
+    "fox",
+    "b.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "b.txt:The quick brown fox jumps over the lazy dog.\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_recursive",
+   "argv": [
+    "grep",
+    "-r",
+    "-h",
+    "apple",
+    "d"
+   ],
+   "stdin": "",
+   "files": {
+    "d/x.txt": "apple pie\n",
+    "d/sub/y.txt": "no\napple\n"
+   },
+   "out": [],
+   "stdout": "apple\napple pie\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_substitute",
+   "argv": [
+    "sed",
+    "s/apple/APPLE/"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "APPLE 3 red\nbanana 12 yellow\ncherry 7 red\nAPPLE 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_global_nth_flags",
+   "argv": [
+    "sed",
+    "s/o/0/2;s/a/A/g"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "The quick brown f0x jumps over the lAzy dog.\nA second line, with c0mmAs, And more.\n\n\ttAbbed line\there\nthe end? THE END!\nfo0 bAr foo bAz foo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_groups_and_amp",
+   "argv": [
+    "sed",
+    "-E",
+    "s/^([a-z]+) ([0-9]+)/\\2:\\1 [&]/"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "3:apple [apple 3] red\n12:banana [banana 12] yellow\n7:cherry [cherry 7] red\n3:apple [apple 3] green\n10:date [date 10] brown\nElder 2 purple\n12:fig [fig 12] green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_case_conversion",
+   "argv": [
+    "sed",
+    "-E",
+    "s/(\\w+) (\\w+)/\\U\\1\\E \\u\\2/"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "APPLE 3 red\nBANANA 12 yellow\nCHERRY 7 red\nAPPLE 3 green\nDATE 10 brown\nELDER 2 purple\nFIG 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_n_p_and_addresses",
+   "argv": [
+    "sed",
+    "-n",
+    "2,4p;$p"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "banana 12 yellow\ncherry 7 red\napple 3 green\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_regex_ranges",
+   "argv": [
+    "sed",
+    "-n",
+    "/banana/,/date/{=;p}"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "2\nbanana 12 yellow\n3\ncherry 7 red\n4\napple 3 green\n5\ndate 10 brown\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_step_and_plus",
+   "argv": [
+    "sed",
+    "-n",
+    "1~3p;2,+1s/^/>/p"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\n>banana 12 yellow\n>cherry 7 red\napple 3 green\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_zero_address",
+   "argv": [
+    "sed",
+    "0,/red/s/red/RED/"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 RED\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_negation_delete",
+   "argv": [
+    "sed",
+    "/red/!d"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\ncherry 7 red\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_insert_append_change",
+   "argv": [
+    "sed",
+    "2i\\\ninserted\n4a\\\nappended\n$c\\\nchanged"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\ninserted\nbanana 12 yellow\ncherry 7 red\napple 3 green\nappended\ndate 10 brown\nElder 2 purple\nchanged\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_gnu_one_liner_aic",
+   "argv": [
+    "sed",
+    "-e",
+    "1i top",
+    "-e",
+    "3a after three",
+    "-e",
+    "/fig/c replaced fig"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "top\napple 3 red\nbanana 12 yellow\ncherry 7 red\nafter three\napple 3 green\ndate 10 brown\nElder 2 purple\nreplaced fig\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_y_command",
+   "argv": [
+    "sed",
+    "y/abc/xyz/"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "xpple 3 red\nyxnxnx 12 yellow\nzherry 7 red\nxpple 3 green\ndxte 10 yrown\nElder 2 purple\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_hold_space_reverse",
+   "argv": [
+    "sed",
+    "-n",
+    "1!G;h;$p"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "fig 12 green\nElder 2 purple\ndate 10 brown\napple 3 green\ncherry 7 red\nbanana 12 yellow\napple 3 red\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_N_join_lines",
+   "argv": [
+    "sed",
+    "N;s/\\n/ | /"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red | banana 12 yellow\ncherry 7 red | apple 3 green\ndate 10 brown | Elder 2 purple\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_D_P_pairs",
+   "argv": [
+    "sed",
+    "$!N;P;D"
+   ],
+   "stdin": "a\na\nb\nb\nb\nc\n",
+   "files": {},
+   "out": [],
+   "stdout": "a\na\nb\nb\nb\nc\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_branch_label_loop",
+   "argv": [
+    "sed",
+    "-E",
+    ":a;s/^([0-9]+)([0-9]{3})/\\1,\\2/;ta"
+   ],
+   "stdin": "1234567\n12\n1234\n",
+   "files": {},
+   "out": [],
+   "stdout": "1,234,567\n12\n1,234\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_T_command",
+   "argv": [
+    "sed",
+    "s/x/X/;T;s/$/ (changed)/"
+   ],
+   "stdin": "axb\nabc\n",
+   "files": {},
+   "out": [],
+   "stdout": "aXb (changed)\nabc\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_quit_and_Q",
+   "argv": [
+    "sed",
+    "3q"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\nbanana 12 yellow\ncherry 7 red\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_Q",
+   "argv": [
+    "sed",
+    "/cherry/Q"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\nbanana 12 yellow\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_line_number_eq",
+   "argv": [
+    "sed",
+    "-n",
+    "$="
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "7\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_l_command",
+   "argv": [
+    "sed",
+    "-n",
+    "l"
+   ],
+   "stdin": "tab\there\nback\\slash\n\u0001ctl\n",
+   "files": {},
+   "out": [],
+   "stdout": "tab\\there$\nback\\\\slash$\n\\001ctl$\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_w_flag_and_command",
+   "argv": [
+    "sed",
+    "-n",
+    "s/red/RED/w changed.txt\n/green/w green.txt"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [
+    "changed.txt",
+    "green.txt"
+   ],
+   "stdout": "",
+   "exit": 0,
+   "outfiles": {
+    "changed.txt": "apple 3 RED\ncherry 7 RED\n",
+    "green.txt": "apple 3 green\nfig 12 green\n"
+   },
+   "stderr": ""
+  },
+  {
+   "name": "sed_r_command",
+   "argv": [
+    "sed",
+    "/date/r extra.txt"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {
+    "extra.txt": "EXTRA LINE\n"
+   },
+   "out": [],
+   "stdout": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nEXTRA LINE\nElder 2 purple\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_script_file",
+   "argv": [
+    "sed",
+    "-f",
+    "prog.sed"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {
+    "prog.sed": "# comment\n/red/{\n  s/red/R/\n  s/^/* /\n}\n$d\n"
+   },
+   "out": [],
+   "stdout": "* apple 3 R\nbanana 12 yellow\n* cherry 7 R\napple 3 green\ndate 10 brown\nElder 2 purple\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_in_place",
+   "argv": [
+    "sed",
+    "-i.bak",
+    "s/a/@/g",
+    "work.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "work.txt": "banana\napple\n"
+   },
+   "out": [
+    "work.txt",
+    "work.txt.bak"
+   ],
+   "stdout": "",
+   "exit": 0,
+   "outfiles": {
+    "work.txt": "b@n@n@\n@pple\n",
+    "work.txt.bak": "banana\napple\n"
+   },
+   "stderr": ""
+  },
+  {
+   "name": "sed_separate_files",
+   "argv": [
+    "sed",
+    "-s",
+    "-n",
+    "$p",
+    "a.txt",
+    "b.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "fig 12 green\nfoo bar foo baz foo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_custom_delimiter",
+   "argv": [
+    "sed",
+    "s|/usr/local|/opt|g;\\,^#,d"
+   ],
+   "stdin": "# comment\npath=/usr/local/bin:/usr/local/lib\n",
+   "files": {},
+   "out": [],
+   "stdout": "path=/opt/bin:/opt/lib\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_case_insensitive_flag",
+   "argv": [
+    "sed",
+    "s/the/[x]/Ig"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "[x] quick brown fox jumps over [x] lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\n[x] end? [x] END!\nfoo bar foo baz foo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_null_data",
+   "argv": [
+    "sed",
+    "-z",
+    "s/\\n/,/g"
+   ],
+   "stdin": "a\nb\nc\n",
+   "files": {},
+   "out": [],
+   "stdout": "a,b,c,",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_empty_regex_reuse",
+   "argv": [
+    "sed",
+    "-n",
+    "/e/{s//E/gp}"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "applE 3 rEd\nbanana 12 yEllow\nchErry 7 rEd\napplE 3 grEEn\ndatE 10 brown\nEldEr 2 purplE\nfig 12 grEEn\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_special_replacement_newline",
+   "argv": [
+    "sed",
+    "s/ /\\n/"
+   ],
+   "stdin": "one two three\n",
+   "files": {},
+   "out": [],
+   "stdout": "one\ntwo three\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_default",
+   "argv": [
+    "sort"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "Elder 2 purple\napple 3 green\napple 3 red\nbanana 12 yellow\ncherry 7 red\ndate 10 brown\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_reverse_unique",
+   "argv": [
+    "sort",
+    "-ru"
+   ],
+   "stdin": "b\na\nb\nc\na\n",
+   "files": {},
+   "out": [],
+   "stdout": "c\nb\na\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_numeric",
+   "argv": [
+    "sort",
+    "-n"
+   ],
+   "stdin": "10\n9\n100\n-3\n2.5\n1e2\n0x10\n\n007\n9\n1K\n2M\n500\n",
+   "files": {},
+   "out": [],
+   "stdout": "-3\n\n0x10\n1K\n1e2\n2M\n2.5\n007\n9\n9\n10\n100\n500\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_general_numeric",
+   "argv": [
+    "sort",
+    "-g"
+   ],
+   "stdin": "10\n9\n100\n-3\n2.5\n1e2\n0x10\n\n007\n9\n1K\n2M\n500\n",
+   "files": {},
+   "out": [],
+   "stdout": "\n-3\n1K\n2M\n2.5\n007\n9\n9\n10\n0x10\n100\n1e2\n500\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_human",
+   "argv": [
+    "sort",
+    "-h"
+   ],
+   "stdin": "1K\n2M\n500\n3G\n1k\n",
+   "files": {},
+   "out": [],
+   "stdout": "500\n1K\n1k\n2M\n3G\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_key_numeric",
+   "argv": [
+    "sort",
+    "-k2,2n",
+    "-k1,1"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "Elder 2 purple\napple 3 green\napple 3 red\ncherry 7 red\ndate 10 brown\nbanana 12 yellow\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_key_reverse_modifier",
+   "argv": [
+    "sort",
+    "-t,",
+    "-k4,4nr"
+   ],
+   "stdin": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n",
+   "files": {},
+   "out": [],
+   "stdout": "1,Ann,eng,120000\n2,Bob,eng,95000\n4,Dee,ops,82000.5\n3,Cid,ops,70000\n5,Eve,,50000\nid,name,dept,salary\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_key_char_positions",
+   "argv": [
+    "sort",
+    "-k1.2,1.3"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "banana 12 yellow\ndate 10 brown\ncherry 7 red\nfig 12 green\nElder 2 purple\napple 3 green\napple 3 red\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_fold_case",
+   "argv": [
+    "sort",
+    "-f"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 green\napple 3 red\nbanana 12 yellow\ncherry 7 red\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_stable",
+   "argv": [
+    "sort",
+    "-s",
+    "-k3,3"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "date 10 brown\napple 3 green\nfig 12 green\nElder 2 purple\napple 3 red\ncherry 7 red\nbanana 12 yellow\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_last_resort_compare",
+   "argv": [
+    "sort",
+    "-k3,3"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "date 10 brown\napple 3 green\nfig 12 green\nElder 2 purple\napple 3 red\ncherry 7 red\nbanana 12 yellow\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_dictionary_blank",
+   "argv": [
+    "sort",
+    "-d",
+    "-b"
+   ],
+   "stdin": "  b-x\na_y\n c.z\n",
+   "files": {},
+   "out": [],
+   "stdout": "a_y\n  b-x\n c.z\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_month_version",
+   "argv": [
+    "sort",
+    "-M"
+   ],
+   "stdin": "Mar\nJan\nfoo\nDec\nfeb\n",
+   "files": {},
+   "out": [],
+   "stdout": "foo\nJan\nfeb\nMar\nDec\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_version",
+   "argv": [
+    "sort",
+    "-V"
+   ],
+   "stdin": "v1.10\nv1.2\nv1.9.1\nv1.9\n",
+   "files": {},
+   "out": [],
+   "stdout": "v1.2\nv1.9\nv1.9.1\nv1.10\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_check",
+   "argv": [
+    "sort",
+    "-c"
+   ],
+   "stdin": "a\nc\nb\n",
+   "files": {},
+   "out": [],
+   "stdout": "",
+   "exit": 1,
+   "outfiles": {},
+   "stderr": "sort: -:3: disorder: b\n"
+  },
+  {
+   "name": "sort_output_file",
+   "argv": [
+    "sort",
+    "-o",
+    "sorted.txt",
+    "a.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [
+    "sorted.txt"
+   ],
+   "stdout": "",
+   "exit": 0,
+   "outfiles": {
+    "sorted.txt": "Elder 2 purple\napple 3 green\napple 3 red\nbanana 12 yellow\ncherry 7 red\ndate 10 brown\nfig 12 green\n"
+   },
+   "stderr": ""
+  },
+  {
+   "name": "sort_unique_by_key",
+   "argv": [
+    "sort",
+    "-u",
+    "-k1,1"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "Elder 2 purple\napple 3 red\nbanana 12 yellow\ncherry 7 red\ndate 10 brown\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "uniq_counts",
+   "argv": [
+    "uniq",
+    "-c"
+   ],
+   "stdin": "a\na\nb\nc\nc\nc\na\n",
+   "files": {},
+   "out": [],
+   "stdout": "      2 a\n      1 b\n      3 c\n      1 a\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "uniq_d_u",
+   "argv": [
+    "uniq",
+    "-d"
+   ],
+   "stdin": "a\na\nb\nc\nc\n",
+   "files": {},
+   "out": [],
+   "stdout": "a\nc\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "uniq_u",
+   "argv": [
+    "uniq",
+    "-u"
+   ],
+   "stdin": "a\na\nb\nc\nc\n",
+   "files": {},
+   "out": [],
+   "stdout": "b\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "uniq_ignore_fields_chars",
+   "argv": [
+    "uniq",
+    "-i",
+    "-f1",
+    "-s1"
+   ],
+   "stdin": "1 Xab\n2 xac\n3 yab\n",
+   "files": {},
+   "out": [],
+   "stdout": "1 Xab\n2 xac\n3 yab\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "uniq_w",
+   "argv": [
+    "uniq",
+    "-w2",
+    "-c"
+   ],
+   "stdin": "abc\nabd\nacd\n",
+   "files": {},
+   "out": [],
+   "stdout": "      2 abc\n      1 acd\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "cut_fields",
+   "argv": [
+    "cut",
+    "-d,",
+    "-f2,4"
+   ],
+   "stdin": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n",
+   "files": {},
+   "out": [],
+   "stdout": "name,salary\nCid,70000\nAnn,120000\nBob,95000\nEve,50000\nDee,82000.5\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "cut_field_ranges_and_s",
+   "argv": [
+    "cut",
+    "-d",
+    " ",
+    "-f2-",
+    "-s"
+   ],
+   "stdin": "a b c\nnodelim\nx y\n",
+   "files": {},
+   "out": [],
+   "stdout": "b c\ny\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "cut_chars_bytes",
+   "argv": [
+    "cut",
+    "-c1-3,5"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "appe\nbann\ncher\nappe\ndat \nEldr\nfig1\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "cut_bytes_open_range",
+   "argv": [
+    "cut",
+    "-b",
+    "-2,8-"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "ap red\nba12 yellow\nch7 red\nap green\nda brown\nEl purple\nfigreen\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "cut_complement_output_delim",
+   "argv": [
+    "cut",
+    "-d,",
+    "-f1,3",
+    "--complement",
+    "--output-delimiter=|"
+   ],
+   "stdin": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n",
+   "files": {},
+   "out": [],
+   "stdout": "name|salary\nCid|70000\nAnn|120000\nBob|95000\nEve|50000\nDee|82000.5\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tr_ranges",
+   "argv": [
+    "tr",
+    "a-z",
+    "A-Z"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG.\nA SECOND LINE, WITH COMMAS, AND MORE.\n\n\tTABBED LINE\tHERE\nTHE END? THE END!\nFOO BAR FOO BAZ FOO\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tr_delete_squeeze",
+   "argv": [
+    "tr",
+    "-s",
+    " "
+   ],
+   "stdin": "a   b    c\n",
+   "files": {},
+   "out": [],
+   "stdout": "a b c\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tr_delete_complement",
+   "argv": [
+    "tr",
+    "-cd",
+    "[:alnum:]\\n"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "Thequickbrownfoxjumpsoverthelazydog\nAsecondlinewithcommasandmore\n\ntabbedlinehere\ntheendTHEEND\nfoobarfoobazfoo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tr_classes_and_repeat",
+   "argv": [
+    "tr",
+    "[:lower:]",
+    "[:upper:]"
+   ],
+   "stdin": "abc DEF\n",
+   "files": {},
+   "out": [],
+   "stdout": "ABC DEF\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tr_truncate_and_short_set2",
+   "argv": [
+    "tr",
+    "abcd",
+    "xy"
+   ],
+   "stdin": "abcdabcd\n",
+   "files": {},
+   "out": [],
+   "stdout": "xyyyxyyy\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tr_t_option",
+   "argv": [
+    "tr",
+    "-t",
+    "abcd",
+    "xy"
+   ],
+   "stdin": "abcdabcd\n",
+   "files": {},
+   "out": [],
+   "stdout": "xycdxycd\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tr_escapes",
+   "argv": [
+    "tr",
+    "\\n\\t",
+    " _"
+   ],
+   "stdin": "a\tb\nc\n",
+   "files": {},
+   "out": [],
+   "stdout": "a_b c ",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tr_squeeze_with_set2",
+   "argv": [
+    "tr",
+    "-s",
+    "a-z",
+    "A-Z"
+   ],
+   "stdin": "aabbccdd zz\n",
+   "files": {},
+   "out": [],
+   "stdout": "ABCD Z\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "wc_default_single",
+   "argv": [
+    "wc"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "      6      28     140\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "wc_options",
+   "argv": [
+    "wc",
+    "-l",
+    "-w",
+    "-c",
+    "-m",
+    "-L"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "      6      28     140     140      44\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "wc_multiple_files",
+   "argv": [
+    "wc",
+    "a.txt",
+    "b.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "  7  21  98 a.txt\n  6  28 140 b.txt\n 13  49 238 total\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "wc_L_only",
+   "argv": [
+    "wc",
+    "-L",
+    "a.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "16 a.txt\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "head_n",
+   "argv": [
+    "head",
+    "-n",
+    "3"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\nbanana 12 yellow\ncherry 7 red\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "head_negative",
+   "argv": [
+    "head",
+    "-n",
+    "-2"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "head_bytes",
+   "argv": [
+    "head",
+    "-c",
+    "10"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "apple 3 re",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "head_multiple_files",
+   "argv": [
+    "head",
+    "-n",
+    "2",
+    "a.txt",
+    "b.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "==> a.txt <==\napple 3 red\nbanana 12 yellow\n\n==> b.txt <==\nThe quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tail_n",
+   "argv": [
+    "tail",
+    "-n",
+    "2"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "Elder 2 purple\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tail_plus",
+   "argv": [
+    "tail",
+    "-n",
+    "+5"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "date 10 brown\nElder 2 purple\nfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tail_bytes",
+   "argv": [
+    "tail",
+    "-c",
+    "12"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "ig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "tail_quiet_multiple",
+   "argv": [
+    "tail",
+    "-q",
+    "-n",
+    "1",
+    "a.txt",
+    "b.txt"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "fig 12 green\nfoo bar foo baz foo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "join_default",
+   "argv": [
+    "join",
+    "j1",
+    "j2"
+   ],
+   "stdin": "",
+   "files": {
+    "j1": "1 ann eng\n2 bob ops\n4 dee hr\n5 eve eng\n",
+    "j2": "1 30\n2 25\n3 40\n5 28\n"
+   },
+   "out": [],
+   "stdout": "1 ann eng 30\n2 bob ops 25\n5 eve eng 28\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "join_unpaired_and_empty",
+   "argv": [
+    "join",
+    "-a1",
+    "-a2",
+    "-e",
+    "NA",
+    "-o",
+    "auto",
+    "j1",
+    "j2"
+   ],
+   "stdin": "",
+   "files": {
+    "j1": "1 ann eng\n2 bob ops\n4 dee hr\n5 eve eng\n",
+    "j2": "1 30\n2 25\n3 40\n5 28\n"
+   },
+   "out": [],
+   "stdout": "1 ann eng 30\n2 bob ops 25\n3 NA NA 40\n4 dee hr NA\n5 eve eng 28\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "join_v_and_fields",
+   "argv": [
+    "join",
+    "-v",
+    "2",
+    "j1",
+    "j2"
+   ],
+   "stdin": "",
+   "files": {
+    "j1": "1 ann eng\n2 bob ops\n4 dee hr\n5 eve eng\n",
+    "j2": "1 30\n2 25\n3 40\n5 28\n"
+   },
+   "out": [],
+   "stdout": "3 40\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "join_output_format",
+   "argv": [
+    "join",
+    "-o",
+    "2.2,1.2,0",
+    "j1",
+    "j2"
+   ],
+   "stdin": "",
+   "files": {
+    "j1": "1 ann eng\n2 bob ops\n4 dee hr\n5 eve eng\n",
+    "j2": "1 30\n2 25\n3 40\n5 28\n"
+   },
+   "out": [],
+   "stdout": "30 ann 1\n25 bob 2\n28 eve 5\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "join_separator_fields",
+   "argv": [
+    "join",
+    "-t",
+    ",",
+    "-1",
+    "2",
+    "-2",
+    "1",
+    "x",
+    "y"
+   ],
+   "stdin": "",
+   "files": {
+    "x": "1,a,p\n2,b,q\n",
+    "y": "a,100\nb,200\nc,300\n"
+   },
+   "out": [],
+   "stdout": "a,1,p,100\nb,2,q,200\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "join_ignore_case",
+   "argv": [
+    "join",
+    "-i",
+    "x",
+    "y"
+   ],
+   "stdin": "",
+   "files": {
+    "x": "A 1\nb 2\n",
+    "y": "a x\nB y\n"
+   },
+   "out": [],
+   "stdout": "A 1 x\nb 2 y\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "paste_files",
+   "argv": [
+    "paste",
+    "x",
+    "y"
+   ],
+   "stdin": "",
+   "files": {
+    "x": "1\n2\n3\n",
+    "y": "a\nb\n"
+   },
+   "out": [],
+   "stdout": "1\ta\n2\tb\n3\t\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "paste_delims_cycle",
+   "argv": [
+    "paste",
+    "-d",
+    ",;",
+    "x",
+    "y",
+    "x"
+   ],
+   "stdin": "",
+   "files": {
+    "x": "1\n2\n",
+    "y": "a\nb\n"
+   },
+   "out": [],
+   "stdout": "1,a;1\n2,b;2\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "paste_serial",
+   "argv": [
+    "paste",
+    "-s",
+    "-d",
+    "\\t,",
+    "x"
+   ],
+   "stdin": "",
+   "files": {
+    "x": "1\n2\n3\n4\n"
+   },
+   "out": [],
+   "stdout": "1\t2,3\t4\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "paste_stdin_columns",
+   "argv": [
+    "paste",
+    "-",
+    "-",
+    "-"
+   ],
+   "stdin": "a\nb\nc\nd\ne\n",
+   "files": {},
+   "out": [],
+   "stdout": "a\tb\tc\nd\te\t\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "comm_default",
+   "argv": [
+    "comm",
+    "x",
+    "y"
+   ],
+   "stdin": "",
+   "files": {
+    "x": "a\nb\nd\ne\n",
+    "y": "b\nc\nd\nf\n"
+   },
+   "out": [],
+   "stdout": "a\n\t\tb\n\tc\n\t\td\ne\n\tf\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "comm_suppress",
+   "argv": [
+    "comm",
+    "-12",
+    "x",
+    "y"
+   ],
+   "stdin": "",
+   "files": {
+    "x": "a\nb\nd\ne\n",
+    "y": "b\nc\nd\nf\n"
+   },
+   "out": [],
+   "stdout": "b\nd\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "comm_output_delimiter",
+   "argv": [
+    "comm",
+    "--output-delimiter=|",
+    "x",
+    "y"
+   ],
+   "stdin": "",
+   "files": {
+    "x": "a\nb\n",
+    "y": "b\nc\n"
+   },
+   "out": [],
+   "stdout": "a\n||b\n|c\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "nl_default",
+   "argv": [
+    "nl"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "     1\tThe quick brown fox jumps over the lazy dog.\n     2\tA second line, with commas, and more.\n       \n     3\t\ttabbed line\there\n     4\tthe end? THE END!\n     5\tfoo bar foo baz foo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "nl_all_and_format",
+   "argv": [
+    "nl",
+    "-b",
+    "a",
+    "-n",
+    "rz",
+    "-w",
+    "4",
+    "-s",
+    ": "
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "0001: The quick brown fox jumps over the lazy dog.\n0002: A second line, with commas, and more.\n0003: \n0004: \ttabbed line\there\n0005: the end? THE END!\n0006: foo bar foo baz foo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "nl_ln_and_start_increment",
+   "argv": [
+    "nl",
+    "-n",
+    "ln",
+    "-v",
+    "10",
+    "-i",
+    "5"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "10    \tapple 3 red\n15    \tbanana 12 yellow\n20    \tcherry 7 red\n25    \tapple 3 green\n30    \tdate 10 brown\n35    \tElder 2 purple\n40    \tfig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "nl_regex_body",
+   "argv": [
+    "nl",
+    "-b",
+    "p^[a-c]"
+   ],
+   "stdin": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+   "files": {},
+   "out": [],
+   "stdout": "     1\tapple 3 red\n     2\tbanana 12 yellow\n     3\tcherry 7 red\n     4\tapple 3 green\n       date 10 brown\n       Elder 2 purple\n       fig 12 green\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "fold_width",
+   "argv": [
+    "fold",
+    "-w",
+    "12"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "The quick br\nown fox jump\ns over the l\nazy dog.\nA second lin\ne, with comm\nas, and more\n.\n\n\ttabb\ned line\there\nthe end? THE\n END!\nfoo bar foo \nbaz foo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "fold_spaces",
+   "argv": [
+    "fold",
+    "-s",
+    "-w",
+    "15"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "The quick \nbrown fox \njumps over the \nlazy dog.\nA second line, \nwith commas, \nand more.\n\n\ttabbed \nline\there\nthe end? THE \nEND!\nfoo bar foo \nbaz foo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "fold_bytes",
+   "argv": [
+    "fold",
+    "-b",
+    "-w",
+    "5"
+   ],
+   "stdin": "tab\there and more\n",
+   "files": {},
+   "out": [],
+   "stdout": "tab\th\nere a\nnd mo\nre\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "expand_default",
+   "argv": [
+    "expand"
+   ],
+   "stdin": "a\tb\tc\n\tlead\n12345678\tx\n",
+   "files": {},
+   "out": [],
+   "stdout": "a       b       c\n        lead\n12345678        x\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "expand_tabs_list",
+   "argv": [
+    "expand",
+    "-t",
+    "4,10,12"
+   ],
+   "stdin": "a\tb\tc\td\te\n",
+   "files": {},
+   "out": [],
+   "stdout": "a   b     c d e\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "expand_initial",
+   "argv": [
+    "expand",
+    "-i",
+    "-t",
+    "3"
+   ],
+   "stdin": "\t\tx\ty\n",
+   "files": {},
+   "out": [],
+   "stdout": "      x\ty\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "grep_count_multiple_files",
+   "argv": [
+    "grep",
+    "-c",
+    "e",
+    "a.txt",
+    "b.txt",
+    "csv"
+   ],
+   "stdin": "",
+   "files": {
+    "a.txt": "apple 3 red\nbanana 12 yellow\ncherry 7 red\napple 3 green\ndate 10 brown\nElder 2 purple\nfig 12 green\n",
+    "b.txt": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+    "csv": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n"
+   },
+   "out": [],
+   "stdout": "a.txt:7\nb.txt:4\ncsv:5\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sort_csv_by_dept_then_salary",
+   "argv": [
+    "sort",
+    "-t,",
+    "-k3,3",
+    "-k4,4gr"
+   ],
+   "stdin": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n",
+   "files": {},
+   "out": [],
+   "stdout": "5,Eve,,50000\nid,name,dept,salary\n1,Ann,eng,120000\n2,Bob,eng,95000\n4,Dee,ops,82000.5\n3,Cid,ops,70000\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "sed_csv_reformat",
+   "argv": [
+    "sed",
+    "-E",
+    "1d;s/^([0-9]+),([^,]*),([^,]*),(.*)$/\\2 (\\3) earns \\4/"
+   ],
+   "stdin": "id,name,dept,salary\n3,Cid,ops,70000\n1,Ann,eng,120000\n2,Bob,eng,95000\n5,Eve,,50000\n4,Dee,ops,82000.5\n",
+   "files": {},
+   "out": [],
+   "stdout": "Cid (ops) earns 70000\nAnn (eng) earns 120000\nBob (eng) earns 95000\nEve () earns 50000\nDee (ops) earns 82000.5\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "cut_and_tr_like",
+   "argv": [
+    "cut",
+    "-c",
+    "1-5,10-"
+   ],
+   "stdin": "The quick brown fox jumps over the lazy dog.\nA second line, with commas, and more.\n\n\ttabbed line\there\nthe end? THE END!\nfoo bar foo baz foo\n",
+   "files": {},
+   "out": [],
+   "stdout": "The q brown fox jumps over the lazy dog.\nA secline, with commas, and more.\n\n\ttabbine\there\nthe eTHE END!\nfoo boo baz foo\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  },
+  {
+   "name": "uniq_after_sorted_input",
+   "argv": [
+    "uniq",
+    "-c"
+   ],
+   "stdin": "apple\napple\nbanana\ncherry\ncherry\n",
+   "files": {},
+   "out": [],
+   "stdout": "      2 apple\n      1 banana\n      2 cherry\n",
+   "exit": 0,
+   "outfiles": {},
+   "stderr": ""
+  }
+ ]
+}

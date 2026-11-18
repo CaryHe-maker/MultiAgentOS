@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: read-file
+version: v1.1.0
+digest: d3888fe600c8350f4c6e214ea13722c78bb9f706c8757056e0460e910dae3610
+description: Model-facing file read, served by the file-read unit. Turn-chat text.
+purpose: UNIT
+modelName: read_file
+modelDescription: >-
+  Read a repository text file and return line-numbered content, up to 400 lines; use startLine and endLine to continue a long file.
+parametersContract:
+  kind: contract
+  id: executor.FileReadInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

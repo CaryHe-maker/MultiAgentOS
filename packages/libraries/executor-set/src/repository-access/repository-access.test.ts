@@ -1,12 +1,12 @@
-import { mkdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, rename, rm, stat, symlink, utimes, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { normalizeRequestPath } from '@multiagentos/contracts';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { emptyDirectory, repositoryScope } from '../test-support/environments.js';
 import { FileDigestCache, buildFileSet } from './file-set.js';
 import { readGuardedFile } from './guarded-file.js';
 import { resolveRepositoryScope, type RepositoryScope } from './repository-scope.js';
-import { normalizeRequestPath } from './request-path.js';
 
 /** “中文说明” in GBK: not valid UTF-8. */
 const GBK_TEXT = Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0xcb, 0xb5, 0xc3, 0xf7, 0x0a]);
@@ -24,7 +24,7 @@ async function scopeOf(root: string, exclusions: string[] = []): Promise<Reposit
   return scope;
 }
 
-describe('exclusion rules (M1Interface 3.5, shared with Core)', () => {
+describe('exclusion rules', () => {
   it.each([
     ['.env.production'],
     ['.hidden/server.pem'],
@@ -49,7 +49,7 @@ describe('exclusion rules (M1Interface 3.5, shared with Core)', () => {
   });
 });
 
-describe('request paths (ExecutorSet 3.2 step 2)', () => {
+describe('request paths (ExecutorSet step 2)', () => {
   it.each([
     ['src/a.ts', 'src/a.ts'],
     ['./src//a.ts', 'src/a.ts'],
@@ -80,7 +80,7 @@ describe('request paths (ExecutorSet 3.2 step 2)', () => {
   });
 });
 
-describe('guarded read (ExecutorSet 3.2)', () => {
+describe('guarded read', () => {
   it('reads a text file inside the root', async () => {
     const root = await emptyDirectory('guard');
     await writeTree(root, { 'src/a.ts': 'one\n' });
@@ -170,7 +170,7 @@ describe('guarded read (ExecutorSet 3.2)', () => {
   });
 });
 
-describe('file set and snapshot (ExecutorSet 3.1)', () => {
+describe('file set and snapshot', () => {
   const files = {
     'README.md': '# r\n',
     'src/a.ts': 'export const a = 1;\n',
@@ -178,12 +178,7 @@ describe('file set and snapshot (ExecutorSet 3.1)', () => {
   };
 
   async function snapshot(root: string, cache = new FileDigestCache()) {
-    const built = await buildFileSet(await scopeOf(root), {
-      signal: new AbortController().signal,
-      cache,
-    });
-    if (!built.ok) throw new Error('limit');
-    return built.set;
+    return buildFileSet(await scopeOf(root), { signal: new AbortController().signal, cache });
   }
 
   it('gives the same snapshot for the same content in different places', async () => {
@@ -235,15 +230,63 @@ describe('file set and snapshot (ExecutorSet 3.1)', () => {
     ]);
   });
 
-  it('stops at maxFiles', async () => {
+  it('builds the same set from a warm cache as from a cold one', async () => {
+    const root = await emptyDirectory('snap');
+    await writeTree(root, { ...files, 'logo.bin': Buffer.from([1, 0, 2]), 'gbk.txt': GBK_TEXT });
+    const cache = new FileDigestCache();
+    const cold = await snapshot(root, cache);
+    expect(await snapshot(root, cache)).toEqual(cold);
+    expect(await snapshot(root)).toEqual(cold);
+  });
+
+  it('hashes each file once when builds run at the same time, and each gets the whole set', async () => {
+    const root = await emptyDirectory('snap');
+    await writeTree(root, { ...files, 'logo.bin': Buffer.from([1, 0, 2]), 'gbk.txt': GBK_TEXT });
+    const hashed: string[] = [];
+    class Counting extends FileDigestCache {
+      public override computed(key: string, digest: Parameters<FileDigestCache['computed']>[1]) {
+        hashed.push(key);
+        super.computed(key, digest);
+      }
+    }
+    const cache = new Counting();
+    const builds = await Promise.all([
+      snapshot(root, cache),
+      snapshot(root, cache),
+      snapshot(root, cache),
+    ]);
+    const alone = await snapshot(root);
+    for (const built of builds) expect(built).toEqual(alone);
+    expect(hashed).toHaveLength(5);
+    expect(new Set(hashed).size).toBe(5);
+  });
+
+  it('hashes again a file whose content changed under the same size and mtime', async () => {
     const root = await emptyDirectory('snap');
     await writeTree(root, files);
-    const built = await buildFileSet(await scopeOf(root), {
-      signal: new AbortController().signal,
-      maxFiles: 2,
-      cache: new FileDigestCache(),
-    });
-    expect(built.ok).toBe(false);
+    const cache = new FileDigestCache();
+    const before = await snapshot(root, cache);
+    const path = join(root, 'src/a.ts');
+    const { mtime } = await stat(path);
+    await writeFile(path, 'export const a = 9;\n');
+    await utimes(path, mtime, mtime);
+    const after = await snapshot(root, cache);
+    expect(after.snapshotId).not.toBe(before.snapshotId);
+    expect(after).toEqual(await snapshot(root));
+  });
+
+  it('leaves out a file of a warm cache once it is a link, wherever the link points', async () => {
+    const root = await emptyDirectory('snap');
+    const outside = await emptyDirectory('outside');
+    await writeTree(root, files);
+    await writeTree(outside, { 'secret.txt': 'export const a = 1;\n' });
+    const cache = new FileDigestCache();
+    await snapshot(root, cache);
+    await rm(join(root, 'src/a.ts'));
+    await symlink(join(outside, 'secret.txt'), join(root, 'src/a.ts'));
+    const after = await snapshot(root, cache);
+    expect(after.files.map((file) => file.path)).toEqual(['.hidden/b.ts', 'README.md']);
+    expect(after).toEqual(await snapshot(root));
   });
 
   it('applies exclusions appended by Core', async () => {
@@ -253,9 +296,6 @@ describe('file set and snapshot (ExecutorSet 3.1)', () => {
       signal: new AbortController().signal,
       cache: new FileDigestCache(),
     });
-    expect(built.ok && built.set.files.map((file) => file.path)).toEqual([
-      '.hidden/b.ts',
-      'README.md',
-    ]);
+    expect(built.files.map((file) => file.path)).toEqual(['.hidden/b.ts', 'README.md']);
   });
 });

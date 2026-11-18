@@ -12,7 +12,7 @@ describe('Scheduler', () => {
     const first = new Scheduler(capacity);
     const second = new Scheduler(capacity);
     const grant = grantId(first.acquire('deepseek'));
-    expect(second.acquire('deepseek')).toEqual({ ok: false });
+    expect(second.acquire('deepseek')).toEqual({ ok: false, reason: 'CAPACITY' });
     const otherProvider = grantId(second.acquire('local'));
     first.release(grant);
     first.release(grant);
@@ -30,12 +30,12 @@ describe('Scheduler', () => {
     const held = grantId(first.acquire('deepseek'));
     first.stopGranting();
     first.stopGranting();
-    expect(first.acquire('local')).toEqual({ ok: false });
-    expect(second.acquire('deepseek')).toEqual({ ok: false });
+    expect(first.acquire('local')).toEqual({ ok: false, reason: 'STOPPED' });
+    expect(second.acquire('deepseek')).toEqual({ ok: false, reason: 'CAPACITY' });
     expect(first.releaseAll()).toBe(1);
     expect(first.releaseAll()).toBe(0);
     first.release(held);
-    expect(first.acquire('deepseek')).toEqual({ ok: false });
+    expect(first.acquire('deepseek')).toEqual({ ok: false, reason: 'STOPPED' });
     expect(grantId(second.acquire('deepseek'))).toMatch(/^grt_/u);
   });
 });

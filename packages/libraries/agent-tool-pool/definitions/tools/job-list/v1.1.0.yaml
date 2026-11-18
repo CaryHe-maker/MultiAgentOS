@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: job-list
+version: v1.1.0
+digest: cde167518d5d707c7c174add4691402a14c7df68d7749d69b955ffa6db2f4ee6
+description: Control tool that lists the background commands of the task. Turn-chat text.
+purpose: CONTROL
+modelName: job_list
+modelDescription: >-
+  List your background commands with their ids and states.
+parametersContract:
+  kind: contract
+  id: workflow.JobListArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

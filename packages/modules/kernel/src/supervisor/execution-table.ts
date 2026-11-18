@@ -15,6 +15,8 @@ export interface ExecutionEntry {
   terminal: boolean;
   /** The first abort trigger wins; later triggers do not reset the grace period. */
   abortReason?: 'UNIT_TIMEOUT' | 'EXECUTION_CANCELLED';
+  /** Why `cancelExecution` was asked, for the fact. */
+  cancelReason?: 'PAUSED' | 'ABORTED';
   notBeforeTimer: ReturnType<typeof setTimeout> | undefined;
   deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   graceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -29,6 +31,10 @@ export class ExecutionTable {
     if (this.#entries.has(entry.request.executionId)) return false;
     this.#entries.set(entry.request.executionId, entry);
     return true;
+  }
+
+  public find(executionId: string): ExecutionEntry | undefined {
+    return this.#entries.get(executionId);
   }
 
   public values(): IterableIterator<ExecutionEntry> {

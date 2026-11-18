@@ -1,16 +1,17 @@
 import { mkdtemp, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type {
-  ExecutionScope,
-  ExecutorEnvironment,
-  ExecutorKind,
-  SubprocessRunner,
+import {
+  DENY_SANDBOX,
+  type ExecutionScope,
+  type ExecutorEnvironment,
+  type ExecutorKind,
+  type SubprocessRunner,
 } from '@multiagentos/contracts';
 
 /** Test helpers of ExecutorSet; never imported by production code. */
 
-export const FIXED_NOW = new Date('2026-01-01T00:00:00.000Z');
+const FIXED_NOW = new Date('2026-01-01T00:00:00.000Z');
 
 export const MODEL_SCOPE: Extract<ExecutionScope, { kind: 'MODEL' }> = {
   kind: 'MODEL',
@@ -22,7 +23,7 @@ export const MODEL_SCOPE: Extract<ExecutionScope, { kind: 'MODEL' }> = {
 };
 
 /** A runner that reports `rg` as missing, so the scan backend answers. */
-export const NO_SUBPROCESS: SubprocessRunner = {
+const NO_SUBPROCESS: SubprocessRunner = {
   run: () => Promise.resolve({ exitCode: null, signal: null, stdout: '', truncated: false }),
 };
 
@@ -31,20 +32,23 @@ export function environmentFor(
   scope: ExecutionScope,
   overrides: Partial<ExecutorEnvironment> = {},
 ): ExecutorEnvironment {
+  const limits = { deadline: '2099-01-01T00:00:00.000Z', maxOutputBytes: 1_048_576 };
+  const tool = {
+    ...limits,
+    preview: { maxBytes: 262_144, maxLines: 2_000 },
+    maxFullOutputBytes: 1_048_576,
+  };
   return {
     scope,
     limits:
       kind === 'MODEL'
-        ? {
-            deadline: '2099-01-01T00:00:00.000Z',
-            maxOutputBytes: 1_048_576,
-            maxOutputTokens: 8_192,
-          }
-        : kind === 'REPOSITORY_ORIENT'
-          ? { deadline: '2099-01-01T00:00:00.000Z', maxOutputBytes: 1_048_576, maxFiles: 20_000 }
-          : { deadline: '2099-01-01T00:00:00.000Z', maxOutputBytes: 1_048_576 },
+        ? { ...limits, maxOutputTokens: 8_192 }
+        : kind === 'CONTEXT_ASSEMBLE'
+          ? limits
+          : tool,
     signal: new AbortController().signal,
     subprocess: NO_SUBPROCESS,
+    sandbox: DENY_SANDBOX,
     credentials: {
       apiKeyFor: (provider) => (provider === 'deepseek' ? 'sk-test-secret' : undefined),
     },

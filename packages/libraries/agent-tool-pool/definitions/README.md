@@ -9,10 +9,10 @@ models/<id>/<version>.yaml   prompts/<id>/<version>.yaml status.yaml
 
 ## Draft versions (v0.x): edit in place
 
-While M1 is changing prompts and tools every day, definitions stay below `v1.0.0`. Edit the
-file directly and run `pnpm run check`. A draft file has no `digest` line: the digest is
-computed at every start, and each run records the digests it pinned in `pinnedDefinitions`,
-so a run can still be traced to exact content (together with the git commit).
+A draft file has no `digest` line and may be edited directly (`pnpm run check` afterwards):
+the digest is computed at every start, and each run records the digests it pinned, so a run
+can still be traced to exact content (together with the git commit). The shipped catalog has
+no drafts: M2 sealed `v1.0.0` (M2 V1.0) and `v1.1.0` (the Turn-chat tools and units of V1.1).
 
 ## Published versions (v1.0.0 and later): never edit
 
@@ -26,4 +26,4 @@ A published definition may only reference published versions, and its digest cov
 digests of everything it references.
 
 `status.yaml` marks versions as DEPRECATED, QUARANTINED or REVOKED without editing them.
-Design notes: `docs/M1/Library/AgentToolPool.md`.
+Design notes: `docs/M2/Library/AgentToolPool.md`.

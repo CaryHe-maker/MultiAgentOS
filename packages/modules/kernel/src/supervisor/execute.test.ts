@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  createM1ProtocolRegistry,
+  createProtocolRegistry,
   MEDIA_TYPES,
   type BoundaryContext,
   type Envelope,
@@ -18,21 +18,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_KERNEL_CONFIG } from '../interfaces/index.js';
 import { createSupervisor, type ModuleHostControl, type SupervisorModule } from './index.js';
 
-type OrientRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_ORIENT' }>;
+type ListRequest = Extract<ExecutionRequest, { executionKind: 'REPOSITORY_LIST' }>;
 
-const SHA = 'a'.repeat(64);
 const completed: ExecutorOutcome = {
   outcome: 'COMPLETED',
   result: {
-    output: {
-      snapshotId: `snp_${SHA}`,
-      fileCount: 0,
-      totalBytes: 0,
-      summary: 'empty',
-      tokenCount: 0,
-      truncated: false,
-    },
-    artifact: { mediaType: MEDIA_TYPES.contextPack, text: '{}' },
+    output: { path: '.', directoryCount: 0, fileCount: 0, omittedEntries: 0 },
+    artifact: { mediaType: MEDIA_TYPES.fileText, text: '' },
   },
 };
 
@@ -45,19 +37,21 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
-function request(executionId = 'exe_123456'): OrientRequest {
+function request(executionId = 'exe_123456'): ListRequest {
   return {
+    sessionId: 'ses_123456',
     workflowRunId: 'wfr_123456',
     unitAttemptId: 'una_123456',
     executionId,
     runEpoch: 1,
-    executionKind: 'REPOSITORY_ORIENT',
-    input: { objective: 'analyze', tokenBudget: 4000 },
+    executionKind: 'REPOSITORY_LIST',
+    input: {},
     scope: { kind: 'REPOSITORY', repositoryRoot: '/repo', exclusions: [] },
     limits: {
       deadline: '2026-10-19T01:00:00.000Z',
       maxOutputBytes: 1024,
-      maxFiles: 10,
+      preview: { maxBytes: 1024, maxLines: 100 },
+      maxFullOutputBytes: 4096,
     },
   };
 }
@@ -70,9 +64,17 @@ function registry(): ExecutorRegistry {
   const unused = <K extends ExecutorKind>(kind: K): Executor<K> =>
     executor(kind, () => Promise.resolve({ outcome: 'REJECTED', reasonCode: 'OUT_OF_SCOPE' }));
   return {
-    REPOSITORY_ORIENT: executor('REPOSITORY_ORIENT', () => Promise.resolve(completed)),
+    REPOSITORY_LIST: executor('REPOSITORY_LIST', () => Promise.resolve(completed)),
     REPOSITORY_SEARCH: unused('REPOSITORY_SEARCH'),
     FILE_READ: unused('FILE_READ'),
+    FILE_WRITE: unused('FILE_WRITE'),
+    FILE_EDIT: unused('FILE_EDIT'),
+    OUTPUT_READ: unused('OUTPUT_READ'),
+    COMMAND: unused('COMMAND'),
+    GIT_INSPECT: unused('GIT_INSPECT'),
+    WEB_SEARCH: unused('WEB_SEARCH'),
+    WEB_FETCH: unused('WEB_FETCH'),
+    CONTEXT_PRUNE: unused('CONTEXT_PRUNE'),
     CONTEXT_ASSEMBLE: unused('CONTEXT_ASSEMBLE'),
     MODEL: unused('MODEL'),
   };
@@ -82,7 +84,7 @@ function abortingRegistry(): ExecutorRegistry {
   const base = registry();
   return {
     ...base,
-    REPOSITORY_ORIENT: executor('REPOSITORY_ORIENT', (_input, environment) => {
+    REPOSITORY_LIST: executor('REPOSITORY_LIST', (_input, environment) => {
       if (environment.signal.aborted) return Promise.resolve(completed);
       return new Promise((resolve) => {
         environment.signal.addEventListener('abort', () => resolve(completed), { once: true });
@@ -95,6 +97,7 @@ const context: BoundaryContext = {
   correlationId: 'cor_123456',
   tenantId: 'local',
   projectId: 'local',
+  sessionId: 'ses_123456',
   workflowRunId: 'wfr_123456',
 };
 
@@ -105,7 +108,7 @@ async function fixture(executors: ExecutorRegistry = registry()): Promise<{
 }> {
   const dataDir = await mkdtemp(join(tmpdir(), 'supervisor-execute-'));
   roots.push(dataDir);
-  const fabric = new InProcessFabric(createM1ProtocolRegistry());
+  const fabric = new InProcessFabric(createProtocolRegistry());
   const kernelCore = fabric.client('kernel-core');
   const facts: Envelope<ExecutionFact>[] = [];
   kernelCore.subscribe<ExecutionFact>('kernel-core.execution-facts', (envelope) => {
@@ -154,7 +157,7 @@ describe('Supervisor execute over Fabric', () => {
     expect(envelope.correlationId).toBe('cor_123456');
     expect(envelope.payload).toMatchObject({
       outcome: 'COMPLETED',
-      executionKind: 'REPOSITORY_ORIENT',
+      executionKind: 'REPOSITORY_LIST',
       workflowRunId: 'wfr_123456',
       unitAttemptId: 'una_123456',
       executionId: 'exe_123456',
@@ -226,6 +229,35 @@ describe('Supervisor execute over Fabric', () => {
       reasonCode: 'EXECUTION_CANCELLED',
       executionId: 'exe_123456',
     });
+  });
+
+  it('cancels one execution over Fabric and says why', async () => {
+    const { fabric, facts } = await fixture(abortingRegistry());
+    const port = createSupervisorPort(fabric.client('kernel-core'), () => context);
+
+    await port.execute(request());
+    await delay(10);
+    await port.cancelExecution({ executionId: 'exe_123456', runEpoch: 1, reason: 'ABORTED' });
+    await vi.waitFor(() => expect(facts).toHaveLength(1));
+
+    expect((facts[0] as Envelope<ExecutionFact>).payload).toMatchObject({
+      outcome: 'TERMINATED',
+      reasonCode: 'EXECUTION_CANCELLED',
+      cancelReason: 'ABORTED',
+    });
+  });
+
+  it('rejects cancelExecution from a producer other than kernel-core, and a request with extras', async () => {
+    const { fabric } = await fixture();
+    const body = { executionId: 'exe_123456', runEpoch: 1, reason: 'ABORTED' };
+    await expect(
+      fabric.client('gateway').request(SCHEMA_IDS.cancelExecution, body, context),
+    ).rejects.toThrow('invalid producer');
+    await expect(
+      fabric
+        .client('kernel-core')
+        .request(SCHEMA_IDS.cancelExecution, { ...body, reason: 'WHATEVER' }, context),
+    ).rejects.toThrow();
   });
 
   it('reports STOP_UNCONFIRMED during stop before Fabric closes', async () => {

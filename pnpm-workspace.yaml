@@ -6,3 +6,6 @@ packages:
   - 'packages/testing'
 allowBuilds:
   esbuild: true
+  tree-sitter-bash: false
+patchedDependencies:
+  string-width@8.3.0: patches/string-width@8.3.0.patch

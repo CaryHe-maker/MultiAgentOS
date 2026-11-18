@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: web-search
+version: v1.1.0
+digest: c0a79dfb918ed141767b4ac7981d9776220d665bb4bcd6b3f8a17b9c85a03050
+description: Model-facing web search, served by the web-search unit. Turn-chat text.
+purpose: UNIT
+modelName: web_search
+modelDescription: >-
+  Search the web for current information. Returns pages with title, address, date and summary.
+parametersContract:
+  kind: contract
+  id: executor.WebSearchInput
+  version: v1
+riskClass: LOW
+sideEffect: EXTERNAL
+isIdempotent: true
+contentStatus: FINAL

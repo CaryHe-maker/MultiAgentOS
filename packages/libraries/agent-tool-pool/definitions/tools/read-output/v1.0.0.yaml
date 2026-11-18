@@ -1,0 +1,21 @@
+schemaVersion: v1
+kind: TOOL
+id: read-output
+version: v1.0.0
+digest: 9e6c30508be3cfa3b8e844309136bd601cb0d3e0f6b06d196ee93403aa3da5ef
+description: Model-facing paged read of a full tool output, served by the output-read unit.
+purpose: UNIT
+modelName: read_output
+modelDescription: >-
+  Read the full output of an earlier tool call whose result was cut, or a subtask's whole result,
+  by its toolCallId (ref_N/toolCallId for what a subtask handed over, as listed). offset is the
+  first line (from 1), limit the number of lines (at most 2000); pattern returns only lines with
+  that literal text.
+parametersContract:
+  kind: contract
+  id: executor.OutputReadArgs
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

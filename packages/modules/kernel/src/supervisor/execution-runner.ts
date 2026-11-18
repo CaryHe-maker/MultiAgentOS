@@ -1,27 +1,38 @@
 import type {
+  CancelExecutionRequest,
   CancelRunExecutionsRequest,
   ExecutionFact,
-  ExecutionFactSink,
   ExecutionRequest,
   ExecutorEnvironment,
   ExecutorOutcome,
   ExecutorRegistry,
+  ModelProgress,
   ProviderCredentials,
   RequestState,
+  SandboxRunner,
   SubprocessRunner,
   TokenUsage,
 } from '@multiagentos/contracts';
+import { StopUnconfirmedError } from '@multiagentos/contracts';
 import { createExecutorEnvironment } from './environment.js';
 import { ExecutionTable, type ExecutionEntry } from './execution-table.js';
 import { toExecutionFact, toTerminationFact } from './fact-mapper.js';
+import type { JobTable } from './job-table.js';
 
 export interface ExecutionRunnerDeps {
   readonly executors: ExecutorRegistry;
   readonly credentials: ProviderCredentials;
   readonly subprocess: SubprocessRunner;
-  readonly facts: ExecutionFactSink;
+  readonly sandbox: SandboxRunner;
+  readonly facts: { report(fact: ExecutionFact): Promise<void> };
   readonly cancelGraceMs: number;
+  /** After SIGKILL a command is waited for this long more (M2Design 4.7). */
+  readonly killGraceMs: number;
   readonly now: () => Date;
+  /** The side channel of a streaming model call; absent means calls are not streamed. */
+  readonly progress?: (progress: ModelProgress) => void;
+  /** Keeps the commands that detach (Orchestration 6.1); without it a command never detaches. */
+  readonly jobs?: JobTable;
 }
 
 interface TerminationExtras {
@@ -39,8 +50,12 @@ export class ExecutionRunner {
   readonly #executors: ExecutorRegistry;
   readonly #credentials: ProviderCredentials;
   readonly #subprocess: SubprocessRunner;
-  readonly #facts: ExecutionFactSink;
+  readonly #sandbox: SandboxRunner;
+  readonly #killGraceMs: number;
+  readonly #facts: { report(fact: ExecutionFact): Promise<void> };
   readonly #cancelGraceMs: number;
+  readonly #progress: ((progress: ModelProgress) => void) | undefined;
+  readonly #jobs: JobTable | undefined;
   readonly #now: () => Date;
   readonly #table = new ExecutionTable();
   readonly #cancelledEpochs = new Map<string, number>();
@@ -52,8 +67,12 @@ export class ExecutionRunner {
     this.#executors = deps.executors;
     this.#credentials = deps.credentials;
     this.#subprocess = deps.subprocess;
+    this.#sandbox = deps.sandbox;
+    this.#killGraceMs = deps.killGraceMs;
     this.#facts = deps.facts;
     this.#cancelGraceMs = deps.cancelGraceMs;
+    this.#progress = deps.progress;
+    this.#jobs = deps.jobs;
     this.#now = deps.now;
   }
 
@@ -87,6 +106,8 @@ export class ExecutionRunner {
   public cancelRun(request: CancelRunExecutionsRequest): void {
     const previous = this.#cancelledEpochs.get(request.workflowRunId) ?? 0;
     this.#cancelledEpochs.set(request.workflowRunId, Math.max(previous, request.runEpoch));
+    // The run converges or is aborted: its background commands end with it (Orchestration 6.3).
+    this.#jobs?.stopRun(request.workflowRunId);
 
     for (const entry of this.#table.values()) {
       if (entry.request.workflowRunId !== request.workflowRunId || entry.terminal) continue;
@@ -96,6 +117,53 @@ export class ExecutionRunner {
         this.#abort(entry, 'EXECUTION_CANCELLED');
       }
     }
+  }
+
+  /**
+   * The runner an execution gets: a command that detaches is handed to the job table, keyed by
+   * the execution, and the Executor sees only its key (Orchestration 6.1).
+   */
+  #sandboxFor(request: ExecutionRequest): SandboxRunner {
+    const jobs = this.#jobs;
+    const sandbox = this.#sandbox;
+    if (jobs === undefined)
+      return {
+        run: (options) => {
+          const attached = { ...options };
+          delete attached.detach;
+          return sandbox.run(attached);
+        },
+      };
+    return {
+      run: async (options) => {
+        const result = await sandbox.run(options);
+        if (result.kind !== 'DETACHED' || result.process === undefined) return result;
+        const { process, ...rest } = result;
+        const owner = {
+          jobKey: request.executionId,
+          sessionId: request.sessionId,
+          workflowRunId: request.workflowRunId,
+        };
+        jobs.adopt(owner, process, '');
+        return { ...rest, jobKey: request.executionId };
+      },
+    };
+  }
+
+  /**
+   * Cancels one execution (Interface/KernelSupervisor 7). `runEpoch` does not move: the fact is
+   * still delivered, and says why. A request that has not started is answered at once; one that
+   * runs gets the stop of M2Design 4.7. An unknown execution, one of another epoch or one that has
+   * ended is ignored: its fact is already on the way, or was.
+   */
+  public cancelExecution(request: CancelExecutionRequest): void {
+    const entry = this.#table.find(request.executionId);
+    if (entry === undefined || entry.terminal || entry.request.runEpoch !== request.runEpoch)
+      return;
+    entry.cancelReason ??= request.reason;
+    if (entry.state === 'ACCEPTED')
+      this.#finalizeTerminated(entry, undefined, 'EXECUTION_CANCELLED');
+    else if (entry.state === 'RUNNING') this.#abort(entry, 'EXECUTION_CANCELLED');
   }
 
   /** Stops scheduling, clears timers and best-effort reports unconfirmed in-flight work. */
@@ -165,7 +233,9 @@ export class ExecutionRunner {
     const environment = createExecutorEnvironment(entry.request, entry.abortController.signal, {
       credentials: this.#credentials,
       subprocess: this.#subprocess,
+      sandbox: this.#sandboxFor(entry.request),
       now: this.#now,
+      ...(this.#progress === undefined ? {} : { progress: this.#progress }),
     });
 
     this.#active += 1;
@@ -174,8 +244,14 @@ export class ExecutionRunner {
       if (entry.terminal || this.#stopped) return;
       if (entry.abortReason === undefined) this.#finishNormal(entry, outcome);
       else this.#finishAborted(entry, outcome);
-    } catch {
+    } catch (error: unknown) {
       if (entry.terminal || this.#stopped) return;
+      // The sandbox could not confirm the end of a process: a system fault, whatever came before.
+      if (error instanceof StopUnconfirmedError) {
+        entry.abortReason ??= 'EXECUTION_CANCELLED';
+        this.#stopUnconfirmed(entry);
+        return;
+      }
       if (entry.abortReason === undefined) this.#finalizeFailure(entry);
       else this.#finalizeTerminated(entry, entry.startedAt, entry.abortReason);
     } finally {
@@ -201,10 +277,15 @@ export class ExecutionRunner {
     if (entry.terminal || this.#stopped || entry.abortReason !== undefined) return;
     entry.abortReason = reason;
     entry.abortController.abort();
+    // A command in the sandbox has its own SIGTERM, SIGKILL and wait; this timer is the net below it.
+    const grace =
+      entry.request.executionKind === 'COMMAND'
+        ? this.#cancelGraceMs + this.#killGraceMs + 1_000
+        : this.#cancelGraceMs;
     const timer = setTimeout(() => {
       entry.graceTimer = undefined;
       this.#stopUnconfirmed(entry);
-    }, this.#cancelGraceMs);
+    }, grace);
     entry.graceTimer = timer;
   }
 
@@ -267,6 +348,9 @@ export class ExecutionRunner {
         outcome: 'TERMINATED',
         reasonCode: reason,
         ...extras,
+        ...(reason === 'EXECUTION_CANCELLED' && entry.cancelReason !== undefined
+          ? { cancelReason: entry.cancelReason }
+          : {}),
       }),
     );
   }
@@ -327,14 +411,30 @@ function runExecutor(
   environment: ExecutorEnvironment,
 ): Promise<ExecutorOutcome> {
   switch (request.executionKind) {
-    case 'REPOSITORY_ORIENT':
-      return registry.REPOSITORY_ORIENT.execute(request.input, environment);
     case 'REPOSITORY_SEARCH':
       return registry.REPOSITORY_SEARCH.execute(request.input, environment);
+    case 'REPOSITORY_LIST':
+      return registry.REPOSITORY_LIST.execute(request.input, environment);
     case 'FILE_READ':
       return registry.FILE_READ.execute(request.input, environment);
+    case 'FILE_WRITE':
+      return registry.FILE_WRITE.execute(request.input, environment);
+    case 'FILE_EDIT':
+      return registry.FILE_EDIT.execute(request.input, environment);
+    case 'OUTPUT_READ':
+      return registry.OUTPUT_READ.execute(request.input, environment);
+    case 'COMMAND':
+      return registry.COMMAND.execute(request.input, environment);
+    case 'GIT_INSPECT':
+      return registry.GIT_INSPECT.execute(request.input, environment);
+    case 'WEB_SEARCH':
+      return registry.WEB_SEARCH.execute(request.input, environment);
+    case 'WEB_FETCH':
+      return registry.WEB_FETCH.execute(request.input, environment);
     case 'CONTEXT_ASSEMBLE':
       return registry.CONTEXT_ASSEMBLE.execute(request.input, environment);
+    case 'CONTEXT_PRUNE':
+      return registry.CONTEXT_PRUNE.execute(request.input, environment);
     case 'MODEL':
       return registry.MODEL.execute(request.input, environment);
   }
