@@ -110,8 +110,9 @@ tb2/tune-mjcf、tb2/configure-git-webserver、tb2/gcode-to-text、tb2/raman-fitt
 |---|---|---|---|---|---|
 | 第一次（2026-11-16） | Mission 基线1.1 | 95.9 | 0.910 | 2.237 | 97.05% |
 | 第二次（2026-11-17） | Mission 基线1.2（M2 V1.0） | 103.8 | 0.917 | 1.791 | 98.51% |
+| 基线1.2 的成绩（pylua 取重复运行） | Mission 基线1.2（M2 V1.0） | **87.8** | 0.917 | 1.764 | 98.59% |
 | `dsh` | — | 126.6 | 0.931 | 1.074 | — |
 
 最终集的两次运行已经用完，之后不再运行。
 
-第二次运行里 pylua 慢、pyarchive 低分，之后用同一版本各重复运行一次（不算最终集的运行）：pylua 0.795 / 20.6 分钟、pyarchive 1.000 / 12.8 分钟，都比 `dsh` 快，说明是单次运行的随机性（[experiments](experiments.md)）。
+第二次运行里 pylua 慢、pyarchive 低分，之后用同一版本各重复运行一次：pylua 0.795 / 20.6 分钟、pyarchive 1.000 / 12.8 分钟，都比 `dsh` 快，说明是单次运行的随机性（[experiments](experiments.md)）。第二次运行的 pylua 受 DeepSeek 两次断流影响，基线1.2 在 pylua 上的成绩取重复运行（Cary 定），其余四道取第二次运行，即上表"基线1.2 的成绩"一行；pyarchive 仍取第二次运行。
