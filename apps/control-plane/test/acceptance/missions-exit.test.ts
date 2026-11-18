@@ -19,6 +19,7 @@ import {
   type Chat,
   type ScriptedChat,
 } from './chat-driver.js';
+import { jsonLines } from '../support/jsonl.js';
 
 const TIMEOUT = 90_000;
 const bwrapWorks = (await probeSandbox(tmpdir())).available;
@@ -318,15 +319,12 @@ describe('messages along the tree (Orchestration 5)', () => {
       expect(chat.printed('REPLY')).toContain('heard all four');
       // Each of the four messages woke main: the end of quick counted the wakes from zero.
       const [session] = await readdir(join(place.dataDir, 'sessions'));
-      const log = (
+      const log = jsonLines<{ type: string; causes?: { kind: string }[] }>(
         await readFile(
           join(place.dataDir, 'sessions', session ?? '', 'workflow', 'log.v1.jsonl'),
           'utf8',
-        )
-      )
-        .split('\n')
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as { type: string; causes?: { kind: string }[] });
+        ),
+      );
       const byMessage = log.filter(
         (record) =>
           record.type === 'MISSION_WOKEN' &&

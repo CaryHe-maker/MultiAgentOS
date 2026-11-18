@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { LogCommand } from '../../src/log-command.js';
 import { runLogCommand } from '../../src/log-command.js';
 import { openChat, reply, scriptedChat, tool, type Chat } from './chat-driver.js';
+import { jsonLines } from '../support/jsonl.js';
 
 const TIMEOUT = 60_000;
 const directories: string[] = [];
@@ -92,11 +93,9 @@ describe('mas log', () => {
         join(dataDir, 'sessions', sessionId ?? '', 'workflow', 'log.v1.jsonl'),
         'utf8',
       );
-      const turns = text
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line) as { type: string; usage?: unknown })
-        .filter((record) => record.type === 'MODEL_TURN');
+      const turns = jsonLines<{ type: string; usage?: unknown }>(text).filter(
+        (record) => record.type === 'MODEL_TURN',
+      );
       expect(turns).toHaveLength(2);
       for (const turn of turns) expect(turn.usage).toEqual({ inputTokens: 100, outputTokens: 10 });
     },

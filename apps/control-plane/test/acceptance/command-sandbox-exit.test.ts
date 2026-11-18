@@ -40,6 +40,7 @@ import {
   type ProviderTurn,
   type ScriptedChat,
 } from './chat-driver.js';
+import { jsonLines } from '../support/jsonl.js';
 
 const TIMEOUT = 90_000;
 const bwrapWorks = (await probeSandbox(tmpdir())).available;
@@ -1306,10 +1307,9 @@ real('memory pressure', () => {
 
   /** The records of memory events the Kernel keeps for the whole system. */
   const eventsOf = async (dataDir: string) =>
-    (await readFile(join(dataDir, 'kernel-core', 'memory-events.jsonl'), 'utf8').catch(() => ''))
-      .split('\n')
-      .filter((line) => line !== '')
-      .map((line) => JSON.parse(line) as { source: string; level: string });
+    jsonLines<{ source: string; level: string }>(
+      await readFile(join(dataDir, 'kernel-core', 'memory-events.jsonl'), 'utf8').catch(() => ''),
+    );
   /** Waits until the sampler has seen the reading (a few of its intervals). */
   const sampled = () => nap(150);
 

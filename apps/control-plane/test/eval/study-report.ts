@@ -12,6 +12,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { shapeOf, type RunShape, type TaskStats } from './orchestration-shape.js';
 import type { RunRecord } from './spec.js';
+import { jsonLines } from '../support/jsonl.js';
 
 const argv = process.argv.slice(2);
 const recordsFile = argv[0];
@@ -51,18 +52,13 @@ async function logOf(folder: string): Promise<Record<string, unknown>[]> {
     join(folder, 'sessions', id, 'workflow', 'log.v1.jsonl'),
     'utf8',
   ).catch(() => '');
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  return jsonLines(text);
 }
 
 async function main(): Promise<void> {
-  const records = (await readFile(recordsFile ?? '', 'utf8'))
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as RunRecord)
-    .filter((record) => record.tags.includes('submission-study'));
+  const records = jsonLines<RunRecord>(await readFile(recordsFile ?? '', 'utf8')).filter((record) =>
+    record.tags.includes('submission-study'),
+  );
   const folders = archive === undefined ? [] : await readdir(archive);
   const rows: { record: RunRecord; shape: Recorded; source: string }[] = [];
   for (const record of records) {
