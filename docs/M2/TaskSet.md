@@ -25,12 +25,12 @@
 
 ## 3. 最终集
 
-### 3.1 小任务（10 道）
+### 3.1 小任务（10 道，计分 9 道）
 
 | 题 | dsh 用时（分钟） | 得分 | 费用（美元） |
 |---|---|---|---|
 | tb2/custom-memory-heap-crash | 1.4 | 1 | 0.009 |
-| tb2/financial-document-processor | 1.1 | 1 | 0.010 |
+| tb2/financial-document-processor（剔除：看图，见第 7 节） | 1.1 | 1 | 0.010 |
 | tb2/constraints-scheduling | 0.7 | 1 | 0.005 |
 | tb2/filter-js-from-html | 9.3 | 1 | 0.044 |
 | tb2/llm-inference-batching-scheduler | 4.2 | 1 | 0.033 |
@@ -56,9 +56,9 @@ sqlengine 与 minidb 都是从零写关系数据库，相似度高，因此一�
 
 ## 4. 开发集
 
-### 4.1 小任务（11 道）
+### 4.1 小任务（11 道，计分 7 道）
 
-tb2/tune-mjcf、tb2/configure-git-webserver、tb2/gcode-to-text、tb2/raman-fitting、tb2/polyglot-c-py、tb2/chess-best-move、sbp/qutebrowser-36ade4bb、sbp/vuls-7e91f5ef、sbp/NodeBB-da0211b1、parallel/dev/research-then-implement-s1-n6（`dsh` 没有运行），以及从最终集转来的 sbp/teleport-1b08e7d0（`dsh` 无法运行）。
+tb2/tune-mjcf、tb2/configure-git-webserver、tb2/gcode-to-text、tb2/raman-fitting、tb2/polyglot-c-py、tb2/chess-best-move、sbp/qutebrowser-36ade4bb、sbp/vuls-7e91f5ef、sbp/NodeBB-da0211b1、parallel/dev/research-then-implement-s1-n6（`dsh` 没有运行），以及从最终集转来的 sbp/teleport-1b08e7d0（`dsh` 无法运行）。tb2/chess-best-move 与 tb2/gcode-to-text 不计分（看图，见第 7 节）。
 
 ### 4.2 大任务（26 道）
 
@@ -116,3 +116,15 @@ tb2/tune-mjcf、tb2/configure-git-webserver、tb2/gcode-to-text、tb2/raman-fitt
 最终集的两次运行已经用完，之后不再运行。
 
 第二次运行里 pylua 慢、pyarchive 低分，之后用同一版本各重复运行一次：pylua 0.795 / 20.6 分钟、pyarchive 1.000 / 12.8 分钟，都比 `dsh` 快，说明是单次运行的随机性（[experiments](experiments.md)）。第二次运行的 pylua 受 DeepSeek 两次断流影响，基线1.2 在 pylua 上的成绩取重复运行（Cary 定），其余四道取第二次运行，即上表"基线1.2 的成绩"一行；pyarchive 仍取第二次运行。
+
+## 7. 看图的题不计分（2026-11-18，Cary 定）
+
+`dsh` 有 `read_image` 工具：读 PNG、JPEG、WebP、GIF 文件，把图片本身交给模型（deepseek-flash 接受图片输入）；mas 没有图片输入。逐个查了所有 `dsh` 运行的思考记录，用到看图的只有 3 道：
+
+| 题 | 集 | `dsh` 怎样用 |
+|---|---|---|
+| tb2/chess-best-move | 开发集小任务 | 直接看棋盘图片 |
+| tb2/gcode-to-text | 开发集小任务 | 把刀路画成图片再看 |
+| tb2/financial-document-processor | 最终集小任务 | 逐张看 12 张发票图片 |
+
+这 3 道在 `taskset.json` 里标 `excluded`，留在原来的集里（"跑过的题都留下"的规则），但不再运行、对比或计分；任务内容与哈希不变。大任务都没有用到看图。

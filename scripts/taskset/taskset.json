@@ -26,7 +26,8 @@
     {
       "id": "tb2/gcode-to-text",
       "role": "dev",
-      "sha256": "ff424385075ca61ad8e77a67ffbf535cd9d595237e11f9775518f80b61bfa77e"
+      "sha256": "ff424385075ca61ad8e77a67ffbf535cd9d595237e11f9775518f80b61bfa77e",
+      "excluded": "dsh read its image with read_image (the model sees the picture); mas has no image input, so the task is left out of every comparison and score (Cary, 2026-11-18)"
     },
     {
       "id": "tb2/raman-fitting",
@@ -41,7 +42,8 @@
     {
       "id": "tb2/chess-best-move",
       "role": "dev",
-      "sha256": "d2537d4ef979b79575329f9c8682867a9f58ae2273d5864fbe46783c91b99684"
+      "sha256": "d2537d4ef979b79575329f9c8682867a9f58ae2273d5864fbe46783c91b99684",
+      "excluded": "dsh read its image with read_image (the model sees the picture); mas has no image input, so the task is left out of every comparison and score (Cary, 2026-11-18)"
     },
     {
       "id": "sbp/instance_NodeBB__NodeBB-da0211b1a001d45d73b4c84c6417a4f1b0312575-vf2cf3cbd463b7ad942381f1c6d077626485a1e9e",
@@ -74,7 +76,8 @@
       "role": "picked",
       "bucket": "data-processing",
       "difficulty": "medium",
-      "sha256": "455fb917df4859716921c742811824fec667b020d2f8e48c5db0a305f1d05607"
+      "sha256": "455fb917df4859716921c742811824fec667b020d2f8e48c5db0a305f1d05607",
+      "excluded": "dsh read its image with read_image (the model sees the picture); mas has no image input, so the task is left out of every comparison and score (Cary, 2026-11-18)"
     },
     {
       "id": "tb2/constraints-scheduling",
@@ -531,5 +534,6 @@
       "devSmall": 11,
       "devLarge": 26
     }
-  }
+  },
+  "excludedRule": "An entry with `excluded` stays in its set (keptRule) but is not run, compared or scored; the image rule: tasks where dsh used read_image (Cary, 2026-11-18)"
 }
