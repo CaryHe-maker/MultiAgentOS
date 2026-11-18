@@ -42,6 +42,12 @@ export const KernelConfigSchema = closed(
     /** The sandbox of commands (Interface/KernelSupervisor 9). */
     sandbox: closed({
       unavailable: Type.Enum(['deny', 'ask-unisolated']),
+      /**
+       * Where an unisolated command may write (D79): `task`, its task's write roots and the
+       * temporary directories, held by Landlock where the kernel has it; `any`, anywhere, for a
+       * machine that is itself the isolation, such as a throwaway container.
+       */
+      unisolatedWrites: Type.Enum(['task', 'any']),
       homeReadOnly: Type.Array(text(4096)),
       /** The PATH directories below $HOME come back read-only too (M2Design 6.1, v1.18). */
       mountPath: Type.Boolean(),

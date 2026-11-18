@@ -261,9 +261,13 @@ export async function composeSystem(options: ComposeOptions): Promise<System> {
     log(`Commands cannot run isolated here (${sandbox.reason}). ${sandbox.hint}
 `);
   const commandsOffered = commandsOfferedFor(sandbox.available, config.kernel.sandbox.unavailable);
-  // Without a sandbox, Landlock holds what a command writes (D79). Probed once: the runner uses
-  // it, and the Kernel queues a line of the read-only list as a read only when it holds (D87).
-  const landlock = sandbox.available ? false : (probeLandlock() ?? false);
+  // Without a sandbox, Landlock holds what a command writes (D79), unless the configuration says
+  // the machine is itself the isolation. Probed once: the runner uses it, and the Kernel queues a
+  // line of the read-only list as a read only when it holds (D87).
+  const landlock =
+    sandbox.available || config.kernel.sandbox.unisolatedWrites === 'any'
+      ? false
+      : (probeLandlock() ?? false);
   const analyzeCommand = createCommandAnalyzer(await createCommandParser(), config.kernel.command);
   const snapshotsOf = (sessionId: string): string =>
     join(config.dataDir, 'sessions', sessionId, 'kernel-execution', 'snapshots');
