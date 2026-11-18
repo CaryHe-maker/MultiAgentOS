@@ -1,0 +1,22 @@
+schemaVersion: v1
+kind: TOOL
+id: sleep
+version: v1.0.0
+digest: 78a64e3a540a519ee4ddc35afb3c1778ac9a715a1bca3a551f0482136739572e
+description: Control tool that ends this segment of the task until something it waits for happens.
+purpose: CONTROL
+modelName: sleep
+modelDescription: >-
+  Stop and wait instead of polling. until lists what wakes you, any one is enough: children
+  (your subtasks: woken as each ends, with its result; mode all waits for every one; names limits it;
+  a failed or stopped subtask always wakes you), siblings (by name: woken when they have ended),
+  jobs (your background commands), message, timer (seconds). timeoutSeconds (at most 3600, default
+  600) wakes you anyway. note is what to read first when you wake. Call it alone.
+parametersContract:
+  kind: contract
+  id: workflow.SleepArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL

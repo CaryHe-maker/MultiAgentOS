@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Kernel.Monitor
 
-> 状态：已实现；发布前再与代码核对一次。
+> 状态：已实现（`packages/modules/kernel/src/monitor`）。
 
 ## 1. 定位
 
@@ -11,7 +11,7 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 
 | M1 | M2 |
 |---|---|
-| 每个运行一份账本，planner 与 code-viewer 共用 | 逐级委派：运行 → Turn → AgentRun；main 直接使用 Turn 账本 |
+| 每个运行一份账本，planner 与 code-viewer 共用 | 逐级委派：运行 → 输入 → 任务；main 直接使用输入的账本 |
 | `finalReserve` 每个运行一份，至多一次 final-call | 每个 AgentRun 一份收尾保留、至多一次 final-call；收尾保留按该 Agent 的额度参数计算 |
 | 额度参数是全局配置 | 写在每个 Agent 定义中（Interface/Definitions 第 2 节） |
 | 额度只看 token | 增加工具 Unit 次数与墙钟两项资源上限（`QUOTA_EXHAUSTED`） |
@@ -23,29 +23,31 @@ Monitor 维护资源账本并判断额度阈值，只在被 Core 调用时运行
 
 ### 3.1 运行级账本
 
-- `L_run = budget.runTokenLimit`；不直接发生模型调用，只为 Turn 划出份额、收回剩余。
-- 状态按"本 Turn 现在结束时运行级账本的余额"判定：`R = 运行级剩余 + 本 Turn 账本的余额 − 本 Turn 的在途预留`（没有开启中的 Turn 时就是运行级剩余）。
+- `L_run = budget.runTokenLimit`；不直接发生模型调用，只为每次输入划出份额、收回剩余。
+- 状态按"这次输入的工作现在结束时运行级账本的余额"判定：`R = 运行级剩余 + 输入账本的余额 + 任务账本里没用的部分`（没有开启中的输入时就是运行级剩余）。
   `R < minShare(main)` 时为 WRAP_UP，`R = 0` 时为 EXHAUSTED。
-- 这样判定的原因：Turn 开启时从运行级扣除的是整份 `L_turn`，Turn 中途的运行级剩余会低估 Turn 结束后的余额。Workflow 在请求下一个开放输入之前，
-  最后一个 UnitReport（Turn-chat 中是 `message-publish`）的 `BudgetView.run` 就是 Turn 结束后的准确状态，据此决定请求开放输入还是 `closeRun(BUDGET)`。
+- 这样判定的原因：输入开启时从运行级扣除的是整份 `L_input`，中途的运行级剩余会低估这次输入结束后的余额。Workflow 在请求下一个开放输入之前，
+  最后一个 UnitReport（Turn-chat 中是 `message-publish`）的 `BudgetView.run` 就是结束后的准确状态，据此决定请求开放输入还是 `closeRun(BUDGET)`。
 
-### 3.2 Turn 账本
+### 3.2 输入的账本
 
 - 记账单位：结算额 = 未命中的输入 + 命中的输入 × 命中权重 + 输出；命中权重由预留时给出（模型定义的命中单价 ÷ 未命中单价）。预留额 = 校准后的输入估算 × 1.05 + 该次调用的输出上限（M2Design 第 7.3、9.3 节）。
-- 开启：`L_turn = min(budget.inputTokenLimit, 运行级剩余)`；从运行级账本扣除。`L_turn < minShare(main)` 时照常开启，状态直接为 WRAP_UP（[Core](Core.md) 第 6 节）。
-- Turn 账本就是 main 的账本：`F = F(main)`，`wrapUpMargin = wrapUpMargin(main)`，预留与状态按 M1 Monitor 第 3.2、3.3 节计算。
-- 结束：未结算的预留按 UNKNOWN 结算（M1 的 `finalize` 规则），剩余返还运行级账本；返回 `TurnUsage`。
+- 开启（`openInputLedger`）：`L_input = min(budget.inputTokenLimit, 运行级剩余)`；从运行级账本扣除。`L_input < minShare(main)` 时照常开启，状态直接为 WRAP_UP（[Core](Core.md) 第 6 节）。
+- 输入的账本就是 main 的账本：`F = F(main)`，`wrapUpMargin = wrapUpMargin(main)`，预留与状态按 M1 Monitor 第 3.2、3.3 节计算。
+- 追加（规则 6）：`inputWants` 给出 main 离收尾线只剩一次调用、或某个任务的补额度因为输入的账本没有可借的而落空时可以追加多少（`inputTokenLimit` 的一半，或运行级余额，取小）；`delegationWants(need)` 给出一次派生借不到初始份额时可以追加多少（至少缺的部分，Orchestration D115）；`extendInput` 从运行级账本划给输入的账本。
+- 结束（`closeInputLedger`）：还在的任务账本一并结束，未结算的预留按 UNKNOWN 结算（M1 的 `finalize` 规则），剩余返还运行级账本；返回 `InputUsage`。
 
-### 3.2a AgentRun 账本与逐级委派
+### 3.2a 任务的账本与逐级委派
 
-设计以 M2Design 第 7.3 节为准。`RunLedgers` 在 Turn 账本之下为每个 SubAgent 持有一个账本（`Monitor` 实例），main 与没有父 AgentRun 的 AgentRun 直接使用 Turn 账本。
+设计以 M2Design 第 7.3 节为准。`RunLedgers`（`monitor/run-ledgers.ts`）在输入的账本之下为每个有份额的任务持有一个账本（`Monitor` 实例），任务的每一段都用它，所以休眠不会提高它能花的额度；main 与没有份额的 AgentRun 直接使用输入的账本。
 
-- `reserveDelegation({ delegationId, parentAgentRunId, shares })`：可委派额度 = 上级账本余额 − 上级的收尾保留 − 上级一次普通调用的余量（`Monitor.delegable()`）。全部份额之和不超过它才一次性划出（`Monitor.lend`），否则整次不执行，返回 `BUDGET_INSUFFICIENT` 与可委派的余额。`delegationWants(need)` 给出这时可以追加多少（至少缺的部分，Orchestration D115）；补额度时缺的部分借不到，这个任务才记为缺额度。
-- `registerAgentRun({ agentRunId, delegationId, taskName, agent })`：任务登记时，委派保留中属于它的份额成为它自己的账本；份额小于该 Agent 的 `minShare` 时账本以 WRAP_UP 开启（只能收尾，Workflow 按统一收尾路径处理）。
-- `endAgentRun(agentRunId)`：未使用的部分立即还给上级；已用的与未知的（没有结算的预留）不还；重复调用无效果。Turn 关闭时尚未结束的 SubAgent 一并结束。
+- `reserveDelegation({ delegationId, parentAgentRunId, shares })`：可委派额度 = 上级账本余额 − 上级的收尾保留 − 上级一次普通调用的余量（`Monitor.delegable()`）。上级是一个任务、自己借不够时先向它的上级要（规则 5）。全部份额之和不超过它才一次性划出（`Monitor.lend`），否则整次不执行，返回 `BUDGET_INSUFFICIENT` 与可委派的余额。
+- **补额度**（规则 5）：任务的一次调用会让它低于收尾线时（预留或结算时），从上级可委派的部分补给它，每次补一个初始份额，累计不超过它的上限；上级不够时逐级向上要，一直到输入的账本。缺的部分借不到时，这个任务记为缺额度，`inputWants` 据此请用户追加。模板的一步（Turn-chat 的 `mission`）以调用方可委派的全部开账，没有上限（Orchestration D115）。
+- `registerAgentRun({ agentRunId, delegationId, taskName, agent, ledgerKey? })`：任务第一段登记时，委派保留中属于它的份额成为它自己的账本，以任务为键保存（`attachAgentRun` 让后来的段接上它）；份额小于该 Agent 的 `minShare` 时账本以 WRAP_UP 开启（只能收尾，Workflow 按统一收尾路径处理）。
+- `endAgentRun(agentRunId, continues)`：任务还在（这一段去休眠）时账本不变；否则任务结束，未使用的部分立即还给上级，已用的与未知的（没有结算的预留）不还；重复调用无效果。`closeTask` 关闭一个不会再醒的休眠任务，`restoreTask` 在回溯后重开一个任务。输入关闭时尚未结束的任务一并结束。
 - `releaseDelegation(delegationId)`：没有登记的任务的份额还给上级。
-- `budgetView(agentRunId)`：`agentRun` 是该 AgentRun 自己账本的状态，`turn`、`run` 同前。并行的 SubAgent 各用各的账本，一个的在途预留不会把另一个推进 WRAP_UP（验收 B1）。
-- Turn 的用量（`TurnUsage`、`RunSummary`）把全部 SubAgent 的用量计入。
+- `budgetView(agentRunId)`：`agentRun` 是该 AgentRun 所在任务账本的状态，`input`、`run` 同前。并行的 SubAgent 各用各的账本，一个的在途预留不会把另一个推进 WRAP_UP（验收 B1）。
+- 输入的用量（`InputUsage`、`RunSummary`）把全部任务的用量计入。
 - 测试：`run-ledgers-delegation.test.ts`。
 
 ### 3.3 派生值
@@ -62,11 +64,11 @@ minShare(agent)     = F(agent) + 2 × wrapUpMargin(agent)
 
 M2Design 第 7.3 节"压缩的额度"：
 
-- 自动与溢出触发的压缩，从被压缩对象所用的账本支出：main 为当前 Turn 账本；模板节点与 SubAgent 为该 AgentRun 自己的账本；
+- 自动与溢出触发的压缩，从被压缩对象所用的账本支出：main 为当前输入的账本；模板节点与 SubAgent 为该 AgentRun 自己的账本；
 - 修剪不调用模型，不预留；只有摘要请求预留，纯文本回退的每次请求各自预留与结算；
 - 预留量 = 摘要请求的输入估算（与普通调用的预留同一方法，不用压缩检查点的实测加估算）+ `summaryMaxTokens`；预留后账本余额必须仍不低于收尾保留 `F`，否则拒绝，Core 不写摘要，
   按额度到达限制的统一路径处理（该 AgentRun 进入最后一轮；SubAgent 以 `finish_subagent` 结束）；
-- 用户 `/compact` 没有开启中的 Turn，从运行级账本支出；预留后运行级余额必须仍不低于 `minShare(main)`，否则以 `BUDGET_INSUFFICIENT` 拒绝；
+- 用户 `/compact` 时没有开启中的输入，从运行级账本划出一个自己的账本（`openCompactionLedger`）；划出后运行级余额必须仍不低于 `minShare(main)`，否则以 `BUDGET_INSUFFICIENT` 拒绝；
 - 结算按实际用量（M1 的方式）；缓存命中的输入按模型定义的计价计入。
 
 ## 4. 资源上限
@@ -74,7 +76,7 @@ M2Design 第 7.3 节"压缩的额度"：
 | 上限 | 计数 | 触顶时 |
 |---|---|---|
 | `maxToolUnits` | 该 AgentRun 被受理的工具 Unit 数（不含 `context-assemble`、`model-call` 与发布 Unit `message-publish`：它们用于结束 Agent，触顶后仍须可用） | 拒绝该 AgentRun 后续的非收尾 Unit，原因码 `QUOTA_EXHAUSTED`，`quota = 'TOOL_UNITS'` |
-| `maxWallClockMs` | 从登记开始计时；等待人类、等待授权的时间不计入（暂停与等待子任务也不计入）。判定与 Turn 超时的暂停相同：该 AgentRun 没有已派发或待派发的尝试（挂起在授权询问上的不算）且有待答复的询问时停止计时，Core 在每次处理消息的末尾重新判断，只为最早可能到点的墙钟设一个定时器；没有设置该上限的 Agent 不计时 | 同上，`quota = 'WALL_CLOCK'` |
+| `maxWallClockMs` | 从登记开始计时；等待人类、等待授权的时间不计入（暂停与等待子任务也不计入）。判定与输入超时的暂停相同：该 AgentRun 没有已派发或待派发的尝试（挂起在授权询问上的不算）且有待答复的询问时停止计时，Core 在每次处理消息的末尾重新判断，只为最早可能到点的墙钟设一个定时器；没有设置该上限的 Agent 不计时 | 同上，`quota = 'WALL_CLOCK'` |
 
 Monitor 只计数与判断，计时器由 Core 持有并在到点时调用 Monitor。重复意图与连续出错是业务判断，归 Workflow（M2Design 第 3.4 节）。
 
@@ -101,16 +103,17 @@ Monitor 的定时器 ──每 memory.sampleIntervalMs──▶ 采样 ──▶
 
 ## 5. 接口
 
-`MonitorDuties` 的形式见 [Interaction](Interaction.md) 第 4 节。`budgetView(agentRunId)` 返回该 AgentRun 所在各级账本的状态；
-main 的 `agentRun` 一项等于 `turn`。
+账本的接口见 [Interaction](Interaction.md) 第 4 节。`budgetView(agentRunId)` 返回该 AgentRun 所在各级账本的状态；
+main 的 `agentRun` 一项等于 `input`。
 
 ## 6. 配置（`KernelConfig.budget`）
 
 | 配置 | 缺省（初值） | 说明 |
 |---|---|---|
 | `runTokenLimit` | 24000000 | 运行级上限 |
-| `inputTokenLimit` | 8000000 | 每个 Turn（一次输入引出的全部工作）的上限 |
+| `inputTokenLimit` | 8000000 | 每次输入（它引出的全部工作）的上限 |
 | `reserveShare` | 0.3 | 估算收尾保留、余量、最小份额与预留时输入按这个比例计（M2Design 第 7.3 节规则 10） |
+| `extension` | `{ mode: 'ask', max: 4 }` | 规则 6 的追加：`ask` 问用户，`extend` 不问直接加，`stop` 不加；至多 `max` 次 |
 
 M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxOutputTokens` 从全局配置移入 Agent 定义；
 `searchBudget` 仍是全局配置（M1 Monitor 第 4 节）；M1 的 `orientBudget` 随仓库概览删除。
@@ -127,6 +130,6 @@ M1 的 `perCallInputLimit`、`maxOutputTokens`、`finalInputBudget`、`finalMaxO
 | 不变量（M2Design 第 12 节） | 测试 |
 |---|---|
 | 6：每个已登记的 AgentRun 都能完成收尾 | 属性测试：任意预留与结算序列下，收尾预留必然成功 |
-| 22：每个账本的在途预留至多一份；Turn 结束时剩余全部返还 | 单元测试：同一 Turn 不能有两份在途预留；`closeTurnLedger` 后运行级剩余 = 原剩余 − Turn 已用 − 未知 |
+| 22：每个账本的在途预留至多一份；输入结束时剩余全部返还 | 单元测试：同一账本不能有两份在途预留；`closeInputLedger` 后运行级剩余 = 原剩余 − 这次输入已用 − 未知 |
 | 额度不触发收敛 | 状态机测试：账本 EXHAUSTED 时运行仍为 RUNNING，直到 Workflow `closeRun` |
 | 内存压力没有特例路径 | 架构测试：采样器只依赖发消息的接口；单元测试：假采样值只产生 `MemoryPressure`，级别升高才发，同一级别不重复 |

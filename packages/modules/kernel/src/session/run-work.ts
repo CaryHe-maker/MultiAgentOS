@@ -935,7 +935,7 @@ export class RunWork {
       const roots = task.writeRoots.flatMap((root) => normalizeRequestPath(root) ?? []);
       if (roots.length !== task.writeRoots.length) return refuse('INVALID_INPUT');
       if (!writeRootsWithin(roots, parentRoots)) return refuse('CAPABILITY_NOT_SUBSET');
-      // A task opens with the least its Agent can work with, as the ledgers count it (rule 7),
+      // A task opens with the least its Agent can work with, as the ledgers count it (rule 10),
       // and is topped up as it needs more, in pieces of that size (M2Design 7.3, rule 5), so
       // nothing is reserved that is not used. What the caller asked for bounds how far it may be
       // topped up for its own calls: between four times the least by the Agent's declared limits

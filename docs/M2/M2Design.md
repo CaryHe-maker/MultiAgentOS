@@ -1,10 +1,11 @@
 # MultiAgentOS M2 设计
 
-> 状态：v1.42 定稿（2026-11-17）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
+> 状态：v1.43 定稿（2026-11-19）。作者：CaryHe-maker。此后改变设计含义的修改须发布新版本，并记入文末的版本记录；只改链接、错字、格式的编辑性修改不升版本，同样记入版本记录。
 > 本文是 M2 的总体设计：说明 M2 相比 M1 增加的全部能力、每项能力的机制与 Owner、它们之间的关系，以及验收与待决事项。
 > 字段级接口、Schema 清单与定义实例写在 M2 的接口文档与 Library 文档，本文只给出语义与约束。
 > 长期概念与安全边界以 [Architecture](../Architecture/README.md) 为准；M1 已交付的机制以归档的 [M1 文档](../History/M1/README.md) 为准，
 > 本文只写 M2 的变化。本文未提到的 M1 机制在 M2 中保持不变。
+> **术语**：本文的 Turn 是"一次输入的工作"：用户一条开放输入引出的全部工作。实现中它没有自己的 ID，以这条输入的 checkpoint 命名（[Orchestration](Orchestration.md) 第 7 节、D8），代码与接口里叫 input（`openInputLedger`、`InputSettled`、`inputTimeoutSeconds`、`NO_OPEN_INPUT`）；回退、差异与 Fork 以 checkpoint 为单位，长任务里另有派生前、答复后的 checkpoint，暂停时可以回到其中任何一个（Orchestration 第 7.5 节）。
 
 ## 1. 目标与范围
 
@@ -51,7 +52,7 @@ M2 提交时须用真实模型的对照实验证明，至少在一部分大任�
 - **跨进程续跑**：进程退出后，正在运行的 WorkflowRun 不能原地恢复（v1.36：改为经用户确认后从最近的 checkpoint 续跑，见 [Orchestration](Orchestration.md) 第 7.6 节）。重开 Session 时对话可以继续，但开启的是新的 WorkflowRun（第 2.3 节）。
 - **任务图能力**：循环、条件边、`any` 与 `quorum` 汇合、模板级的动态扇出（map）（M2 支持的边与触发规则见第 3.1 节；v1.38 删除了从未被模板使用的条件边与有界循环）。v1.36 起，嵌套派生（缺省三层）与沿任务树的消息属于 M2，见 [Orchestration](Orchestration.md) 第 3.6、5 节。
 - **无人值守**：无人值守运行（unattended）、定时任务、自动审批。
-- **按节点回退**：Orchestration 运行整体是一个 Turn（第 2.1 节），`/undo`、`/diff` 不能回到运行中间的某个节点。
+- **按节点回退**：v1.36 起长任务在派生前、答复后各有 checkpoint，暂停时可以回到其中一个（[Orchestration](Orchestration.md) 第 7.5 节）；没有按任意节点回退。
 - **从历史位置分叉**：Fork 只能从 Session 的当前末端进行，不能从更早的 Turn 分出（第 10.4 节）。
 - **多实例**：同一个 `dataDir` 同一时刻只运行一个 MultiAgentOS 实例（第 10.1 节）。
 - **隔离副本**：每个 Agent 或每个 Session 一个工作区副本、再合并；M2 只预留接口（第 6.5 节）。
@@ -105,7 +106,7 @@ M2 提交时须用真实模型的对照实验证明，至少在一部分大任�
 | Session | 一个仓库上的持续工作档案：会话日志、产物、工作区快照 | 创建后持久存在，直到用户删除 | Session 列表与会话日志归 Workflow；Kernel 只保存 Session 的引用与自己命名空间中的数据，生命周期指令只由 Kernel 下达；UserInteraction 不保存任何 Session 信息，一切以 Kernel 交给它的为准（第 2.4 节） |
 | Template | TaskGraph 的定义：节点、依赖、生长规则；有版本，不可变 | 定义层，不是运行实体 | 只有 AgentToolPool 中的内置模板；由 Workflow 编译。模板不携带任何权限（第 3.8 节） |
 | WorkflowRun | 一次受治理的执行期：一张 TaskGraph、一份授权条目集合、一份运行级额度 | 开启到收敛；不跨进程 | 业务状态归 Workflow，控制状态归 Kernel |
-| Turn | 一条开放输入（`HUMAN(prompt)`）引出的全部工作。Turn-chat 中每条用户消息一个 Turn；Orchestration 运行只有开头的目标一个开放输入，整个运行就是一个 Turn | Kernel 在开放输入得到答复时开启，在下一次请求开放输入或运行收敛时结束；保存本 Turn 的额度、超时、开始与结束快照、用量与结束原因 | Kernel.Core（额度归 Monitor，快照归 Execution）；Workflow 从事件中得知 `turnId`，只用于日志与投影（第 2.3 节） |
+| Turn（一次输入的工作） | 一条开放输入（`HUMAN(prompt)`）引出的全部工作。Turn-chat 中每条用户消息一个；Orchestration 运行只有开头的目标一个开放输入，整个运行就是一个 | Kernel 在开放输入得到答复时开启（先拍这条输入的 checkpoint），在下一次请求开放输入或运行收敛时结束；保存它的额度、超时、结束快照、用量与结束原因 | Kernel.Core（额度归 Monitor，快照归 Execution）；以 checkpoint 命名，Workflow 从 `HumanAnswered.checkpointId` 与 `InputSettled` 得知（第 2.3 节） |
 | AgentRun | 一个 Agent 在 TaskGraph 上的一次执行 | 登记到结束 | Workflow 持有实例，Kernel 登记身份、能力上限与额度 |
 | UnitRun | Workflow 决定要执行的一个 Unit：拓扑中的位置与确定性 ID | 提交到得到结果 | Workflow |
 | UnitAttempt | Kernel 为 UnitRun 建立的一次执行尝试；技术重试产生新的 UnitAttempt，UnitRun 不变 | 建立到结果检查 | Kernel.Execution |
@@ -115,13 +116,13 @@ M2 提交时须用真实模型的对照实验证明，至少在一部分大任�
 - **局部询问**（`ask`、`confirm`、`review`）：只阻塞相关的工作，其他分支照常推进。
 
 这一分类是控制层面的约束，不是业务含义，所以 Kernel 可以据此维护 Turn，而不需要知道 `chat` 或任何模板。
-Turn 是有 ID 的实体，以下信息都按 Turn 保存与计量：额度、超时、开始与结束快照、`/undo` 与 `/diff`、派生上限。
+以下信息按 Turn 保存与计量：额度、超时、结束快照与用量；`/undo`、`/diff` 以 checkpoint 为单位，每条输入的开头就是一个 checkpoint。
 Turn-chat 中每条用户消息开启一个 Turn；Orchestration 运行（`mas run`）只有开头的目标一个开放输入，整个运行就是一个 Turn。
 
 **Turn 的边界是静止点**：Turn 结束时没有 ACTIVE 的 AgentRun、没有在途 UnitAttempt，工作区不会再被改动（由 Kernel 强制，第 2.3 节）。
 只有在静止点拍快照，回退才能回到一致的状态；也只有在静止点结算额度，才不会把一个任务的消耗切成两半。
 `ask`、`confirm`、`review`、`steer` 发生在工作进行之中，只阻塞相关的 AgentRun，其他 SubAgent 可能仍在写文件、跑命令（第 4.3 节"全局与局部"），
-所以它们不是 Turn 的边界。Orchestration 模板中的询问同样是局部询问，因此一个 Orchestration 运行内部没有静止点，只能整体回退。
+所以它们不是 Turn 的边界。Orchestration 模板中的询问同样是局部询问，所以一个 Orchestration 运行内部没有静止点；它在派生前、答复后另拍 checkpoint，拍摄时扣住写入（Orchestration 第 7.3 节）。
 
 ### 2.2 两种模式
 
@@ -194,10 +195,10 @@ Turn 由 Kernel.Core 依据开放输入开启与结束（第 2.1 节），Workfl
 
 | 时机 | Kernel 检查 | Kernel 动作 |
 |---|---|---|
-| **开启**：开放输入得到答复（`answerHuman`，种类 `prompt`），或 `startSession`、`mas run` 带来的初始输入 | 本运行没有开启中的 Turn | 1. 分配 `turnId` 与序号；<br>2. 拍摄开始快照并写入快照索引（第 4.6 节），快照完成之前保留 Unit，不派发；<br>3. 从运行级账本为本 Turn 划出份额（第 7.3 节），开始计时；<br>4. 在交给 Workflow 的 `HumanAnswered` 中带上 `turnId`（Workflow 据此更新 Session 列表） |
-| **结束**：Workflow 请求下一个开放输入（`requestHuman`，种类 `prompt`），或 WorkflowRun 收敛 | 没有 ACTIVE 的 AgentRun，也没有在途 UnitAttempt。请求开放输入时不满足，以 `AGENT_RUN_ACTIVE` 拒绝该请求 | 1. 拍摄结束快照；<br>2. 结算 Turn 账本，剩余返还运行级账本；<br>3. 在快照索引中补上结束快照与改动文件列表（第 4.6 节）；<br>4. 向 Workflow 发出 `TurnClosed { turnId, reason, 用量摘要, 两个快照的引用 }` |
+| **开启**：开放输入得到答复（`answerHuman`，种类 `prompt`），或 `startSession`、`mas run` 带来的初始输入 | 本运行没有开启中的 Turn | 1. 拍这条输入的 checkpoint（`INPUT`）并写入快照索引（第 4.6 节），快照完成之前保留 Unit，不派发；<br>2. 从运行级账本为它划出份额（`openInputLedger`，第 7.3 节），开始计时；<br>3. 在交给 Workflow 的 `HumanAnswered` 中带上 `checkpointId` |
+| **结束**：Workflow 请求下一个开放输入（`requestHuman`，种类 `prompt`），或 WorkflowRun 收敛 | 没有 ACTIVE 的 AgentRun，也没有在途 UnitAttempt。请求开放输入时不满足，以 `AGENT_RUN_ACTIVE` 拒绝该请求 | 1. 拍摄结束快照，写入快照索引（`SETTLED`）；<br>2. 结算这次输入的账本（`closeInputLedger`），剩余返还运行级账本；<br>3. 向 Workflow 发出 `InputSettled { checkpointId, reason, 用量摘要, 快照的引用, 改动的文件数 }`（Workflow 据此更新 Session 列表） |
 
-1. **登记**：Turn 开启期间登记的 AgentRun 自动归入该 Turn，`registerAgentRun` 不带 `turnId`；没有开启中的 Turn 时登记被拒（`NO_OPEN_TURN`）。
+1. **登记**：开启期间登记的 AgentRun 属于这次输入，`registerAgentRun` 不带它的标识；没有开启中的输入时登记被拒（`NO_OPEN_INPUT`）。
 2. **结束原因**由 Kernel 依据自己的状态判定：`COMPLETED`（正常请求下一个开放输入）、`ABORTED`（从 INTERRUPTING 结束）、`TIMEOUT`、`BUDGET`、`RUN_CLOSED`（运行收敛）。
 3. **超时**：Turn 超时时，Kernel 按中止处理本 Turn（进入 INTERRUPTING，第 4.5 节），记下原因 `TIMEOUT`。Workflow 收敛节点后，
    Turn-chat 请求下一个开放输入，Orchestration 以 `closeRun` 报告，Turn 随之结束。
@@ -206,13 +207,13 @@ Turn 由 Kernel.Core 依据开放输入开启与结束（第 2.1 节），Workfl
 
 | 数据 | 维护者 | 内容 |
 |---|---|---|
-| `TurnRecord` | Kernel.Core | `turnId`、`workflowRunId`、序号、`OPEN` / `CLOSED`、开启时间、结束原因、用量 |
-| Turn 账本 | Kernel.Monitor | 委派账本：运行 → Turn → AgentRun（第 7.3 节） |
-| 快照索引 | Kernel.Execution | `{ turnId, seqNo, viewId, startSnapshot, endSnapshot, changedFiles }`，以及回退时追加的 `{ revertedTurnIds, forced, backupSnapshot }`；持久化在 Kernel 命名空间；`viewId` 在 M2 中恒为 `main`（第 6.5 节） |
-| `TurnProjection` | Workflow | `turnId`、序号、提示节点、本 Turn 的节点集合、回复引用、结束原因；由 `TURN_STARTED`、`TURN_ENDED` 投影得到，不另存 |
+| 当前输入 | Kernel.Core | 开启中的输入（以它的 checkpoint 命名）、开启时间与计时、结束原因 |
+| 输入的账本 | Kernel.Monitor | 委派账本：运行 → 输入 → 任务（第 7.3 节） |
+| 快照索引 | Kernel.Execution | checkpoint（`CHECKPOINT`：标识、种类、快照）、静止时的结束快照（`SETTLED`）与回退（`ROLLED_BACK_TO`）；持久化在 Kernel 命名空间（Interface/Persistence 第 4.4 节） |
+| 投影中的输入 | Workflow | 由 `HUMAN_ANSWERED` 与 `INPUT_SETTLED` 投影得到，不另存 |
 
-**Kernel 负责**：Turn 的开启与结束、静止检查、结束原因、Turn 额度、计时、快照与快照索引。
-**Workflow 负责**：收到 `HumanAnswered { turnId }` 时追加 `TURN_STARTED`，收到 `TurnClosed` 时追加 `TURN_ENDED`；为上下文条目标注所属 Turn、在回退后替换历史；
+**Kernel 负责**：输入的开启与结束、静止检查、结束原因、它的额度、计时、快照与快照索引。
+**Workflow 负责**：收到 `HumanAnswered` 时追加 `HUMAN_ANSWERED`，收到 `InputSettled` 时追加 `INPUT_SETTLED`；在回退后替换历史；
 收到中止、超时或额度信号后收敛节点。Workflow 只记录 Turn，不控制 Turn；它唯一需要遵守的是"只在静止时请求开放输入"。
 
 ### 2.4 所有权
@@ -222,9 +223,9 @@ Turn 由 Kernel.Core 依据开放输入开启与结束（第 2.1 节），Workfl
 | TaskGraph、节点状态、推进、上下文组装输入、会话日志（SessionLogStore） | Workflow | Kernel 只看到 AgentRun 登记与 UnitIntent |
 | 上下文压缩的时机与执行（第 9.6 节） | Kernel.Core（摘要调用的额度归 Monitor，执行经 Execution） | Workflow 应 Kernel 的查询交出可压缩的条目，并把压缩结果按固定规则记入日志；不决定是否压缩 |
 | 人类请求（HUMAN 节点）的业务含义 | Workflow | Kernel 转发请求与答复，只区分开放输入与局部询问 |
-| Session 列表（标题、Fork 来源、Turn 数、最后活动时间）与会话日志 | Workflow | Kernel 保存 Session 引用（`sessionId`、状态与仓库根目录），由 Session 管理以系统级事件（第 2.6 节）向 Workflow 查询后交给 UserInteraction |
+| Session 列表（标题、Fork 来源、输入数、最后活动时间）与会话日志 | Workflow | Kernel 保存 Session 引用（`sessionId`、状态与仓库根目录），由 Session 管理以系统级事件（第 2.6 节）向 Workflow 查询后交给 UserInteraction |
 | 界面上显示的一切 Session 信息 | 不归 UserInteraction | UserInteraction 不保存 Session 列表、标题或 Fork 关系，只展示 Kernel 交来的结果；输入历史等纯界面偏好除外 |
-| Turn 的开启与结束、静止检查 | Kernel.Core（Turn 额度归 Monitor，快照归 Execution） | Workflow 从 `HumanAnswered`、`TurnClosed` 得知 Turn 并记入日志 |
+| Turn（一次输入的工作）的开启与结束、静止检查 | Kernel.Core（额度归 Monitor，快照归 Execution） | Workflow 从 `HumanAnswered`、`InputSettled` 得知并记入日志 |
 | 授权询问、能力上限、授权条目、Lease、SandboxProfile | Kernel.Core | Workflow 只得到裁决与原因码 |
 | 运行控制状态（第 4.3 节） | Kernel.Core | Workflow 与 UserInteraction 经事件得知 |
 | 额度账本、工具次数与墙钟计数 | Kernel.Monitor | Workflow 只得到 `BudgetView` 与触顶项，不持有 token 数值 |
@@ -550,12 +551,12 @@ main 的派生准则写进它的 Prompt，要点如下：
 |---|---|---|---|---|
 | `prompt` | 用户主动输入：Turn-chat 的第一条提示词与之后的每条消息、`mas run` 的目标、`/run` 的目标 | 两种来源（`origin`）：<br>- `initial`：只用于 Session 的第一条消息（新建或 Fork）与 `mas run` 的目标，节点创建时已带有内容；<br>- `requested`：此后运行中的 `prompt` 一律是请求式，main 结束（不论成败）后 Workflow 先创建节点并发出请求，系统进入 AWAITING_INPUT，用户输入后完成 | 下游的 main AgentRun 或模板实例依赖它 | 收到用户输入；Kernel 随即开启新的 Turn（第 2.3 节） |
 | `steer` | 用户在运行中插入的说明，或暂停后附加的说明 | 运行中 `/steer <说明>`（或 Alt+Enter 发送），或暂停后 `/continue <说明>` 时创建，创建时已带有内容 | 附属于目标 AgentRun | 创建即完成；内容出现在目标下一次组装的上下文末尾 |
-| `ask`、`confirm`、`review` | 模板预设，或 Agent 调用 `ask_user` | 模板节点在就绪时请求；`ask_user` 在调用时请求 | 模板节点：后继依赖它；`ask_user`：被调用方派发（`DELEGATE`），答复回来时唤醒调用方（`RESUME`） | 收到符合 `answerSchema` 的答复（不超时）；运行被中止时记为 INTERRUPTED，调用以不交付答复的方式关闭 |
+| `ask`、`confirm`、`review` | 模板预设，或 Agent 调用 `ask_user` | 模板节点在就绪时请求；`ask_user` 在调用时请求 | 模板节点：后继依赖它；`ask_user`：被调用方派发（`DELEGATE`），答复回来时唤醒调用方（`RESUME`） | 收到答复（不超时）；运行被中止时记为 INTERRUPTED，调用以不交付答复的方式关闭 |
 
 | 字段 | 内容 |
 |---|---|
 | `request` | 问题文本、结构化字段、要审阅的 ArtifactRef（`prompt` 与 `steer` 没有） |
-| `answerSchema` | 由种类与字段决定；Workflow 校验答复后才把节点标为 SUCCEEDED |
+| 答复的形式 | 由种类与字段（`fields`）决定；UserInteraction 在提交前检查，Workflow 收到答复后把节点标为 SUCCEEDED |
 | `content` | 用户输入的正文：UserInteraction 交给 Kernel，由 Execution 存入 ArtifactStore，引用随 `HumanAnswered` 交给 Workflow；节点只记录引用 |
 | 超时 | 都不超时（与 MAF 的 Request Info、LangGraph 的 `interrupt` 相同）：`prompt` 是空闲等待；`ask`、`confirm`、`review` 一直等到用户回答，或运行被中止、收敛时取消。系统不会替用户回答，也不会在用户离开时自行继续（第 1.3 节"无人值守"是非目标）。模板为单个询问显式设置超时与缺省答复留作待决（第 14.2 节） |
 
@@ -629,29 +630,30 @@ Workflow 为每次变化追加对应的日志记录。
 ### 4.6 回退与差异
 
 工作区快照由 Kernel.Execution 管理，以独立 `GIT_DIR` 的影子 git 仓库保存在 Session 目录中，不要求被分析仓库本身是 git 仓库。
-快照在每个 Turn 开始与结束时拍摄，这两个时刻都是静止点（第 2.1 节）。Orchestration 运行整体是一个 Turn，所以它在运行开始与收敛时各有一个快照，运行中不拍摄。
+每个 checkpoint 拍一个快照：每条输入的开头一个（静止点，第 2.1 节），长任务里另在根任务派生前、答复后各一个（拍摄时扣住写入与前台命令，[Orchestration](Orchestration.md) 第 7.2、7.3 节）；运行静止时再拍一个结束快照。
 
 系统没有可用的 `git` 时无法拍摄快照：组合根在启动时探测，探测失败就把启动预设降为 `readonly`（第 5.2 节）并提示用户，写入工具不可用，对话与分析照常。
 
 快照范围是仓库内除 M1 默认排除规则之外的文件，单个超过 16 MiB（文件工具的上限）的未跟踪文件跳过。影子 git 设置 `GIT_CONFIG_NOSYSTEM=1`、`GIT_CONFIG_GLOBAL=/dev/null`，不读取用户与系统的 git 配置。
-每个 Turn 开启时，Kernel 把 `turnId`、Turn 序号与开始快照写入自己命名空间中的快照索引（`kernel-execution/snapshot-index.jsonl`）；结束时追加结束快照，以及两者之间改动过的文件列表（新增、修改、删除）。
-因进程退出或停机而没有正常结束的 Turn，在索引中只有开始快照。
-回退时再追加一项，标明哪些 Turn 已被回退。`/undo`、`/diff` 只依据这份索引定位快照；进程重启后照样可用，Kernel 不需要读取 Workflow 的日志。
+快照写入 Kernel 命名空间中的快照索引（`kernel-execution/snapshot-index.jsonl`）：checkpoint（`CHECKPOINT`）、静止时的结束快照（`SETTLED`）与回退（`ROLLED_BACK_TO`）。
+`/undo`、`/diff`、`/checkpoints` 只依据这份索引定位快照；进程重启后照样可用，Kernel 不需要读取 Workflow 的日志。
 
-**回退只还原被回退的 Turn 改动过的文件**，其他文件一律不动（与 OpenCode 的 `SessionRevert.plan` 相同）。
-因此一个 Session 执行 `/undo`，对其他 Session 与用户手动的修改来说，和进行一轮新的 Turn 是同一种行为：只改动自己改过的文件。
+**回退只还原目标 checkpoint 之后改动过的文件**，其他文件一律不动（与 OpenCode 的 `SessionRevert.plan` 相同）。
+因此一个 Session 执行 `/undo`，对其他 Session 与用户手动的修改来说，和进行一次新的输入是同一种行为：只改动自己改过的文件。
 
 | 指令 | 条件 | 效果 |
 |---|---|---|
-| `/diff [N]` | 任意时刻 | 展示倒数第 N 个尚未被回退的 Turn（缺省 1）开始快照与结束快照之间的差异 |
-| `/undo` | 仅 AWAITING_INPUT | 回退最近一个尚未被回退的 Turn。可以连续执行，每次再往前回退一个 Turn |
-| `/undo all` | 仅 AWAITING_INPUT | 回退本 Session 中全部尚未被回退的 Turn。Fork 出的 Session 只回退它自己的 Turn，即回到 Fork 时的状态 |
+| `/diff [N]`、`/diff #N` | 任意时刻 | 展示倒数第 N 个（`#N`：`/checkpoints` 中第 N 个）checkpoint 的区间（到下一个 checkpoint 或结束快照）的改动 |
+| `/checkpoints` | 任意时刻 | 列出没有被回退的 checkpoint 与各自改了几个文件 |
+| `/undo` | 仅 AWAITING_INPUT | 回到最近一个 checkpoint 之前，这个 checkpoint 也取回（打开它的输入一起撤销）。可以连续执行，每次再往前一个 |
+| `/undo all` | 仅 AWAITING_INPUT | 回到第一个 checkpoint 之前。Fork 出的 Session 只回退它自己的 checkpoint，即回到 Fork 时的状态 |
+| `/rewind #N` | 仅 PAUSED | 回到第 N 个 checkpoint，工作从那里继续（[Orchestration](Orchestration.md) 第 7.5 节） |
 
-不提供回到任意更早 Turn 的 `/undo N`，也不提供 redo。
+不提供 redo。
 
 **回退的步骤**（Kernel.Execution 执行，Core 发起与确认）：
-1. **确定范围**：取被回退的各 Turn 改动过的文件的并集。每个文件的目标是"本次被回退的 Turn 中第一个改它的 Turn"的开始快照；文件在目标快照中不存在，就删除它。
-2. **静态检查**：对范围内的每个文件，比较当前内容（包括是否存在）与"本 Session 中最后改它的那个 Turn"的结束快照：
+1. **确定范围**：取目标 checkpoint 之后改动过的文件。每个文件的目标是这个 checkpoint 的快照；文件在目标快照中不存在，就删除它。
+2. **静态检查**：对范围内的每个文件，比较当前内容（包括是否存在）与最近的快照（结束快照，或之后最近的 checkpoint）：
    - 全部一致：没有外部修改，直接回退，不询问；
    - 有不一致：这些文件在之后被其他 Session、用户手动或外部程序改过，进入第 3 步。
 3. **有外部修改时询问用户**：列出这些文件及其差异，只有两个选项：
@@ -663,11 +665,10 @@ Workflow 为每次变化追加对应的日志记录。
 4. **兜底快照**：强制回退之前，Kernel 先对当前工作区拍一个快照，询问时告知用户"被覆盖的内容会保留在快照中"。M2 不提供 redo，但误覆盖的修改可以从影子仓库找回。
 5. **写入前复查**：逐个文件写入之前再比较一次。如果文件在第 2 步之后又被改动（用户确认之后，编辑器或外部程序还在改），就停止回退，已写入的文件按兜底快照恢复，然后重新提示。
    `/undo` 只在 AWAITING_INPUT 执行，本系统没有 Agent 在运行，实例锁又排除了另一个 MultiAgentOS 进程，所以这种情况只可能来自本系统之外。
-6. **记录**：Kernel 在快照索引中标记被回退的 Turn，发出 `WorkspaceReverted`；Workflow 追加 `WORKSPACE_REVERTED`（被回退的 Turn、是否强制、外部修改的文件、兜底快照的引用）。
-   投影中，被回退各 Turn 的步骤替换为一条说明（"已回退：第 k 个 Turn，用户输入为……"）。日志只追加，不删除任何记录。
+6. **记录**：Kernel 在快照索引中追加 `ROLLED_BACK_TO`，发出 `CheckpointRolledBack`；Workflow 追加 `ROLLED_BACK`（checkpoint、是否撤销、是否强制、外部修改的文件、兜底快照的引用）。
+   投影中，从触发它的调用（`/undo` 时为打开这个 checkpoint 的输入）起替换为一条说明。日志只追加，不删除任何记录。
 
-**没有结束快照的 Turn**（进程退出或停机导致）：它改动过的文件按"开始快照与下一个 Turn 的开始快照之间的差异"计算。
-如果它就是最近一个 Turn，没有下一个 Turn，就与当前工作区比较；此时无法区分本 Turn 的改动与外部修改，范围内的全部文件都按"有外部修改"处理，进入第 3 步询问。
+**没有结束快照时**（进程退出或停机导致）：最近一段没有可比较的快照，与当前工作区比较时无法区分本系统的改动与外部修改，范围内的全部文件都按"有外部修改"处理，进入第 3 步询问。
 
 回退能覆盖的范围：沙盒保证命令只能写可写路径（都在仓库内），所以回退覆盖全部文件改动，被排除的文件（如 `node_modules`）除外；询问与回退结果中都注明这一点。
 回退不能撤销已批准联网的命令对外部产生的效果（例如向远端推送），这一点写入 M2 的限制清单。
@@ -866,8 +867,7 @@ SubAgent 的隔离由以下五层共同保证，缺一不可：
    - 工具参数只描述本次操作，不能改变能力上限：能力白名单与 `writeScope` 只由 Agent 定义与派生决定；
    - Agent 在 `ask_user` 中提到权限，或用户在答复中表示同意，都不产生授权条目。
 3. **SubAgent 要更大范围时**，只能在 `finish_subagent` 中写明（`blockers`），由父 Agent 重新派生，新的派生仍然只能落在父 AgentRun 的能力上限之内。
-4. **预留扩展点**：Kernel 的授权询问接受一个可选的"申请来源"字段，M2 中它恒为 `KERNEL_ADMISSION`。
-   以后若增加脱离操作的权限申请（如 `request_permission` 工具，事先为一组操作申请授权），作为新的来源接入同一个询问流程与判定顺序，不另开通道。
+4. **预留扩展点**：以后若增加脱离操作的权限申请（如 `request_permission` 工具，事先为一组操作申请授权），作为新的申请来源接入同一个询问流程与判定顺序，不另开通道；M2 的询问只有准入这一个来源，没有来源字段。
 
 ## 6. 沙盒
 
@@ -934,9 +934,7 @@ Core 在签发 EXEC 的 ExecutionScope 时计算 SandboxProfile，Supervisor 用
 ### 6.5 工作区视图（为隔离副本预留）
 
 M2 中所有 AgentRun 都直接在仓库目录中工作，并行写入靠第 6.4 节不相交的写入占用保证安全。"每个 Agent 一个隔离副本，最后合并"留到 M3，M2 只预留以下接口，使 M3 不需要改动已有的语义：
-- **工作区视图**：每个 AgentRun 登记时带一个 `workspaceViewId`。沙盒的挂载源、文件工具的根目录、改动检测与快照，都通过 `workspaceRootOf(agentRun)` 取得路径，
-  不直接使用仓库根目录。M2 中只有一个视图 `main`，`workspaceRootOf` 总是返回仓库根目录；
-- **快照索引**：每一项带 `viewId`，M2 中恒为 `main`；
+- **工作区视图**：每个 AgentRun 登记时带一个 `workspaceViewId`，M2 中只有一个视图 `main`：沙盒的挂载源、文件工具的根目录、改动检测与快照都是仓库根目录。M3 的隔离副本按这个标识取各自的路径；
 - **合并**：节点种类预留 `INTEGRATE`（第 3.1 节），Unit 预留 `workspace-merge`（第 8.1 节）。M2 中出现即以 Unsupported 拒绝。
 
 ## 7. Kernel：执行与资源
@@ -1074,7 +1072,7 @@ AWAITING_INPUT 时的压缩（用户的 `/compact`）没有开启中的 Turn，�
 
 | 计时 | 缺省 | 到点 |
 |---|---|---|
-| Turn 超时 `turnTimeoutSeconds` | Turn-chat 1800 秒；Orchestration 运行（整体一个 Turn）3600 秒；都不计 PAUSED 的时间，也不计"全部工作都在等用户"的时间（见下文） | 按中止处理本 Turn（进入 INTERRUPTING，第 2.3 节）；Orchestration 由 Workflow 收敛节点后以 `closeRun(TIMEOUT)` 报告 |
+| 输入超时 `inputTimeoutSeconds`、`orchestrationTimeoutSeconds` | Turn-chat 1800 秒；Orchestration 运行（整体一个 Turn）14400 秒；都不计 PAUSED 的时间，也不计"全部工作都在等用户"的时间（见下文） | 按中止处理本 Turn（进入 INTERRUPTING，第 2.3 节）；Orchestration 由 Workflow 收敛节点后以 `closeRun(TIMEOUT)` 报告 |
 | 暂停上限 `maxPauseSeconds` | 1800 秒 | 按中止处理 |
 | 授权询问、人类请求 | 不超时 | — |
 
@@ -1097,13 +1095,14 @@ Executor 把它随失败一起交回，Execution 以"指数退避与 `Retry-Afte
 
 | syscall | 变化 |
 |---|---|
-| `registerAgentRun` | 新增 `parentAgentRunId?`、`delegationId?`、`nodeId`、`workspaceViewId`（M2 恒为 `main`）、`requestedCapabilities`、`writeRoots?`、`budget?`、`effort`、`display { label }`；允许多个同时 ACTIVE；可写根目录按写入占用规则检查（第 6.4 节），冲突时返回 `WRITE_SCOPE_CONFLICT`；自动归入开启中的 Turn，没有时返回 `NO_OPEN_TURN` |
+| `registerAgentRun` | 新增 `parentAgentRunId?`、`delegationId?`、`nodeId`、`workspaceViewId`（M2 恒为 `main`）、`requestedCapabilities`、`writeRoots?`、`budget?`、`effort`、`display { label }`；允许多个同时 ACTIVE；可写根目录按写入占用规则检查（第 6.4 节），冲突时返回 `WRITE_SCOPE_CONFLICT`；属于开启中的输入，没有时返回 `NO_OPEN_INPUT` |
 | `reserveDelegation` | 新增：`run_subagents` 校验通过后，为全部任务划出委派保留（全有或全无）；返回 `delegationId`，或 `BUDGET_INSUFFICIENT` 与可委派余额 |
 | `releaseDelegation` | 新增：任务被跳过或不再登记时返还其份额 |
 | `retainArtifacts` | 新增：一次交接登记之前，请 Kernel 把它带的引用改为随 Session 保留（第 3.7 节 0a；Kernel/Core 第 5g 节） |
 | `submitUnit` | 新增 `unitRunId`、`display { toolName, argsSummary（≤80 字）}` |
 | （说明） | `display` 只用于界面：Kernel 原样放进 ActivityEvent，不据此做任何判断 |
-| `requestHuman` | 新增：发起人类请求。`prompt`（开放输入）只能在没有 ACTIVE AgentRun 与在途 UnitAttempt 时发起，并结束当前 Turn（第 2.3 节）；其他种类是局部询问 |
+| `requestHuman` | 新增：发起人类请求。`prompt`（开放输入）只能在没有 ACTIVE AgentRun 与在途 UnitAttempt 时发起，并结束当前输入的工作（第 2.3 节）；其他种类是局部询问 |
+| `scheduleWake`、`takeCheckpoint`、`haltAgentRun`、`restoreMission`、`closeMission`、`withdrawQuestion`、`withdrawOpenInput`、`controlJob` | 新增：长任务的定时唤醒、checkpoint、停下与重开任务、收回询问与开放输入、后台命令（[Orchestration](Orchestration.md) 第 8 节，Interface/WorkflowKernel 第 2.6 节） |
 | `readProjectFile` | 新增：读取项目文件（第 7.5 节末尾的说明） |
 | `reportSessionList` | 新增：回答 Kernel 的 Session 列表查询（第 10.3 节） |
 | `reportCompactionSource`、`ackCompaction` | 新增：回答 Kernel 的压缩材料查询；确认修剪结果与压缩结果已记入日志（第 9.6 节） |
@@ -1122,7 +1121,7 @@ Executor 把它随失败一起交回，Execution 以"指数退避与 `Retry-Afte
 | `answerHuman` | 新增 |
 | `pauseRun`、`resumeRun(steer?)`、`interruptRun` | 新增 |
 | `steerRun({ target?, input })` | 新增：运行中插话（第 4.5 节），只在 RUNNING 时受理 |
-| `undoTurns({ scope: last \| all })`、`confirmUndo({ force })`、`diffTurns` | 新增 ControlOperation；`confirmUndo` 回答第 4.6 节第 3 步的询问 |
+| `undo({ scope: LAST \| ALL })`、`confirmUndo({ decision })`、`diff`、`listCheckpoints`、`rewindCheckpoint`、`recoverRun` | 新增 ControlOperation；`confirmUndo` 回答第 4.6 节第 3 步的询问；`rewindCheckpoint`、`recoverRun` 见 [Orchestration](Orchestration.md) 第 7.5、7.6 节 |
 | `compactContext` | 新增：用户的 `/compact`，只在 Turn-chat 的 AWAITING_INPUT 时受理（第 9.6 节） |
 | `readArtifact`、`shutdown` | 不变 |
 
@@ -1133,7 +1132,7 @@ Executor 把它随失败一起交回，Execution 以"指数退避与 `Retry-Afte
 - 时机：根目录的 `AGENTS.md` 在本 WorkflowRun 第一个读取仓库的工具成功之后读取一次，在下一次组装之前完成；子目录的 `AGENTS.md` 在 `read_file` 第一次触及该目录时读取（第 9.5 节）；用户批准修改某个 `AGENTS.md` 的写入成功后再读取一次。每次读取都追加 `PROJECT_FILE_LOADED` 记录。
 
 **Kernel → Workflow 的事件**：`SessionOpen`、`SessionListQuery`、`RunStart`、`UnitReport`（新增 `INTERRUPTED` 状态，以及实际改动的文件）、
-`HumanAnswered`（开放输入的答复带 `turnId`；运行中插话为 `steer`）、`HumanCancelled`、`TurnClosed`、`RunPaused`、`RunResumed(steer?)`、`RunInterrupted`（带原因：用户中止、暂停超时、Turn 超时）、`WorkspaceReverted`、`WorkspaceDiverged`（打开 Session 时的工作区差异，第 2.3 节）、
+`HumanAnswered`（开放输入的答复带 `checkpointId`；运行中插话为 `steer`）、`HumanCancelled`、`InputSettled`、`RunPaused`、`RunResumed(steer?)`、`RunInterrupted`（带原因：用户中止、暂停超时、输入超时、内存压力）、`CheckpointRolledBack`、`CheckpointTaken`、`WakeDue`、`JobEnded`、`DelegationDecided`、`WorkspaceDiverged`（打开 Session 时的工作区差异，第 2.3 节）、
 `CompactionSourceQuery`、`ToolResultsPruned`、`ContextCompacted`（第 9.6 节）、`RunClosed`。
 
 **Kernel → UserInteraction 的事件**：
@@ -1156,7 +1155,7 @@ Executor 把它随失败一起交回，Execution 以"指数退避与 `Retry-Afte
 - 命令与沙盒：`COMMAND_DENIED`、`SANDBOX_UNAVAILABLE`；
 - 网络：`DOMAIN_DENIED`、`ADDRESS_FORBIDDEN`；
 - 额度与上限：`BUDGET_INSUFFICIENT`、`QUOTA_EXHAUSTED`（Kernel）；`REPEATED_INTENT`、`CONSECUTIVE_ERRORS` 是 Workflow 的收尾原因，不是 Kernel 原因码；
-- 运行状态：`AGENT_RUN_ACTIVE`（扩展到 `requestHuman`）、`NO_OPEN_TURN`；
+- 运行状态：`AGENT_RUN_ACTIVE`（扩展到 `requestHuman`）、`NO_OPEN_INPUT`；
 - 上下文与产物：`CONTEXT_COMPACTED`（挂起的 `context-assemble` 因压缩而返回，须以新的投影重新提交）、`CONTEXT_OVERFLOW`（provider 报告上下文过长）、`COMPACTION_SUMMARY_INVALID`（摘要不符合指令规定的格式）、`COMPACTION_UNKNOWN`（压缩的回复对应不上）、`ARTIFACT_EXPIRED`（正文已过保留期，按登记时间判断）；
 - 系统故障：`STOP_UNCONFIRMED` 触发停机（第 4.7 节）。
 
@@ -1175,7 +1174,7 @@ M2 的暂停与中止要取消单个执行，而且 Turn-chat 中止后运行还
 - **交付条件**：尝试的 `runEpoch` 等于当前值，且运行处于 RUNNING、PAUSING、PAUSED、INTERRUPTING 或 AWAITING_INPUT（M1 只有 RUNNING）。
 - **结果映射**：Supervisor 以 `TERMINATED` 上报被取消的执行，Execution 按取消原因形成 `INTERRUPTED(PAUSED | ABORTED)`；MODEL 按 M1 的规则结算已发生的用量。
 - **排队中的尝试**：中止时，尚未派发的尝试从队列中移出，同样交付 `INTERRUPTED(ABORTED)`（M1 收敛时清出队列的尝试不交付，这里不同）。
-- **防止迟到的提交**：每个尝试记录所属的 `turnId`。Turn 结束后，属于它的 `submitUnit` 一律以 `NO_OPEN_TURN` 拒绝。
+- **防止迟到的提交**：一次输入的工作结束时它的尝试都已结束（结束要求静止）；之后再来的 `submitUnit` 没有开启中的输入，以 `NO_OPEN_INPUT` 拒绝。
 
 ### 7.7 内存压力
 
@@ -1478,7 +1477,7 @@ SubAgent 的 `PINNED` 条目是目标、父任务交给它的引用、依赖任�
     workflow/log.v1.jsonl                  SessionLogStore：会话日志（Workflow）
     kernel-core/audit.jsonl                Kernel 审计：授权询问与条目、Lease 签发、ControlOperation、拒绝、结算
     kernel-execution/artifact-owners.jsonl 本 Session 拥有的产物
-    kernel-execution/snapshot-index.jsonl  快照索引：turnId、viewId → 开始与结束快照
+    kernel-execution/snapshot-index.jsonl  快照索引：checkpoint、静止时的结束快照与回退
     kernel-execution/snapshots/            工作区快照（影子 git）
     kernel-execution/quarantine/           命令新建的受保护路径（第 6.1 节）
 ```
@@ -1528,19 +1527,17 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 **以 Session 为存放单位**（M1 按 WorkflowRun 存放在 `runs/<workflowRunId>/`）：
 
 - **一个 Session 一个会话日志**：Session 内先后进行的全部 WorkflowRun 都追加到同一个文件，以 `WORKFLOW_RUN_STARTED` 与 `WORKFLOW_RUN_ENDED` 划分；
-  再以 `TURN_STARTED` 与 `TURN_ENDED` 划分 Turn（这两条记录由 Workflow 依据 Kernel 的 `HumanAnswered`、`TurnClosed` 事件写入）。日志的层次与第 2.1 节的概念层次一一对应：
+  一次输入的工作从它的 `HUMAN_ANSWERED(prompt)` 开始，到 `INPUT_SETTLED` 结束（由 Workflow 依据 Kernel 的 `HumanAnswered`、`InputSettled` 事件写入）。日志的层次与第 2.1 节的概念层次一一对应：
 
   ```text
   log.v1.jsonl
     SESSION_STARTED
     WORKFLOW_RUN_STARTED(run 1)
-      HUMAN_ANSWERED(prompt)
-      TURN_STARTED(turn 1)
+      HUMAN_ANSWERED(prompt, checkpoint 1)
         GRAPH_EXTENDED / NODE_* / UNIT_* / HUMAN_*(ask, steer) …
       HUMAN_REQUESTED(prompt)
-      TURN_ENDED(turn 1)
-      HUMAN_ANSWERED(prompt)
-      TURN_STARTED(turn 2)
+      INPUT_SETTLED(checkpoint 1)
+      HUMAN_ANSWERED(prompt, checkpoint 2)
         …
     WORKFLOW_RUN_ENDED(run 1, PROCESS_EXITED)
     WORKFLOW_RUN_STARTED(run 2)   ← 重开 Session 后
@@ -1560,10 +1557,11 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 |---|---|
 | Session | `SESSION_STARTED`：仓库、`formatVersion`、定义版本与 `definitionsDigest`、沙盒探测结果 |
 | WorkflowRun | `WORKFLOW_RUN_STARTED`（模板、预设）、`WORKFLOW_RUN_ENDED`（结束原因） |
-| Turn | `TURN_STARTED`（`turnId`、提示节点、开始快照引用）、`TURN_ENDED`（结束原因、用量摘要、结束快照引用）；都来自 Kernel 的事件 |
+| 输入 | `INPUT_SETTLED`（checkpoint、结束原因、用量摘要、改动的文件数），来自 Kernel 的事件；checkpoint 取代 Turn 之前的日志是 `TURN_STARTED`、`TURN_ENDED`，只读取 |
+| 长任务 | 任务的休眠与唤醒、消息、计划、后台命令、checkpoint 与回退（`SEGMENT_YIELDED`、`MISSION_*`、`JOB_*`、`CHECKPOINT_*`、`ROLLED_BACK` 等，[Orchestration](Orchestration.md) 第 9.1 节） |
 | 拓扑 | `GRAPH_EXTENDED`、`NODE_STARTED`、`NODE_ENDED` |
 | 业务输入 | `HUMAN_REQUESTED`、`HUMAN_ANSWERED`：所有用户输入（`prompt`、`steer`、`ask`、`confirm`、`review`）都只以这两种记录出现，带节点 ID、种类、附属对象与正文引用；界面中排队、尚未提交的消息不在日志中 |
-| 控制 | `RUN_PAUSED`、`RUN_RESUMED`、`RUN_INTERRUPTED`、`WORKSPACE_REVERTED`、`WORKSPACE_DIVERGED` |
+| 控制 | `RUN_PAUSED`、`RUN_RESUMED`、`RUN_INTERRUPTED`、`WORKSPACE_DIVERGED` |
 | Unit | `UNIT_SUBMITTED`、`UNIT_COMPLETED`（结构化输出与 ArtifactRef）、`UNIT_INTERRUPTED`；`MODEL_TURN` 带 `reasoningRef` 与用量（压缩的估算使用其中的实际输入 token）；`CONTEXT_ASSEMBLED` 带 `headDigest`（system 段、工具定义与模型的摘要）；失败的模型尝试单独记录，不进入模型历史 |
 | 待办 | `TODOS_UPDATED`：`update_todos` 的调用引用与计数（第 3.5 节） |
 | 项目文件 | `PROJECT_FILE_LOADED`：路径、ArtifactRef、SHA、`trusted`；子目录的 `AGENTS.md` 另带加载它的 AgentRun，或 `skipped: LIMIT`（第 9.5 节） |
@@ -1589,8 +1587,8 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 3. 比较 `definitionsDigest`：版本号相同但摘要不同时，提示"定义已修改，历史上下文的重建不再精确"，并写入审计；
 4. 对每个"已提交、未完成"的 UnitRun 追加 `UNIT_INTERRUPTED`（原因"上一个进程中断"，故障停机时为"上一个进程故障停机"），不重放；
    没有得到回答的工具调用追加 `FEEDBACK`，使历史始终合法；未结束的 AgentRun 追加 `AGENT_RUN_ENDED(INTERRUPTED)`，未结束的节点追加 `NODE_ENDED(INTERRUPTED)`：被打断的 AgentRun 就此结束，不恢复，已经成功的结果全部保留，下一条输入开启新的 AgentRun；
-   对没有 `TURN_ENDED` 的 Turn 追加 `TURN_ENDED(PROCESS_EXITED)`（没有结束快照）；对未结束的 WorkflowRun 追加 `WORKFLOW_RUN_ENDED(PROCESS_EXITED)`；
-   有上述修复时，最后追加一条 `STALE_UNITS_SETTLED`，记录修复了哪些 Unit、Turn 与运行；
+   对没有结束的输入追加 `INPUT_SETTLED(PROCESS_EXITED)`（没有结束快照）；对未结束的 WorkflowRun 追加 `WORKFLOW_RUN_ENDED(PROCESS_EXITED)`；
+   有上述修复时，最后追加一条 `STALE_UNITS_SETTLED`，记录修复了哪些 Unit 与运行；
 5. 重建投影；Kernel 比较工作区并告知差异（第 2.3 节 Session 第 6 条，不改动文件），再开启新的 WorkflowRun；
 6. 最后一个人类请求没有答复时，重新展示它；否则进入 AWAITING_INPUT。
 
@@ -1598,9 +1596,9 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 
 | 字段 | 来源 |
 |---|---|
-| `sessionId`、创建时间、Fork 来源（`fromSessionId`、Fork 时原 Session 的 Turn 数） | Workflow 创建 Session 时写入 |
+| `sessionId`、创建时间、Fork 来源（`fromSessionId`、Fork 时原 Session 的输入数） | Workflow 创建 Session 时写入 |
 | 标题 | 第一条 `prompt` 正文的 ArtifactRef；列表展示时由 Kernel 按引用读取前 80 字 |
-| Turn 数、最后活动时间 | Workflow 收到 `TurnClosed` 时更新 |
+| 输入数、最后活动时间 | Workflow 收到 `InputSettled` 时更新 |
 | 状态 | 正常、已删除 |
 
 **Kernel 只保存引用**：Kernel.Core 在 `<dataDir>/kernel-core/session-refs.jsonl` 中只记录 `sessionId`、状态与仓库根目录的 realpath。
@@ -1614,12 +1612,12 @@ Workflow 需要保存正文（例如用户输入）时，一律经 Kernel 交给
 
 Fork 从一个已有 Session 的**当前末端**分出一个新的 Session。两者的对话与日志此后各自继续，互不影响；工作区是共用的（见下表）。
 
-M2 没有设置可以回到的历史检查点：Turn 是计量与回退文件的单位，不是对话的检查点；唯一完整的保存点是 Session 本身。
-因此 Fork 只能在 Session 的末端进行，不能从更早的 Turn 分出。想在之后回到某个位置，就在那时先 Fork，以后切换到那个 Session（`/resume`）。
+checkpoint 是回退文件的单位，不是对话的保存点；唯一完整的保存点是 Session 本身。
+因此 Fork 只能在 Session 的末端进行，不能从更早的 checkpoint 分出。想在之后回到某个位置，就在那时先 Fork，以后切换到那个 Session（`/resume`）。
 
 | 项 | 规则 |
 |---|---|
-| 发起 | 用户执行 `/fork`，不带参数。只在 AWAITING_INPUT 时可用，此时最后一个 Turn 已经结束，是静止点 |
+| 发起 | 用户执行 `/fork`，不带参数。只在 AWAITING_INPUT 时可用，此时最后一次输入的工作已经结束，是静止点 |
 | 创建时机 | 用户在草稿中提交第一条提示词时才创建（第 2.3 节）；放弃草稿不留下任何内容 |
 | 日志 | 新 Session 有自己的日志文件：复制原日志的全部记录（`seq` 不变），对其中未结束的 WorkflowRun 追加 `WORKFLOW_RUN_ENDED(FORKED)`，再追加 `SESSION_FORKED { fromSessionId, fromSeq }`，然后是新的 `WORKFLOW_RUN_STARTED` 与第一个 `HUMAN(prompt)`。此后两个日志各自追加，原 Session 的日志不被修改 |
 | 产物 | 正文不复制，ArtifactStore 也不被修改。Workflow 复制日志时，同时列出其中出现的全部 ArtifactRef，经 Kernel 交给 Execution；Execution 把它们按原来的保留类别登记为新 Session 拥有（过期时间仍从原来的登记算起）。删除任一 Session 只影响它自己的归属，正文按第 10.1 节的规则回收 |
@@ -1902,5 +1900,6 @@ M2 V1.0 的使用方法见 [M2Usage](M2Usage.md)，已知限制见 [M2Limitation
 | v1.38 | 2026-11-14 | 删除 M1 的 `analyze` 路径与只为它存在的机制（Cary 2026-11-14 决定"全删，冻结测试换载体"；[Orchestration](Orchestration.md) D38、D39）：内置模板 `analyze`、Agent planner 与 code-viewer、工具 `finish`（finish-analysis）与 `handoff-to-code-viewer`、仓库概览 `repository-orient`（`REPOSITORY_ORIENT`）、报告发布 `report-publish`（`REPORT_PUBLISH`、`AnalysisReport`）、交接条目 `HANDOFF`、条件边与 `SKIPPED(NOT_TAKEN)`、有界循环与节点迭代号、仓库模板 `.multiagentos/workflows/` 与 `mas run <模板>`、从未实现的 `/run`、未接入运行的统一校验函数 `validateExtension`、执行类别 `TEST`；第 1、2.2、2.3、3.1–3.3、3.5、3.8、3.9、7.5、8.1、10.2、12、13 节相应修改；第 3.9 节补上 lead 与专家；R 组 F1–F5 与两份冻结测试改用 Turn-chat 或 Mission 运行（M2FrozenTests） |
 | v1.39 | 2026-11-16 | **Mission 基线1**（Cary 2026-11-16 决定，[Orchestration](Orchestration.md) D93）：以 L9 那次运行的配置为基线，删除其余配置。任务没有验收条件：删除 `run_subagents` 的 `acceptance`、结果里的 `AcceptanceAnswer` 与"每条都要回应"的检查（第 3.7 节规则 2）、汇合结果里的未满足条目；lead 不再由模型直接选：根任务给 worker 写 `split: true`，系统按 lead 运行；lead 的派生工具只能派 explorer 与 worker（第 3.6 节）；继承上下文不再有开关；对照用的替代定义与环境变量全部删除 |
 | v1.40 | 2026-11-17 | 第 3.6 节：`run_subagents` 的 `writeScope` 改为必填（[Orchestration](Orchestration.md) D96），explorer 写 `[]`；漏写时修补步骤按 `[]` 处理，由原来的校验决定是否以 `WRITE_SCOPE_REQUIRED` 拒绝 |
+| v1.43 | 2026-11-19 | 与实现对齐（编辑性，不改设计）：Turn 读作"一次输入的工作"，以这条输入的 checkpoint 命名（[Orchestration](Orchestration.md) D8 已实现）；第 2.1、2.3、4.6、7.4、7.5、10.1–10.4 节的接口名、记录、快照索引与 `/undo`、`/diff` 按 checkpoint 改写（`InputSettled`、`NO_OPEN_INPUT`、`inputTimeoutSeconds`、`undo`、`diff`、`CheckpointRolledBack`、`ROLLED_BACK`），补上长任务的 syscall 与事件；第 7.3 节规则 2、6 写入 D115 |
 | v1.42 | 2026-11-17 | 继承来的部分原样保留，子任务只为自己的部分计数与压缩，整段不超过模型窗口减输出与余量，角色切换是一条独立条目；Mission 的根任务输入上限 555k；压缩时调用与回答一起留或一起摘要；工具列表在运行中不变（撤下的派生工具与最后一轮）；步骤的后续段带上它的 guide；同一次派生、开头相同的 worker 先启动一个（[Orchestration](Orchestration.md) D100–D105；D99 撤回） |
 | v1.41 | 2026-11-17 | main 的回复只有文字、且此刻可以结束时，这段文字就是它的 `reply`（[Orchestration](Orchestration.md) D97），与其他 Agent 的主循环一致；还有运行中或等待启动的子任务、未答复的请求或运行中的后台命令时照旧退回。子任务仍以 `finish_subagent` 交付 |

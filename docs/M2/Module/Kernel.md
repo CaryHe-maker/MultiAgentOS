@@ -16,16 +16,16 @@
 | 执行 | 同一轮可提出多个工具调用，按 FIFO 串行执行 |
 | 只读约束 | 不修改被分析仓库，不执行项目命令，不调用 git（M2 开放写入、命令与只读 git） |
 | 人类参与 | 开放输入（每条用户消息）与授权询问；增加暂停、中止、运行中插话与局部询问 |
-| 资源 | 运行、Turn 两级额度；每个 AgentRun 的工具次数与墙钟上限；额度不触发 Kernel 收敛 |
+| 资源 | 运行、输入、任务三级额度；每个 AgentRun 的工具次数与墙钟上限；额度不触发 Kernel 收敛 |
 | 产物 | 工具结果的预览长期保留，完整输出与 ContextPack 7 天后回收（启动时与每小时回收）；模型经 `read_output` 按 `toolCallId` 分段读取完整输出；只有 ACTIVE 的 Session 的登记能让正文免于回收 |
 
 ## 3. 术语
 
 | 术语 | 定义 |
 |---|---|
-| Session、Turn、开放输入 | 见 [M2Design](../M2Design.md) 第 2.1 节 |
+| Session、输入、开放输入、checkpoint | 见 [M2Design](../M2Design.md) 第 2.1 节与 [Orchestration](../Orchestration.md) 第 7 节 |
 | 运行状态 | RUNNING、AWAITING_INPUT、CONVERGING、CLOSED；另有 PAUSING、PAUSED、INTERRUPTING |
-| `BudgetView` | AgentRun、Turn、运行三级账本各自的状态：NORMAL、WRAP_UP、EXHAUSTED |
+| `BudgetView` | AgentRun（它的任务）、输入、运行三级账本各自的状态：NORMAL、WRAP_UP、EXHAUSTED |
 | 受保护 Unit、Lease、准入封锁 | 与 M1 相同（归档的 [M1 Kernel（外部视角）](../../History/M1/Module/Kernel.md) 第 3 节）； Lease 的含义见 M2Design 第 5.1 节 |
 
 控制语义（Syscall、Event、Interruption、Exception）与 M1 第 3.1 节相同。
@@ -64,9 +64,10 @@
 ## 7. 额度
 
 - Workflow 只从 `UnitReport.budget`（`BudgetView`）得知额度状态，不持有 token 数值。
-- AgentRun 级或 Turn 级为 WRAP_UP：该 AgentRun 进入最后一轮；运行级为 WRAP_UP（按本 Turn 结束时的余额判定，[Monitor](../Kernel/Monitor.md) 第 3.1 节）：
-  本 Turn 的回复发布后由 Workflow `closeRun(BUDGET)`，用户确认后对当前 Session 再次 `openSession`，在同一 Session 中开启新的运行。
+- AgentRun 级或输入级为 WRAP_UP：该 AgentRun 进入最后一轮；运行级为 WRAP_UP（按这次输入结束时的余额判定，[Monitor](../Kernel/Monitor.md) 第 3.1 节）：
+  这次输入的回复发布后由 Workflow `closeRun(BUDGET)`，用户确认后对当前 Session 再次 `openSession`，在同一 Session 中开启新的运行。
 - `QUOTA_EXHAUSTED`：工具次数或墙钟触顶，该 AgentRun 后续的非收尾 Unit 被拒绝，进入收尾。
+- 额度快用完、或派生借不到初始份额，而运行级账本还有余额时，Kernel 先按 `kernel.budget.extension` 追加（缺省问用户，M2Design 第 7.3 节规则 6，Orchestration D115）。
 - 额度到达限制时 Kernel 只拒绝预留，不收敛运行；正常的额度触顶一律留下可交付的结果（M2Design 第 7.3 节）。
 
 ## 8. 结束方式
@@ -89,8 +90,9 @@ M1 的原因码及其处理（M1 第 10 节）保留。M2 新增：
 | 原因码 | 出现位置 | Workflow 的处理 |
 |---|---|---|
 | `AGENT_RUN_ACTIVE`（`requestHuman`） | SyscallRejected | 内部错误：Workflow 只在静止时请求开放输入 |
-| `NO_OPEN_TURN` | SyscallRejected | 内部错误 |
-| `QUOTA_EXHAUSTED` | UnitReport | 进入收尾，`wrapUpReason` 按 `quota` 为 `TOOL_UNIT_LIMIT` 或 `WALL_CLOCK_LIMIT` |
+| `NO_OPEN_INPUT` | SyscallRejected | 内部错误 |
+| `BUDGET_ASKED`、`TASK_QUOTA_ASKED`（`reserveDelegation`） | SyscallRejected | 挂起这次派生，收到 `DelegationDecided` 后重做（Orchestration D62、D115） |
+| `QUOTA_EXHAUSTED` | UnitReport | 进入收尾，`wrapUpReason` 按 `quota` 为 `TOOL_UNIT_LIMIT`、`WALL_CLOCK_LIMIT` 或 `MEMORY_LIMIT` |
 | `LIMIT_EXCEEDED`（普通调用的 `context-assemble`） | UnitReport | 上下文超出窗口：进入收尾，main 的回复提示 `/new`（由压缩避免，M2Design 第 9.3 节） |
 | `LIMIT_EXCEEDED`（`model-call`：Kernel 发送前判定超出窗口） | UnitReport | 同上 |
 | `CONTEXT_OVERFLOW`（`model-call`：provider 以上下文超长拒绝） | UnitReport | Workflow 重新提交 `context-assemble`，Kernel 据此压缩；连续三次压缩后仍被拒才按上一行收尾（M2Design 第 9.6 节） |

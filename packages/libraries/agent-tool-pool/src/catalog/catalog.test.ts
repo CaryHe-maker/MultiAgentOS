@@ -9,15 +9,25 @@ import { FileDefinitionSource } from '../adapters/file/file-definition-source.js
 import { InMemoryDefinitionSource } from '../adapters/memory/in-memory-definition-source.js';
 import { DEFAULT_DEFINITIONS_DIRECTORY } from '../definitions-directory.js';
 import type { SourceDocument } from '../ports/definition-source.js';
-import { buildCatalogIndex, DefinitionCatalog } from './catalog.js';
+import { DefinitionCatalog, planSeal } from './catalog.js';
 
 const context: BoundaryContext = {
   correlationId: 'cor_test0001',
   tenantId: 'local',
   projectId: 'local',
 };
+/**
+ * The repository's documents without their digests, as `catalog:seal` reads them before sealing:
+ * a changed document is checked by the rules, not refused for no longer matching its digest.
+ */
 const repository = async () =>
-  (await new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY).load()).documents;
+  (await new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY).load()).documents.map(
+    (document) => {
+      const content: Record<string, unknown> = { ...(document.content as Record<string, unknown>) };
+      delete content['digest'];
+      return { ...document, content };
+    },
+  );
 
 type Content = Record<string, unknown>;
 
@@ -27,19 +37,19 @@ async function issuesWhen(origin: string, change: (content: Content) => Content 
   for (const document of await repository()) {
     if (document.origin !== origin) documents.push(document);
     else {
-      const changed = change(structuredClone(document.content) as Content);
+      const changed = change(structuredClone(document.content));
       if (changed !== undefined) documents.push({ origin, content: changed });
     }
   }
-  const result = buildCatalogIndex(await new InMemoryDefinitionSource(documents).load());
-  return result.ok ? [] : result.issues.map((issue) => `${issue.code} ${issue.origin}`);
+  const plan = planSeal(await new InMemoryDefinitionSource(documents).load());
+  return plan.issues.map((issue) => `${issue.code} ${issue.origin}`);
 }
 
-const AGENT = 'agents/main/v0.1.0.yaml';
-const WORKER = 'agents/worker/v0.1.0.yaml';
-const FILE_READ = 'units/file-read/v0.1.0.yaml';
-const MODEL_CALL = 'units/model-call/v0.1.0.yaml';
-const TEMPLATE = 'templates/mission/v0.1.0.yaml';
+const AGENT = 'agents/main/v1.0.0.yaml';
+const WORKER = 'agents/worker/v1.0.0.yaml';
+const FILE_READ = 'units/file-read/v1.0.0.yaml';
+const MODEL_CALL = 'units/model-call/v1.0.0.yaml';
+const TEMPLATE = 'templates/mission/v1.0.0.yaml';
 
 describe('the repository catalog', () => {
   it('loads every v1 definition and pins each agent and the template', async () => {
@@ -47,17 +57,17 @@ describe('the repository catalog', () => {
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
     for (const id of ['main', 'lead', 'explorer', 'worker']) {
-      const pinned = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
+      const pinned = catalog.pinAgent({ id, version: 'v1.0.0' }, context);
       expect(pinned.ok).toBe(true);
     }
-    expect(catalog.template({ id: 'mission', version: 'v0.1.0' }, context).ok).toBe(true);
+    expect(catalog.template({ id: 'mission', version: 'v1.0.0' }, context).ok).toBe(true);
   });
 
   it('pins the end tools with the unit tools', async () => {
     const catalog = await DefinitionCatalog.load(
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
-    const pinned = catalog.pinAgent({ id: 'main', version: 'v0.1.0' }, context);
+    const pinned = catalog.pinAgent({ id: 'main', version: 'v1.0.0' }, context);
     if (!pinned.ok) throw new Error(pinned.error.message);
     expect(pinned.value.tools.map((tool) => tool.modelName).sort()).toEqual([
       'ask_user',
@@ -98,7 +108,7 @@ describe('the repository catalog', () => {
       ['explorer', true],
       ['worker', false],
     ] as const) {
-      const pinned = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
+      const pinned = catalog.pinAgent({ id, version: 'v1.0.0' }, context);
       if (!pinned.ok) throw new Error(pinned.error.message);
       const names = pinned.value.tools.map((tool) => tool.modelName);
       expect(names.includes('web_search')).toBe(web);
@@ -113,7 +123,7 @@ describe('the repository catalog', () => {
       new FileDefinitionSource(DEFAULT_DEFINITIONS_DIRECTORY),
     );
     for (const id of ['explorer', 'worker']) {
-      const pinned = catalog.pinAgent({ id, version: 'v0.1.0' }, context);
+      const pinned = catalog.pinAgent({ id, version: 'v1.0.0' }, context);
       if (!pinned.ok) throw new Error(pinned.error.message);
       const { agent, tools } = pinned.value;
       expect(tools.filter((tool) => tool.modelName === 'finish_subagent')).toHaveLength(1);
@@ -124,7 +134,7 @@ describe('the repository catalog', () => {
   });
 });
 
-const CHAT = 'agents/chat/v0.1.0.yaml';
+const CHAT = 'agents/chat/v1.0.0.yaml';
 
 /** Chat with its `mission` entry as `change` leaves it. */
 function withMissionEntry(content: Content, change: (entry: Content) => void): Content {
@@ -182,7 +192,7 @@ describe('the rules of a v1 catalog', () => {
   });
 
   it('refuses a model whose efforts are not all mapped', async () => {
-    const origin = 'models/deepseek-flash/v0.1.0.yaml';
+    const origin = 'models/deepseek-flash/v1.0.0.yaml';
     const issues = await issuesWhen(origin, (content) => {
       const features = content['features'] as { thinking: { effortMapping: unknown[] } };
       features.thinking.effortMapping = features.thinking.effortMapping.slice(0, 3);
@@ -291,20 +301,20 @@ describe('the rules of a v1 catalog', () => {
   });
 
   it('refuses a reference to something that is not there', async () => {
-    const issues = await issuesWhen('tools/reply/v0.1.0.yaml', () => undefined);
+    const issues = await issuesWhen('tools/reply/v1.0.0.yaml', () => undefined);
     expect(issues).toContain(`REFERENCE_MISSING ${AGENT}`);
   });
 
   it('changes the digest of everything above a changed tool', async () => {
     const pin = async (documents: readonly SourceDocument[]) => {
-      const result = buildCatalogIndex(await new InMemoryDefinitionSource(documents).load());
-      if (!result.ok) throw new Error('catalog does not load');
-      return result.index.definitions.get('AGENT:main@v0.1.0')?.digest;
+      const plan = planSeal(await new InMemoryDefinitionSource(documents).load());
+      if (plan.issues.length > 0) throw new Error('catalog does not load');
+      return plan.patches.find((patch) => patch.origin === AGENT)?.digest;
     };
     const documents = await repository();
     const changed = documents.map((document) =>
-      document.origin === 'tools/reply/v0.1.0.yaml'
-        ? { ...document, content: { ...(document.content as Content), description: 'changed' } }
+      document.origin === 'tools/reply/v1.0.0.yaml'
+        ? { ...document, content: { ...document.content, description: 'changed' } }
         : document,
     );
     expect(await pin(changed)).not.toBe(await pin(documents));

@@ -34,7 +34,7 @@ const round = (agentRunId: string, turn = true): SessionLogRecord[] => {
       path: 'context',
       agentRunId,
       unitRunId: `unr_${requestId}`,
-      unitRef: { id: 'context-assemble', version: 'v0.1.0' },
+      unitRef: { id: 'context-assemble', version: 'v1.0.0' },
       inputSource: { kind: 'WORKFLOW' },
     }),
     record({ type: 'CONTEXT_ASSEMBLED', requestId }),

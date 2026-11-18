@@ -931,10 +931,6 @@ export class Console {
     return this.#sessionId;
   }
 
-  get workflowRunId(): string | undefined {
-    return this.#workflowRunId;
-  }
-
   async #answer(item: PendingItem, input: string): Promise<void> {
     if (item.kind === 'QUESTION') {
       await this.#answerQuestion(item, input);

@@ -10,7 +10,7 @@ import { parseText } from '../text/text-document.js';
 import { lineTester, type LineQuery } from './search-query.js';
 
 /** Both backends skip larger files, as `rg --max-filesize 1M` does. */
-export const MAX_SEARCH_FILE_BYTES = 1024 * 1024;
+const MAX_SEARCH_FILE_BYTES = 1024 * 1024;
 /** Files scanned between two yields to the event loop, so aborts and deadlines are seen. */
 const SCAN_CHUNK_FILES = 32;
 
@@ -86,7 +86,7 @@ export function hasRipgrep(runner: SubprocessRunner): Promise<boolean> {
  * same matches (threaded rg emits files in any order), and for case folding the ASCII-only
  * `(?i-u)` instead of `-i`.
  */
-export function ripgrepArguments(line: LineQuery, rules: readonly string[]): string[] {
+function ripgrepArguments(line: LineQuery, rules: readonly string[]): string[] {
   const pattern =
     line.kind === 'SYMBOL'
       ? line.pattern.replaceAll('\\b', '(?-u:\\b)')

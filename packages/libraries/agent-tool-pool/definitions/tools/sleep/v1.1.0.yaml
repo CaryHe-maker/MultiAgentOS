@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: sleep
+version: v1.1.0
+digest: af09013544ddb148432929c92917b458631e6982243239dc2c34955fc6d980f6
+description: Control tool that ends this segment of the task until something it waits for happens. Turn-chat text.
+purpose: CONTROL
+modelName: sleep
+modelDescription: >-
+  Wait instead of polling: until children (your subtasks), jobs (your background commands), message or timer wakes you. Call it alone.
+parametersContract:
+  kind: contract
+  id: workflow.SleepArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL

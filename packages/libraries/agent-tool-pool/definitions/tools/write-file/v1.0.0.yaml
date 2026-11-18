@@ -1,0 +1,20 @@
+schemaVersion: v1
+kind: TOOL
+id: write-file
+version: v1.0.0
+digest: 45c786863d6ec8382fef6d2c7b5dbcec5392edfcedb921f12d176599936fc6f9
+description: Model-facing whole-file write, served by the file-write unit.
+purpose: UNIT
+modelName: write_file
+modelDescription: >-
+  Create a repository text file, replace all of it, or append to it. path is relative to the
+  repository root. To replace or append to an existing file, read it first: a file that changed
+  since you read it is refused. Prefer edit_file for a change to part of a file.
+parametersContract:
+  kind: contract
+  id: executor.FileWriteArgs
+  version: v1
+riskClass: MEDIUM
+sideEffect: WORKSPACE_WRITE
+isIdempotent: false
+contentStatus: FINAL

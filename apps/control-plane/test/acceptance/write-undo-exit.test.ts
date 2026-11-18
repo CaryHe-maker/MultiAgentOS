@@ -726,7 +726,7 @@ describe('H5: an Orchestration run that has ended', () => {
         },
       });
       const first = await chatOn(place, provider);
-      await first.console.run({ id: 'mission', version: 'v0.1.0' }, 'look around');
+      await first.console.run({ id: 'mission', version: 'v1.0.0' }, 'look around');
       await first.close();
       expect(await readFile(file, 'utf8')).toBe('two\n');
 

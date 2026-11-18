@@ -12,7 +12,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
-/** The definition files shipped with the package, by origin; all of them are drafts. */
+/** The definition files shipped with the package, by origin; all of them are sealed. */
 async function shippedFiles(): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
   for (const entry of await readdir(DEFAULT_DEFINITIONS_DIRECTORY, {
@@ -29,14 +29,15 @@ async function shippedFiles(): Promise<Record<string, string>> {
   return files;
 }
 
-const PUBLISHED = 'tools/reply/v1.0.0.yaml';
+const PUBLISHED = 'tools/reply/v9.0.0.yaml';
 
-/** The draft `reply` tool as a published `v1.0.0` without a digest: what sealing finds. */
+/** The shipped `reply` tool as a new published `v9.0.0` without a digest: what sealing finds. */
 async function publishedTool(): Promise<Record<string, unknown>> {
-  const draft = parse(
-    await readFile(join(DEFAULT_DEFINITIONS_DIRECTORY, 'tools', 'reply', 'v0.1.0.yaml'), 'utf8'),
+  const shipped = parse(
+    await readFile(join(DEFAULT_DEFINITIONS_DIRECTORY, 'tools', 'reply', 'v1.0.0.yaml'), 'utf8'),
   ) as Record<string, unknown>;
-  return { ...draft, version: 'v1.0.0' };
+  delete shipped['digest'];
+  return { ...shipped, version: 'v9.0.0' };
 }
 
 async function writeCatalog(files: Readonly<Record<string, string>>): Promise<string> {
@@ -85,7 +86,7 @@ describe('FileDefinitionSource', () => {
     expect(written).toMatch(/: \{\w/u);
     // Exactly one line is added; everything the author wrote stays as it was.
     expect(toolText).toBe(
-      written.replace(/^version: v1\.0\.0\n/mu, `version: v1.0.0\ndigest: ${digest}\n`),
+      written.replace(/^version: v9\.0\.0\n/mu, `version: v9.0.0\ndigest: ${digest}\n`),
     );
     expect(buildCatalogIndex(await new FileDefinitionSource(root).load()).ok).toBe(true);
     expect(planSeal(await source.load()).patches).toEqual([]);
@@ -104,12 +105,12 @@ describe('FileDefinitionSource', () => {
 
   it('supports JSON definitions', async () => {
     const files = await shippedFiles();
-    files['tools/reply/v1.0.0.json'] = JSON.stringify(await publishedTool(), null, 2);
+    files['tools/reply/v9.0.0.json'] = JSON.stringify(await publishedTool(), null, 2);
     const root = await writeCatalog(files);
     const source = new FileDefinitionSource(root);
     await source.writeDigests(planSeal(await source.load()).patches);
     const json = JSON.parse(
-      await readFile(join(root, 'tools', 'reply', 'v1.0.0.json'), 'utf8'),
+      await readFile(join(root, 'tools', 'reply', 'v9.0.0.json'), 'utf8'),
     ) as Record<string, unknown>;
     expect(Object.keys(json)).toContain('digest');
     expect(Object.keys(json).indexOf('digest')).toBe(Object.keys(json).indexOf('version') + 1);

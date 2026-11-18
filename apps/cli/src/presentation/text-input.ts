@@ -28,7 +28,7 @@ export const EMPTY_INPUT: InputState = { value: '', cursor: 0 };
 export const inputOf = (value: string): InputState => ({ value, cursor: value.length });
 
 /** A paste of more than this many characters becomes a placeholder. */
-export const PASTE_FOLD_CHARS = 15;
+const PASTE_FOLD_CHARS = 15;
 /** The first placeholder character; the box holds at most `PASTE_LIMIT` of them. */
 const PASTE_BASE = 0xe000;
 const PASTE_LIMIT = 256;
@@ -201,7 +201,7 @@ export function deleteWordBefore(state: InputState): InputState {
  * Columns left unused at the right edge of the box, as for everything else drawn in place: a
  * terminal that draws a symbol wider than `string-width` counts it still has room for it.
  */
-export const BOX_MARGIN = 2;
+const BOX_MARGIN = 2;
 
 /**
  * The text cut into rows exactly as Ink cuts a `<Text wrap="hard">` that is `width` columns wide:
@@ -313,8 +313,8 @@ export function layoutBox(
 }
 
 /** The box shows at most this many rows, and never fewer than the least, whatever the terminal. */
-export const BOX_MAX_ROWS = 10;
-export const BOX_MIN_ROWS = 2;
+const BOX_MAX_ROWS = 10;
+const BOX_MIN_ROWS = 2;
 
 /** The rows the box may take on a terminal of `terminalRows` rows. */
 export const boxHeight = (terminalRows: number): number =>

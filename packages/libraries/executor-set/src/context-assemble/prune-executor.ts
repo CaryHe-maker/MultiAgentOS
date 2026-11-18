@@ -13,7 +13,7 @@ import { retainBytes } from '../retention/retention.js';
  * tail, with a line in the middle that says how much was left out and how to read it back. It
  * needs no model and no clock, so the same input always gives the same bytes.
  */
-export const PRUNED_MEDIA_TYPE = MEDIA_TYPES.json;
+const PRUNED_MEDIA_TYPE = MEDIA_TYPES.json;
 
 export interface PrunedText {
   readonly toolCallId: string;

@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: write-file
+version: v1.1.0
+digest: 3656e134d61e0c11ede4bf93d71436a9bf8e4a23b3b78870bc9ffba07e456dce
+description: Model-facing whole-file write, served by the file-write unit. Turn-chat text.
+purpose: UNIT
+modelName: write_file
+modelDescription: >-
+  Create or fully replace a repository text file, or append to it. Read an existing file before replacing it.
+parametersContract:
+  kind: contract
+  id: executor.FileWriteArgs
+  version: v1
+riskClass: MEDIUM
+sideEffect: WORKSPACE_WRITE
+isIdempotent: false
+contentStatus: FINAL

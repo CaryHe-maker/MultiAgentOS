@@ -17,7 +17,7 @@ import type { SandboxProfile } from '@multiagentos/contracts';
  * in the same process (same pid, so signals and the process group are unchanged). When the
  * restriction cannot be set up the command does not run (exit 126), never without it.
  */
-export const LANDLOCK_EXEC_SOURCE = `
+const LANDLOCK_EXEC_SOURCE = `
 import ctypes, os, struct, sys
 libc = ctypes.CDLL(None, use_errno=True)
 CREATE, ADD, RESTRICT = 444, 445, 446

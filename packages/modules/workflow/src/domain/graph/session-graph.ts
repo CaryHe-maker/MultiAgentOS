@@ -292,7 +292,7 @@ export function compileTemplate(
  * template names its owner; otherwise its first AGENT node alone. Every other AGENT node is a task
  * below the root.
  */
-export function ownerSteps(template: TemplateDefinition): ReadonlySet<string> {
+function ownerSteps(template: TemplateDefinition): ReadonlySet<string> {
   const agents = template.nodes.filter((node) => node.kind === 'AGENT');
   if (template.owner === undefined) return new Set(agents.slice(0, 1).map((node) => node.name));
   return new Set(

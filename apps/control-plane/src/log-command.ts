@@ -32,7 +32,7 @@ export interface LogCommandIo {
   readonly writeError: (text: string) => void;
 }
 
-export const EXIT_CODE_LOG_FAILED = 1;
+const EXIT_CODE_LOG_FAILED = 1;
 
 class LogReadError extends Error {}
 

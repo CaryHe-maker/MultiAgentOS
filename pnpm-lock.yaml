@@ -176,9 +176,6 @@ importers:
         specifier: 0.27.1
         version: 0.27.1
     devDependencies:
-      '@multiagentos/agent-tool-pool':
-        specifier: workspace:*
-        version: link:../agent-tool-pool
       '@multiagentos/kernel':
         specifier: workspace:*
         version: link:../../modules/kernel
@@ -200,18 +197,12 @@ importers:
       '@multiagentos/contracts':
         specifier: workspace:*
         version: link:../../libraries/contracts
-      '@multiagentos/fabric':
-        specifier: workspace:*
-        version: link:../../infrastructure/fabric
 
   packages/modules/workflow:
     dependencies:
       '@multiagentos/contracts':
         specifier: workspace:*
         version: link:../../libraries/contracts
-      '@multiagentos/fabric':
-        specifier: workspace:*
-        version: link:../../infrastructure/fabric
 
   packages/testing:
     devDependencies:
@@ -221,18 +212,12 @@ importers:
       '@multiagentos/contracts':
         specifier: workspace:*
         version: link:../libraries/contracts
-      '@multiagentos/fabric':
-        specifier: workspace:*
-        version: link:../infrastructure/fabric
       '@multiagentos/kernel':
         specifier: workspace:*
         version: link:../modules/kernel
       '@multiagentos/persistence':
         specifier: workspace:*
         version: link:../infrastructure/persistence
-      '@multiagentos/user-interaction':
-        specifier: workspace:*
-        version: link:../modules/user-interaction
       '@multiagentos/workflow':
         specifier: workspace:*
         version: link:../modules/workflow

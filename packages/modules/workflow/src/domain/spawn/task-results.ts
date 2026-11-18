@@ -26,8 +26,7 @@ const MAX_NOTES = 10;
 const cut = (text: string): string =>
   text.length <= NOTE_LIMIT ? text : `${text.slice(0, NOTE_LIMIT - 1)}…`;
 
-export const notesOf = (notes: readonly string[]): readonly string[] =>
-  notes.slice(0, MAX_NOTES).map(cut);
+const notesOf = (notes: readonly string[]): readonly string[] => notes.slice(0, MAX_NOTES).map(cut);
 
 /** What goes into `NODE_ENDED.result` of a task: the join and later tasks read it. */
 export function resultOf(outcome: TaskOutcome): Record<string, unknown> {

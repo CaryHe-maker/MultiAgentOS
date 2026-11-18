@@ -1,0 +1,134 @@
+schemaVersion: v1
+kind: AGENT
+id: chat
+version: v1.0.0
+digest: 74e80c538ab2bfb4efc85bf12ccd3f2a2e4f9dd3262fe323c854f4269caaeb0f
+description: 'The agent of a Turn-chat: reads, searches, changes and tests the repository and replies.'
+role: coding assistant
+modelRef:
+  id: deepseek-flash
+  version: v1.0.0
+thinking:
+  defaultEffort: high
+  allowedEfforts:
+    - none
+    - low
+    - high
+    - max
+promptRef:
+  id: chat-system
+  version: v1.0.0
+unitRefs:
+  - id: repository-list
+    version: v1.1.0
+  - id: repository-search
+    version: v1.1.0
+  - id: file-read
+    version: v1.1.0
+  - id: file-write
+    version: v1.1.0
+  - id: file-edit
+    version: v1.1.0
+  - id: output-read
+    version: v1.1.0
+  - id: run-command
+    version: v1.1.0
+  - id: git-inspect
+    version: v1.1.0
+  - id: web-search
+    version: v1.1.0
+  - id: web-fetch
+    version: v1.1.0
+  - id: external-list
+    version: v1.1.0
+  - id: external-read
+    version: v1.1.0
+  - id: external-search
+    version: v1.1.0
+  - id: context-assemble
+    version: v1.0.0
+  - id: model-call
+    version: v1.0.0
+  - id: message-publish
+    version: v1.0.0
+actions:
+  end:
+    - toolRef:
+        id: reply
+        version: v1.1.0
+      then: PUBLISH_REPLY
+      allowedInFinal: true
+  onDegraded: PUBLISH_NOTICE
+  sleep:
+    toolRef:
+      id: sleep
+      version: v1.1.0
+  message:
+    toolRef:
+      id: send-message
+      version: v1.1.0
+  viewTasks:
+    toolRef:
+      id: view-tasks
+      version: v1.1.0
+  jobOutput:
+    toolRef:
+      id: job-output
+      version: v1.1.0
+  jobList:
+    toolRef:
+      id: job-list
+      version: v1.1.0
+  jobKill:
+    toolRef:
+      id: job-kill
+      version: v1.1.0
+  stop:
+    toolRef:
+      id: stop-subagents
+      version: v1.1.0
+  todos:
+    toolRef:
+      id: update-todos
+      version: v1.1.0
+  askUser:
+    toolRef:
+      id: ask-user
+      version: v1.1.0
+  delegate:
+    - toolRef:
+        id: subagent
+        version: v1.0.0
+      agent: chat-sub
+      context: fresh
+    - toolRef:
+        id: subagent-fork
+        version: v1.0.0
+      agent: chat-sub
+      context: inherit
+    - toolRef:
+        id: mission
+        version: v1.0.0
+      agent: main
+      context: fresh
+      template:
+        id: mission
+        version: v1.0.0
+capabilities:
+  - repo.read
+  - workspace.write
+  - command.exec
+  - command.network
+  - web.search
+  - web.fetch
+  - external.read
+  - agent.spawn
+limits:
+  maxRounds: 200
+  maxToolCallsPerRound: 8
+  maxToolUnits: 1000
+budget:
+  perCallInputLimit: 880000
+  maxOutputTokens: 64000
+  finalInputBudget: 880000
+  finalMaxOutputTokens: 64000

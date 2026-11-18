@@ -1,0 +1,21 @@
+schemaVersion: v1
+kind: TOOL
+id: web-search
+version: v1.0.0
+digest: 672813e1469532aef58a23c4e6593f42195034ee616edf8b6284a7f3a6056391
+description: Model-facing web search, served by the web-search unit.
+purpose: UNIT
+modelName: web_search
+modelDescription: >-
+  Search the web: queries is one to five texts of at most 128 characters; count is results per
+  query (1 to 20, default 5); timeRange limits the date (after, before: YYYY or YYYY-MM-DD). Returns
+  pages with title, address, date and summary; read one with web_fetch. Never put a secret into a
+  query.
+parametersContract:
+  kind: contract
+  id: executor.WebSearchInput
+  version: v1
+riskClass: LOW
+sideEffect: EXTERNAL
+isIdempotent: true
+contentStatus: FINAL

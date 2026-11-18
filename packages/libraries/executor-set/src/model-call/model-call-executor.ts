@@ -24,7 +24,7 @@ import { trackedFetch, type RequestProgress } from './tracked-fetch.js';
 type GenerateResult = Awaited<ReturnType<LanguageModel['doGenerate']>>;
 
 /** ModelCallOutput holds at most this many calls; the artifact keeps all of them. */
-export const MAX_TOOL_CALLS = 32;
+const MAX_TOOL_CALLS = 32;
 
 export interface ModelCallExecutorOptions {
   /** The HTTP client handed to the provider SDK; tests pass a fake, production uses `fetch`. */
@@ -38,7 +38,7 @@ export interface ModelCallExecutorOptions {
  * sends a piece every few seconds while it works, so the call is ended as failed and asked again,
  * instead of waiting for the HTTP client's own limit of 300 seconds (experiments m3-textutils).
  */
-export const STREAM_IDLE_MS = 60_000;
+const STREAM_IDLE_MS = 60_000;
 
 /** A timer that aborts when it is not touched for `ms`; it starts at once. */
 function idleWatch(ms: number): {
@@ -329,7 +329,7 @@ async function callModel(
   return completedCall(result, base, environment, input);
 }
 
-export function failureOf(
+function failureOf(
   reasonCode:
     | 'PROVIDER_UNREACHABLE'
     | 'PROVIDER_RATE_LIMITED'
@@ -450,7 +450,7 @@ function completedCall(
   };
 }
 
-export function parseCall(call: {
+function parseCall(call: {
   toolCallId: string;
   toolName: string;
   argumentsText: string;
@@ -471,7 +471,7 @@ export function parseCall(call: {
   };
 }
 
-export function finishReasonOf(
+function finishReasonOf(
   unified: GenerateResult['finishReason']['unified'],
 ): 'STOP' | 'LENGTH' | 'CONTENT_FILTER' | 'OTHER' {
   if (unified === 'stop') return 'STOP';
@@ -484,7 +484,7 @@ export function finishReasonOf(
  * Provider usage. DeepSeek reports cache hits as `prompt_cache_hit_tokens`, which the OpenAI
  * adapter does not read, so the raw body is consulted when the adapter has no cache figure.
  */
-export function usageOf(result: GenerateResult): TokenUsage | undefined {
+function usageOf(result: GenerateResult): TokenUsage | undefined {
   const inputTokens = result.usage.inputTokens.total;
   const outputTokens = result.usage.outputTokens.total;
   if (inputTokens === undefined || outputTokens === undefined) return undefined;

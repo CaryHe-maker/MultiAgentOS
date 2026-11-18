@@ -7,7 +7,7 @@ import {
   type PreviewLimits,
 } from '../retention/retention.js';
 
-export const DEFAULT_OUTPUT_READ_LINES = 2000;
+const DEFAULT_OUTPUT_READ_LINES = 2000;
 /** What the header and the footer take out of the limit, which applies to the whole result. */
 const FRAME_BYTES = 256;
 

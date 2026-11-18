@@ -165,8 +165,9 @@ export const GraphEdgeRecordSchema = closed({
   from: IdSchemas.nodeId,
   to: IdSchemas.nodeId,
   /**
-   * `DELEGATE`: from a caller to a node it dispatched. `RESUME`: back from a question to the caller
-   * that waits for it (M2Design 3.1). Both carry `call`. `CONTINUES`: from a segment that slept to
+   * `DELEGATE`: from a caller to a node it dispatched. `RESUME`: back to the caller that waits for
+   * it, from a question (M2Design 3.1) or from a task that took the caller's turn over
+   * (Orchestration D115). Both carry `call`. `CONTINUES`: from a segment that slept to
    * the segment that took over when its task woke (Orchestration 3.2); no readiness follows it.
    */
   kind: Type.Enum(['DEPENDS', 'DELEGATE', 'RESUME', 'CONTINUES']),
@@ -648,10 +649,6 @@ export const SessionLogRecordSchema = Type.Union(
     record('RUN_PAUSED', inTurn, {}),
     record('RUN_RESUMED', inTurn, { steerInputId: Type.Optional(IdSchemas.inputId) }),
     /**
-     * Results cut to head and tail for room (M2Design 9.6). The projection shows the cut result
-     * from here on; the full output stays readable through `read_output`.
-     */
-    /**
      * Results one AgentRun hands to another, by what Workflow checked: the registry that
      * `read_output` reads the reference `referenceId/toolCallId` from (M2Design 3.7). Written
      * once, never changed; `to` is the only one who may read the items.
@@ -665,6 +662,10 @@ export const SessionLogRecordSchema = Type.Union(
         { minItems: 1, maxItems: MAX_HANDOVER_ITEMS },
       ),
     }),
+    /**
+     * Results cut to head and tail for room (M2Design 9.6). The projection shows the cut result
+     * from here on; the full output stays readable through `read_output`.
+     */
     record('TOOL_RESULTS_PRUNED', inRun, {
       compactionId: IdSchemas.compactionId,
       target: CompactionTargetSchema,

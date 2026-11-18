@@ -27,7 +27,7 @@ const check = (name: string, angle: Check['angle'], ok: boolean, detail?: string
 });
 
 /** A shell line in the repository, run by the judge: its exit and what it printed. */
-export function shell(
+function shell(
   repository: string,
   line: string,
   timeoutMs = 300_000,
@@ -60,7 +60,7 @@ const named = (line: string): string[] => (process.env['MAO_STUDY_NAMED'] === '1
 const ranOf = (output: string): number => Number(/Ran (\d+) test/u.exec(output)?.[1] ?? '0');
 
 /** `python3 -m unittest -v`: how each test ended, by its name. */
-export function verdicts(output: string): Map<string, string> {
+function verdicts(output: string): Map<string, string> {
   const found = new Map<string, string>();
   for (const match of output.matchAll(/^(test_\w+) \([^)]*\) \.\.\. (ok|FAIL|ERROR|skipped)/gmu))
     found.set(match[1] ?? '', match[2] ?? '');
@@ -93,7 +93,7 @@ export async function hidden(
 }
 
 /** The repository of a task as the model gets it. */
-export async function given(task: string, repository: string): Promise<void> {
+async function given(task: string, repository: string): Promise<void> {
   await cp(join(STUDY_FIXTURES, task, 'repo'), repository, { recursive: true });
 }
 

@@ -37,7 +37,6 @@ import {
   requestOpenInput,
   resumeRun,
   steerRun,
-  admitWork,
   type InputEnd,
   type Decision,
   type RunControl,
@@ -144,7 +143,7 @@ type Message =
   | { readonly kind: 'COMMAND_REPORT'; readonly report: ReportSessionCommandRequest }
   | { readonly kind: 'CALL'; readonly work: () => Promise<unknown> };
 
-const DEFAULT_TIMEOUTS = { inputMs: 1_800_000, orchestrationMs: 3_600_000, pauseMs: 1_800_000 };
+const DEFAULT_TIMEOUTS = { inputMs: 1_800_000, orchestrationMs: 14_400_000, pauseMs: 1_800_000 };
 
 interface Run {
   readonly workflowRunId: string;
@@ -513,7 +512,7 @@ export class SessionActor {
   }
 
   /** Called at the end of every message: the input's clock runs only while the system works. */
-  #reconcileTurnClock(run: Run): void {
+  #reconcileInputClock(run: Run): void {
     const { phase, questions } = run.control;
     const idle =
       phase === 'PAUSING' ||
@@ -580,7 +579,7 @@ export class SessionActor {
     await this.#finishIfDrained(run);
     if (run.control.phase !== 'CLOSED') {
       run.work.reconcile();
-      this.#reconcileTurnClock(run);
+      this.#reconcileInputClock(run);
     }
   }
 
@@ -858,10 +857,6 @@ export class SessionActor {
   /** The current run, when `workflowRunId` names it. */
   run(workflowRunId: string): Run | undefined {
     return this.#run?.workflowRunId === workflowRunId ? this.#run : undefined;
-  }
-
-  admitWork(run: Run): Decision {
-    return admitWork(run.control);
   }
 
   registerAgentRun(run: Run, agentRunId: string): Decision {

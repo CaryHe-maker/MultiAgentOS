@@ -11,7 +11,7 @@ import {
 
 /** Test helpers of ExecutorSet; never imported by production code. */
 
-export const FIXED_NOW = new Date('2026-01-01T00:00:00.000Z');
+const FIXED_NOW = new Date('2026-01-01T00:00:00.000Z');
 
 export const MODEL_SCOPE: Extract<ExecutionScope, { kind: 'MODEL' }> = {
   kind: 'MODEL',
@@ -23,7 +23,7 @@ export const MODEL_SCOPE: Extract<ExecutionScope, { kind: 'MODEL' }> = {
 };
 
 /** A runner that reports `rg` as missing, so the scan backend answers. */
-export const NO_SUBPROCESS: SubprocessRunner = {
+const NO_SUBPROCESS: SubprocessRunner = {
   run: () => Promise.resolve({ exitCode: null, signal: null, stdout: '', truncated: false }),
 };
 

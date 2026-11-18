@@ -1,0 +1,21 @@
+schemaVersion: v1
+kind: TOOL
+id: search-repository
+version: v1.0.0
+digest: 60f4b759b1f844561825e42ff0a837000450f523df51247bd538141b70a56d48
+description: Model-facing repository search, served by the repository-search unit.
+purpose: UNIT
+modelName: search_repository
+modelDescription:
+  Search the repository. mode SYMBOL finds declarations of an identifier, TEXT a fixed
+  string (case-insensitive when written in lower case), PATH file paths; AUTO (default) combines PATH
+  and TEXT. maxItems defaults to 20. path (optional) limits the search to the files below one
+  directory, relative to the repository root.
+parametersContract:
+  kind: contract
+  id: context.RepositorySearchInput
+  version: v1
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

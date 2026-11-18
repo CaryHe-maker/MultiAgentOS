@@ -19,7 +19,7 @@ const playbook: Playbook = {
   example: 'an example',
 };
 const specialist = {
-  template: { id: 'demo', version: 'v0.1.0' },
+  template: { id: 'demo', version: 'v1.0.0' },
   playbook,
 };
 const root = 'msc_root';

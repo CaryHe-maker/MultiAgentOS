@@ -19,7 +19,7 @@ export interface RunBudget {
   readonly runTokenLimit: number;
   readonly inputTokenLimit: number;
   /**
-   * The share of a call's input the ledgers count it at (M2Design 7.3, rule 7): most of a call's
+   * The share of a call's input the ledgers count it at (M2Design 7.3, rule 10): most of a call's
    * input is the cached prefix of the one before, which costs a fiftieth, so counting every call at
    * its whole input limit kept tokens back that were never spent. 1 (the whole input) when absent.
    */
@@ -30,7 +30,7 @@ export interface RunBudget {
  * An Agent's budget as the ledgers count it: its input limits at `reserveShare` of their size, its
  * output limits whole (output is never cached). Its requests keep the limits as declared.
  */
-export const ledgerBudget = (agent: AgentBudget, reserveShare = 1): AgentBudget =>
+const ledgerBudget = (agent: AgentBudget, reserveShare = 1): AgentBudget =>
   reserveShare >= 1
     ? agent
     : {

@@ -1,6 +1,6 @@
 # MultiAgentOS M2 Kernel.Gateway
 
-> 状态：已实现；发布前再与代码核对一次。
+> 状态：已实现（`packages/modules/kernel/src/session/session-gateway.ts`）。
 
 ## 1. 定位
 
@@ -26,11 +26,13 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 | `reportSessionCommand`、`reportSessionList` | `workflow` | 无：不属于运行；`commandId`、`queryId` 由 Core 核对（`DELETE` 与列表查询针对的不是打开的 Session） |
 | `updateActivity` | `workflow` | `sessionId`、`workflowRunId` |
 | `reserveDelegation`、`releaseDelegation`、`retainArtifacts` | `workflow` | `sessionId`、`workflowRunId` |
+| `scheduleWake`、`takeCheckpoint`、`haltAgentRun`、`restoreMission`、`closeMission`、`withdrawQuestion`、`withdrawOpenInput`、`controlJob` | `workflow` | `sessionId`、`workflowRunId` |
 | `startSession`、`startRun` | `user-interaction` | 无 |
 | `openSession`、`listSessions`、`deleteSession`、`shutdown` | `user-interaction` | 无 |
 | `answerAuthorization`、`answerHuman` | `user-interaction` | `sessionId`、`workflowRunId` |
 | `readArtifact` | `user-interaction` | `sessionId` |
-| `undoTurns`、`confirmUndo`、`diffTurns` | `user-interaction` | `sessionId`、`workflowRunId` |
+| `undo`、`confirmUndo`、`rewindCheckpoint`、`recoverRun` | `user-interaction` | `sessionId`、`workflowRunId` |
+| `diff`、`listCheckpoints` | `user-interaction` | `sessionId` |
 | `pauseRun`、`resumeRun`、`interruptRun`、`steerRun` | `user-interaction` | `sessionId`、`workflowRunId` |
 | `reportCompactionSource`、`ackCompaction` | `workflow` | `sessionId`、`workflowRunId` |
 | `compactContext` | `user-interaction` | `sessionId`、`workflowRunId` |
@@ -47,7 +49,7 @@ Gateway 是外部 syscall 的唯一入口，负责调用方身份、契约与准
 
 - Core 在开启运行时推送 `AdmissionProjection(RUNNING)`，此后只由 Core 推送更新，Gateway 只读（与 M1 相同）。
 - 运行状态为 CONVERGING 或 CLOSED 时，拒绝 `registerAgentRun`、`submitUnit`、`requestHuman`、`readProjectFile`，返回 `RUN_BLOCKED`；
-  其余请求放行，由 Core 按 [Interaction](Interaction.md) 第 6.5 节处理。AWAITING_INPUT 不在 Gateway 封锁，由 Core 判断（`NO_OPEN_TURN`）。
+  其余请求放行，由 Core 按 [Interaction](Interaction.md) 第 6.5 节处理。AWAITING_INPUT 不在 Gateway 封锁，由 Core 判断（`NO_OPEN_INPUT`）。
 - 封锁在同一运行内设置后不解除；新的运行有新的 `workflowRunId`。
 
 ## 5. 不实现

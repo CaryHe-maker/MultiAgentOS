@@ -208,7 +208,7 @@ system 段不含任何会变化的内容（M2Design 第 9.2 节）：运行时�
 
 ### 6.2 只在末尾追加，不按调用裁剪
 
-- Workflow 交来的每个 HISTORY 条目带 `turnId`、`seq` 与类别 `PINNED`、`NORMAL` 或 `INHERITED`（M2Design 第 9.3 节；`INHERITED` 是子任务继承来的部分，Orchestration D100）。
+- Workflow 交来的每个 HISTORY 条目带 `seq` 与类别 `PINNED`、`NORMAL` 或 `INHERITED`（M2Design 第 9.3 节；`INHERITED` 是子任务继承来的部分，Orchestration D100）。
 - 普通调用按条目顺序组装全部条目，不去掉任何条目；同一个 AgentRun 两次压缩之间的组装结果，前一次是后一次的前缀（不变量 27）。
 - 普通调用超出 `tokenBudget`（`perCallInputLimit`）加上 `INHERITED` 部分（不超过 `capTokens`：模型窗口减输出上限再减 2 万）时返回 `REJECTED(LIMIT_EXCEEDED)`；`INHERITED` 部分的大小随结果交回（`frozenTokens`）。这种情况由 Kernel 在派发前压缩避免（M2Design 第 9.6 节）；没有压缩时由 Workflow 进入收尾。
 - 判断上限用校准后的值（M2Design 第 9.3 节）；达到上限的 85% 时，STATUS 写入预警。

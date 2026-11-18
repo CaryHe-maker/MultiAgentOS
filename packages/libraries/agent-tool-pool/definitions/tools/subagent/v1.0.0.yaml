@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: subagent
+version: v1.0.0
+digest: 49cc6846b115a56206f999b0e05d6cd4f6eadd5cfbcfe7844d334d5db3c37d2c
+description: Control tool of chat that starts one subtask in a new context (Orchestration D112).
+purpose: CONTROL
+modelName: subagent
+modelDescription: >-
+  Delegate a self-contained task to a subagent that works in its own context, so the work does not use yours: research, a scoped change, an analysis. It starts from the prompt alone, so the prompt says everything it needs. Give writeScope (the paths it may change) when it changes files. Returns its id at once; you are told when it ends, with its answer. Start independent subagents in one message and keep working meanwhile.
+parametersContract:
+  kind: contract
+  id: workflow.DelegateArgs
+  version: v1
+riskClass: MEDIUM
+sideEffect: WORKSPACE_WRITE
+isIdempotent: false
+contentStatus: FINAL

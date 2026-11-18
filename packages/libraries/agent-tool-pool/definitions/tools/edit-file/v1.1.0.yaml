@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: edit-file
+version: v1.1.0
+digest: 5fd9ac2151746adb9893c6541f89da271f89ee5848c1f05b7beb1325e7f083e5
+description: Model-facing text replacement, served by the file-edit unit. Turn-chat text.
+purpose: UNIT
+modelName: edit_file
+modelDescription: >-
+  Edit a repository text file you have read by replacing literal text: oldString with newString, once unless replaceAll is true.
+parametersContract:
+  kind: contract
+  id: executor.FileEditArgs
+  version: v1
+riskClass: MEDIUM
+sideEffect: WORKSPACE_WRITE
+isIdempotent: false
+contentStatus: FINAL

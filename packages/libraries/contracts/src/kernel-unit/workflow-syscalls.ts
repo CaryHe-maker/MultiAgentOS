@@ -122,10 +122,6 @@ export const ReleaseDelegationRequestSchema = closed(
 export type ReleaseDelegationRequest = Static<typeof ReleaseDelegationRequestSchema>;
 
 /**
- * Keeps results that a handover carries for as long as the Session lives, so that what was handed
- * over can still be read after the days an output is otherwise kept (Kernel/Core 5g).
- */
-/**
  * Asks the Kernel to wake a sleeping task after `seconds` (Orchestration 4.2, 8.5): time is the
  * Kernel's. When it is due, the Kernel sends `WakeDue`; a timer does not outlive its run.
  */
@@ -245,6 +241,10 @@ export const JobControlContentSchema = closed(
 );
 export type JobControlContent = Static<typeof JobControlContentSchema>;
 
+/**
+ * Keeps results that a handover carries for as long as the Session lives, so that what was handed
+ * over can still be read after the days an output is otherwise kept (Kernel/Core 5g).
+ */
 export const RetainArtifactsRequestSchema = closed(
   { ...inRun, refs: Type.Array(ArtifactRefSchema, { minItems: 1, maxItems: 21 }) },
   'kernel.unit.RetainArtifactsRequest.v1',

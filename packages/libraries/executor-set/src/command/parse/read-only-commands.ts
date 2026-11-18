@@ -11,7 +11,7 @@ import type { ParsedCommand, SubCommand } from './command-parser.js';
 export { DEFAULT_READ_ONLY_COMMANDS };
 
 /** `git <subcommand>` that only reads. */
-export const READ_ONLY_GIT_SUBCOMMANDS: readonly string[] = Object.freeze([
+const READ_ONLY_GIT_SUBCOMMANDS: readonly string[] = Object.freeze([
   'status',
   'diff',
   'log',

@@ -1,0 +1,18 @@
+schemaVersion: v1
+kind: TOOL
+id: job-output
+version: v1.1.0
+digest: 7e2127f4fcb321fc253c00ecbdb695d8dcadde418ac691c5765b8caeba342beb
+description: Control tool that reads what a background command of the task printed. Turn-chat text.
+purpose: CONTROL
+modelName: job_output
+modelDescription: >-
+  Read what a background command printed since the last read, with its state. It does not wait.
+parametersContract:
+  kind: contract
+  id: workflow.JobOutputArgs
+  version: v1
+riskClass: LOW
+sideEffect: NONE
+isIdempotent: false
+contentStatus: FINAL

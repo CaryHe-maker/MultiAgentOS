@@ -1,0 +1,20 @@
+schemaVersion: v1
+kind: TOOL
+id: reply
+version: v1.0.0
+digest: e5e4359fcc1d7896b5453e7e0e5b3aa593def390b5865cde3f6d6f2f7b3d153d
+description: Control tool that ends a Turn of main with its reply to the user.
+purpose: CONTROL
+modelName: reply
+modelDescription:
+  Send your reply to the user and end your work for this message; call it alone. text
+  is Markdown in the language of the user.
+parametersContract:
+  kind: contract
+  id: workflow.ReplyArgs
+  version: v1
+answer: true
+riskClass: READ_ONLY
+sideEffect: NONE
+isIdempotent: true
+contentStatus: FINAL

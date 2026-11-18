@@ -35,7 +35,7 @@
 1. `schemaName + major` 唯一确定语义；未知 major 必须拒绝。
 2. M1 的全部 Schema 为 major 0，已删除。发布版只有 major 1 一套契约。
 3. M2 运行时只产生 major 1 的版本。
-4. major 1 的 Schema 在 M2 发布前按本目录原地修改，发布时冻结。冻结后的规则同 M1Interface 第 1.2 节。
+4. major 1 的 Schema 已随 M2 发布冻结（2026-11-19）；冻结后的规则同 M1Interface 第 1.2 节：只能增加可选属性。
 5. 所有边界数据先经过运行时 Schema 校验；对象一律 `additionalProperties: false`。
 
 ## 3. 标识
@@ -45,7 +45,9 @@
 | 字段 | 前缀 | 生成者 | body | 说明 |
 |---|---|---|---|---|
 | `sessionId` | `ses` | Gateway（`startSession`、`startRun`） | ULID | 一个 Session；取代 M1 Envelope 中未使用的 `workSessionId` |
-| `turnId` | `trn` | Core | ULID | 一个 Turn |
+| `turnId` | `trn` | Core | ULID | checkpoint 取代 Turn 之前的日志中的一个 Turn；新记录不再有 |
+| `checkpointId` | `ckp` | Core（用户输入）、Workflow（运行中的切面） | ULID | 一个 checkpoint（Orchestration 第 7 节）；一次输入的工作以它命名 |
+| `missionScopeId` | `msc` | Workflow | 任务路径 SHA-256 的前 32 位 | 一个任务（Orchestration 第 3.2、8.1 节） |
 | `nodeId` | `nod` | Workflow | 节点路径 SHA-256 的前 32 位小写十六进制 | 节点路径见 [M2Design](../M2Design.md) 第 3.2 节 |
 | `unitRunId` | `unr` | Workflow | UnitRun 路径 SHA-256 的前 32 位 | 同上 |
 | `requestId`（提交 Unit 时） | `req` | Workflow | 提交路径 SHA-256 的前 32 位 | 其他请求的 `requestId` 仍为 ULID |

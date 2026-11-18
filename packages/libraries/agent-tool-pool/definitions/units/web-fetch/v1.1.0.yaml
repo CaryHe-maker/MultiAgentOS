@@ -1,0 +1,35 @@
+schemaVersion: v1
+kind: UNIT
+id: web-fetch
+version: v1.1.0
+digest: 25194ce0fcfd69a3814df7e21a8948c4b4ec0b3195195afb3d52cfc6104cc837
+description: Fetch one public page and return it as Markdown.
+executionKind: WEB_FETCH
+protectedCapabilities:
+  - web.fetch
+inputContract:
+  kind: contract
+  id: executor.WebFetchInput
+  version: v1
+outputContract:
+  kind: contract
+  id: executor.WebFetchOutput
+  version: v1
+toolRefs:
+  - id: web-fetch
+    version: v1.1.0
+effect: EXTERNAL
+isIdempotent: true
+failurePolicy:
+  INVALID_QUERY: RETURN_TO_MODEL
+  ADDRESS_FORBIDDEN: RETURN_TO_MODEL
+  DOMAIN_DENIED: RETURN_TO_MODEL
+  SECRET_IN_REQUEST: RETURN_TO_MODEL
+  UNSUPPORTED_CONTENT: RETURN_TO_MODEL
+  PAGE_UNAVAILABLE: RETURN_TO_MODEL
+  PROVIDER_UNREACHABLE: RETURN_TO_MODEL
+  PROVIDER_RATE_LIMITED: RETURN_TO_MODEL
+  PROVIDER_AUTH: RETURN_TO_MODEL
+  PROVIDER_ERROR: RETURN_TO_MODEL
+  LIMIT_EXCEEDED: RETURN_TO_MODEL
+  UNIT_TIMEOUT: RETURN_TO_MODEL

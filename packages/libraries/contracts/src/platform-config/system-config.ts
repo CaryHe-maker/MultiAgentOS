@@ -164,7 +164,7 @@ export const KernelConfigSchema = closed(
         }),
       ),
       /**
-       * The share of a call's input the ledgers count it at (M2Design 7.3, rule 7): the reserves,
+       * The share of a call's input the ledgers count it at (M2Design 7.3, rule 10): the reserves,
        * the least share a task opens with and the reservation of every call take the input limits
        * at this share, since most of a call's input is the cached prefix of the one before. 0.3
        * when absent; 1 counts every call at its whole input limit, as before.

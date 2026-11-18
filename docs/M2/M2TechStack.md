@@ -95,7 +95,7 @@ DeepSeek 在 2026-10-17 开放了自研的搜索与抓取接口（`POST https://
 
 **官方文档没有写明、必须实测的事项**：抓取是否渲染 JavaScript、是否遵守 robots.txt、页面大小与超时上限、搜索词与 URL 的留存与隐私、敏感话题的结果、`rerank_score` 与 `authority` 是否有区分度。第三方文章中的限流数字（每秒 5 次）与官方不一致，以实测为准。
 
-**实验**（脚本 `apps/control-plane/test/acceptance/web-eval/run-web-eval.ts`，与 `write-eval` 同样需要 `--yes` 才运行，密钥取自 `DEEPSEEK_API_KEY`，不打印、不写入记录；原始记录写入 `<out>/records.jsonl`，只含请求、状态码、耗时、结果摘要）：
+**实验**（开发期间的一次性脚本，需要 `--yes` 才运行，密钥取自 `DEEPSEEK_API_KEY`，不打印、不写入记录；原始记录只含请求、状态码、耗时、结果摘要；脚本已在实验结束后删除）：
 
 | 编号 | 实验 | 通过标准 |
 |---|---|---|
