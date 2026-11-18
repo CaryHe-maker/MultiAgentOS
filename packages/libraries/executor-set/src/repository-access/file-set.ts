@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { constants } from 'node:fs';
-import { open, opendir, realpath, type FileHandle } from 'node:fs/promises';
+import { constants, type BigIntStats } from 'node:fs';
+import { lstat, open, readdir, realpath, type FileHandle } from 'node:fs/promises';
 import { join } from 'node:path';
 import { canonicalJson, excludesDirectory, isExcluded, sha256Hex } from '@multiagentos/contracts';
 import { throwIfAborted } from '../outcome/outcomes.js';
@@ -84,13 +84,16 @@ async function listCandidates(scope: RepositoryScope, signal: AbortSignal): Prom
   while (pending.length > 0) {
     throwIfAborted(signal);
     const directory = pending.pop() as string;
-    let handle;
+    // One read per directory: iterating an open directory entry by entry costs about twice as much.
+    let entries;
     try {
-      handle = await opendir(directory === '' ? scope.root : join(scope.root, directory));
+      entries = await readdir(directory === '' ? scope.root : join(scope.root, directory), {
+        withFileTypes: true,
+      });
     } catch {
       continue; // unreadable directory: nothing in it can be read either
     }
-    for await (const entry of handle) {
+    for (const entry of entries) {
       const path = directory === '' ? entry.name : `${directory}/${entry.name}`;
       if (entry.isDirectory()) {
         if (!excludesDirectory(path, scope.rules)) pending.push(path);
@@ -101,10 +104,26 @@ async function listCandidates(scope: RepositoryScope, signal: AbortSignal): Prom
   return found.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
+/** What identifies a file's content for the digest cache: the file, its size and both times. */
+function digestKey(info: BigIntStats): string {
+  return `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
+}
+
 async function digestFile(
   absolute: string,
   cache: FileDigestCache,
 ): Promise<{ sha256: string; text: boolean; size: number } | undefined> {
+  // A file already hashed is known by one `lstat`, which follows no link either: the key is the
+  // one `fstat` gives for the same file, and a change of content, mode or owner changes `ctime`.
+  // Only a file to hash is opened, and then its own `fstat` makes the key.
+  try {
+    const seen = await lstat(absolute, { bigint: true });
+    if (!seen.isFile()) return undefined;
+    const cached = cache.get(digestKey(seen));
+    if (cached !== undefined) return { ...cached, size: Number(seen.size) };
+  } catch {
+    return undefined; // removed since the walk
+  }
   let handle: FileHandle;
   try {
     handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -115,7 +134,7 @@ async function digestFile(
     const info = await handle.stat({ bigint: true });
     if (!info.isFile()) return undefined;
     const size = Number(info.size);
-    const key = `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
+    const key = digestKey(info);
     const cached = cache.get(key);
     if (cached !== undefined) return { ...cached, size };
     const hash = createHash('sha256');
