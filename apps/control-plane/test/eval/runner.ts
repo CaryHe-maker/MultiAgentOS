@@ -183,6 +183,18 @@ async function runMission(
   return { exitCode: outcome, printed, questions: questions() };
 }
 
+/**
+ * The records of a JSONL file the run may still be writing: a line counts once its newline is
+ * there, as the log store reads it, so a line being appended is not read half written.
+ */
+function jsonLines(text: string): Record<string, unknown>[] {
+  return text
+    .slice(0, text.lastIndexOf('\n') + 1)
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
 async function readLog(dataDir: string): Promise<Record<string, unknown>[]> {
   const [id] = await readdir(join(dataDir, 'sessions')).catch(() => [] as string[]);
   if (id === undefined) return [];
@@ -190,10 +202,7 @@ async function readLog(dataDir: string): Promise<Record<string, unknown>[]> {
     join(dataDir, 'sessions', id, 'workflow', 'log.v1.jsonl'),
     'utf8',
   ).catch(() => '');
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  return jsonLines(text);
 }
 
 export async function runTask(spec: TaskSpec, run: number, env: RunnerEnv): Promise<RunRecord> {
@@ -289,10 +298,7 @@ async function kernelAudit(dataDir: string): Promise<Record<string, unknown>[]> 
     join(dataDir, 'sessions', id, 'kernel-core', 'audit.jsonl'),
     'utf8',
   ).catch(() => '');
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  return jsonLines(text);
 }
 
 /** The replies main delivered, by the publishing Units that succeeded: what a console printed. */
