@@ -135,6 +135,8 @@ export interface AgentBinding {
   readonly writeRoots: readonly string[];
   readonly toolsDigest: string;
   readonly definitions: AgentDefinitions;
+  /** Its tasks started together with the caller's context wait for the first one (D104). */
+  readonly staggered?: boolean;
 }
 
 export interface SessionRunnerDeps {
@@ -428,8 +430,8 @@ export class SessionRunner {
   }
 
   /**
-   * Experiment (stagger): the workers that wait for the first one of their call, by node, with the
-   * first one's node and the time they start at the latest.
+   * The staggered tasks that wait for the first one of their call (D104), by node, with the first
+   * one's node and the time they start at the latest.
    */
   readonly #held = new Map<string, { readonly leader: string; readonly until: number }>();
 
@@ -3448,12 +3450,11 @@ export class SessionRunner {
   }
 
   /**
-   * Experiment (stagger): the workers of one call that run as worker with the caller's context and
-   * wait for no other task send the same prefix (worker prompt, worker tools, the caller's view).
-   * One starts at once; the others wait for its first model reply, at most `staggerWorkersMs`, so
-   * their first request finds that prefix in the provider's cache. A worker lent no commands has
-   * other tools, so it is a group of its own. Leads, explorers, specialists and phase tasks start
-   * at once.
+   * The tasks of one call that run with the caller's context as an Agent whose definition staggers
+   * them (D104, worker) and wait for no other task send the same prefix (its prompt, its tools,
+   * the caller's view). One starts at once; the others wait for its first model reply, at most
+   * `staggerWorkersMs`, so their first request finds that prefix in the provider's cache. A task
+   * lent no commands has other tools, so it is a group of its own. The others start at once.
    */
   #staggerWorkers(
     workflowRunId: string,
@@ -3465,7 +3466,9 @@ export class SessionRunner {
     if (ms <= 0) return;
     const groups = new Map<boolean, string[]>();
     for (const task of tasks) {
-      if (inherit.get(task.name)?.runAs !== 'worker' || (task.dependsOn ?? []).length > 0) continue;
+      const runAs = inherit.get(task.name)?.runAs;
+      if (runAs === undefined || this.#deps.agents.get(runAs)?.staggered !== true) continue;
+      if ((task.dependsOn ?? []).length > 0) continue;
       const nodeId = nodes.find((node) => node.name === task.name)?.nodeId;
       if (nodeId === undefined) continue;
       const commands = task.commands !== false;

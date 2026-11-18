@@ -46,7 +46,7 @@ export function lineRangeText(document: TextDocument, startLine: number, endLine
 
 /**
  * Lines prefixed with right-aligned line numbers, the format measured as the cheapest and
- * clearest for the model (`experiments/minimal-agent-loop/RUNS.md`, C4).
+ * clearest for the model (M1's minimal agent loop experiment, run C4, in the history of the repository).
  */
 export function numberLines(lines: readonly string[], firstLine: number): string {
   const width = String(firstLine + Math.max(lines.length - 1, 0)).length;

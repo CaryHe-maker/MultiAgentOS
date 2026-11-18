@@ -203,6 +203,7 @@ export function agentBindingOf(
     allowedEfforts: agent.thinking.allowedEfforts,
     requestedCapabilities,
     writeRoots: requestedCapabilities.includes('workspace.write') ? ['.'] : [],
+    ...(agent.spawnable?.staggered === true ? { staggered: true } : {}),
     // The tool definitions the model sees, by digest: a change adds a REQUEST_CONTEXT record.
     toolsDigest: sha256Hex(
       canonicalJson(

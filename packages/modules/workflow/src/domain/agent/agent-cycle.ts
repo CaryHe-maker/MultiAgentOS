@@ -121,7 +121,7 @@ export interface AgentConfig {
   readonly maxSubagentsPerCall: number;
   readonly maxDependencyDepth: number;
   readonly regenerationLimit: number;
-  /** Experiment (stagger): how long sibling workers wait for the first one's reply; 0 = never. */
+  /** How long staggered sibling tasks wait for the first one's reply (D104); 0 = never. */
   readonly staggerWorkersMs?: number;
   /** The Agent a Turn-chat runs (Orchestration D112); `chat` when absent. */
   readonly chatAgent?: string;

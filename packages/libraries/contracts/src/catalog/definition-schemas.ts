@@ -282,8 +282,9 @@ export const AgentDefinitionSchema = Type.Object(
         {
           defaultShare: Type.Integer({ minimum: 1 }),
           /**
-           * Tasks of this Agent started together with the caller's context wait for the first of
-           * them to send its first request (D104), so they find its prefix in the cache.
+           * Tasks of this Agent started together, in one call, with the caller's context wait for
+           * the first of them to send its first request (D104), so they find its prefix in the
+           * cache. Only `run_subagents` starts several in one call; a delegation tool starts one.
            */
           staggered: Type.Optional(Type.Boolean()),
         },
