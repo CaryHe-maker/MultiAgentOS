@@ -5,10 +5,10 @@ MultiAgentOS 是面向软件工程与知识工作的模块化 Agent 编排和执
 
 ## 快速开始
 
-当前版本 **M2 V1.0**，有两种模式：
+当前版本 **M2 V1.1**，有两种模式：
 
-- **Turn-chat**（`mas`）：在一个本地仓库上持续对话，Agent 可以读、写、运行命令（在沙盒中）、联网、派生子任务；Session 可以保存、切换、回退、Fork 和继续，长对话自动压缩；写入、命令与联网都先询问。
-- **Mission**（`mas run "<目标>"`）：把一个目标作为长任务做到交付。根任务规划、把可以并行的部分派给子任务（worker、lead、explorer 与专家），子任务之间可以发消息、等待彼此，检查结果后交付；中途不等用户。
+- **Turn-chat**（`mas`）：在一个本地仓库上持续对话，Agent 可以读、写、运行命令（在沙盒中）、联网；把一件独立的事交给子任务（`subagent` 从它的提示开始，`subagent_fork` 从这段对话开始）；Session 可以保存、切换、回退、Fork 和继续，长对话自动压缩；写入、命令与联网都先询问。
+- **Mission**：把一个目标作为长任务做到交付。根任务规划、把可以并行的部分派给子任务（worker、lead、explorer 与专家），子任务之间可以发消息、等待彼此，检查结果后交付；中途不等用户。在对话里用 `/mission <目标>` 交给它（chat 写好任务要求交出去，交付后可以接着谈），chat 也可以自己决定把大目标交给它；`mas run "<目标>"` 是给脚本与评测的入口，结束后退出。
 
 以下在 Ubuntu 24.04 上执行，需要 Node.js 24（`>=24.19.0 <25`）、pnpm 11.25.0 与 DeepSeek 的 API key。
 
@@ -31,15 +31,19 @@ node apps/control-plane/dist/bin.js run --repo /home/me/projects/my-app "给登�
 node apps/control-plane/dist/bin.js log --repo /home/me/projects/my-app
 ```
 
-第一次需要读仓库时，终端会询问是否允许；`/help` 列出 `/new`、`/resume`、`/sessions`、`/undo`、`/compact` 等指令。完整说明见 [M2Usage](docs/M2/M2Usage.md)。
+第一次需要读仓库时，终端会询问是否允许；`/help` 列出 `/mission`、`/new`、`/resume`、`/sessions`、`/undo`、`/compact` 等指令。完整说明见 [M2Usage](docs/M2/M2Usage.md)。
 
 ## 实验结果
+
+两种模式都与 DeepSeek Harness（`dsh`，单 Agent）对照：同一模型 `deepseek-flash`、同一镜像、同一判分、同一时间上限，每道各跑一次。`dsh` 用 `read_image` 看图的题（mas 没有图片输入）与 `dsh` 取了这道题自己的测试或参考解的题不计分（[TaskSet](docs/M2/TaskSet.md) 第 7 节）。
+
+### Mission：大任务
 
 在本项目设计的 5 道大任务（最终集：Lua 解释器、SQL 引擎、关系数据库、压缩与归档工具、三万字综述）上，Mission 与 DeepSeek Harness（`dsh`，单 Agent，同一模型 `deepseek-flash`、同一镜像、同一判分、同一时间上限）对照，每道各跑一次：
 
 | | 总用时（分钟） | 平均分 | 费用（美元） | 缓存命中率 |
 |---|---|---|---|---|
-| **Mission（M2 V1.0）** | **87.8** | 0.917 | 1.76 | 98.6% |
+| **Mission（基线1.2）** | **87.8** | 0.917 | 1.76 | 98.6% |
 | `dsh` | 126.6 | 0.931 | 1.07 | — |
 
 5 道都比 `dsh` 快（4 道快 7–12 分钟，总用时少约 31%），2 道分数高于 `dsh`、1 道同为满分；费用约为 1.6 倍，主要来自多个 Agent 各自的思考与检查。pylua 取同一版本的重复运行：正式运行那一次 DeepSeek 两次断流，用时受环境影响（[experiments](docs/M2/experiments.md)）。
@@ -56,7 +60,23 @@ node apps/control-plane/dist/bin.js log --repo /home/me/projects/my-app
 - 除 pyarchive 外的 4 道，Mission 总用时少 36.6 分钟（约 35%），平均分高 0.008。
 - pyarchive 用同一版本重跑一次得满分、12.8 分钟（比 `dsh` 快 8.1 分钟）；换上这一次，5 道的平均分也高于 `dsh`（0.936 对 0.931），总用时少约 35%。
 
-这说明系统存在偶然的低效：同一版本在同一道题上会拆出不同的方案，单次运行可能慢一倍或低一些分（[M2Limitations](docs/M2/M2Limitations.md) 第 7 条）。但在绝大部分任务上，Mission 相对 `dsh` 的优势是稳定的：用时都更少，分数持平或更高。上面第一张表是正式口径，这张表只用来说明这种偶然性，不替换正式成绩。开发集上的大任务（awk、Python 子集、GNU 文本工具）Mission 都不低于 `dsh` 的分数，用时少 20%–49%。任务集、规则与逐次结果见 [TaskSet](docs/M2/TaskSet.md) 与 [experiments](docs/M2/experiments.md)，已知限制见 [M2Limitations](docs/M2/M2Limitations.md)。
+这说明系统存在偶然的低效：同一版本在同一道题上会拆出不同的方案，单次运行可能慢一倍或低一些分（[M2Limitations](docs/M2/M2Limitations.md) 第 7 条）。但在绝大部分任务上，Mission 相对 `dsh` 的优势是稳定的：用时都更少，分数持平或更高。上面第一张表是正式口径，这张表只用来说明这种偶然性，不替换正式成绩。开发集上的大任务（awk、Python 子集、GNU 文本工具）Mission 都不低于 `dsh` 的分数，用时少 20%–49%。
+### Turn-chat：小任务
+
+Turn-chat（M2 V1.1 的 chat）在 Terminal-Bench 2 与 SWE-Bench Pro 的小任务上，两边都没有派子任务（单 Agent 对单 Agent）；费用都按 DeepSeek 的低峰价格：
+
+| 任务集 | 计分 | Turn-chat 通过 / 用时 / 费用 | `dsh` 通过 / 用时 / 费用 |
+|---|---|---|---|
+| 最终集小任务 | 8 道 | **8/8** / 27.9 分 / $0.149 | 8/8 / 22.9 分 / $0.140 |
+| 最终集小任务，除 llm-inference-batching-scheduler | 7 道 | **7/7** / **19.4 分** / **$0.092** | 7/7 / 18.7 分 / $0.107 |
+| 开发集小任务（每题最近一次运行） | 7 道 | **6/7** / **18.0 分** / $0.092 | 6/7 / 20.6 分 / $0.087 |
+
+- 通过数与 `dsh` 相同。最终集 8 道里 4 道快于 `dsh`（都是改代码的题）；用时多出的部分几乎全在 llm-inference-batching-scheduler：一道优化题，过了阈值之后 mas 又把方案重写、扫了一遍参数，按测试的成本模型算的指标与 `dsh` 持平。
+- 把 llm-inference-batching-scheduler 放在一边，最终集的 7 道用时与 `dsh` 持平、费用低 14%；开发集用时少 13%。
+- mailman 要写 `/etc`、起服务：评测容器里没有 bwrap 时，mas 的未隔离命令只能写任务目录与临时目录（D79），`dsh` 用的是 `danger-full-access`，所以这一道以 `kernel.sandbox.unisolatedWrites = any` 运行（与 `dsh` 相同的写权限）。
+- 这一版的工具优化（检索与列目录的文件集合、命令前后的扫描）不改变结果，在一万个文件的仓库上把每次检索与每条命令的固定开销各减少一半以上；chat 的提示里加了思考要简短的一句后，最慢的两道各快一倍。
+
+任务集、规则与逐次结果见 [TaskSet](docs/M2/TaskSet.md) 与 [experiments](docs/M2/experiments.md)，已知限制见 [M2Limitations](docs/M2/M2Limitations.md)。
 
 ## 架构
 
@@ -91,7 +111,7 @@ Execution -> Supervisor -> Executor 子进程运行 ExecutorSet 中的 Executor
 
 ## 当前交付范围
 
-M1（只读仓库分析）已发布，文档归档在 [History/M1](docs/History/M1/README.md)。当前版本 M2 V1.0：范围与设计见 [M2Design](docs/M2/M2Design.md)，编排见 [Orchestration](docs/M2/Orchestration.md)，
+M1（只读仓库分析）已发布，文档归档在 [History/M1](docs/History/M1/README.md)。当前版本 M2 V1.1：范围与设计见 [M2Design](docs/M2/M2Design.md)，编排见 [Orchestration](docs/M2/Orchestration.md)，
 使用见 [M2Usage](docs/M2/M2Usage.md)，限制见 [M2Limitations](docs/M2/M2Limitations.md)。不应将架构文档中的长期能力理解为已经交付。
 
 ## 仓库结构

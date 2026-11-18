@@ -55,7 +55,7 @@ AgentToolPool 是静态库 `@multiagentos/agent-tool-pool`，提供定义的目�
 | TOOL | `run-subagents`、`finish-explorer`、`finish-worker` | `purpose = CONTROL`；参数为 `workflow.RunSubagentsArgs`、`ExplorerResult`、`WorkerResult`；两个结束工具在模型看来都叫 `finish_subagent`，各 Agent 只带自己的那一个。`run_subagents` 立即返回（Orchestration D14），任务的 `agent` 可以是 `explorer`、`worker` 或五个专家之一，worker 可带 `split: true`（系统按 lead 运行；Orchestration D88、D93）；只有 main 带这个工具，main 总是根任务 |
 | TOOL | `lead-run-subagents` | `purpose = CONTROL`；模型看到的名字同样是 `run_subagents`；参数为 `workflow.RunSubagentsNestedArgs`：只能派 `explorer` 与 `worker`，没有 `split`，所以只有根任务能派出 lead 与专家（D93）；由 lead 的 `actions.spawn` 引用 |
 | TOOL | `ask-user` | `purpose = CONTROL`，参数为 `workflow.AskUserArgs`；由 main 与 worker 的 `actions.askUser` 引用，explorer 没有；与 `run_subagents` 同样只能单独出现 |
-| PROMPT | `explorer-system`、`worker-system` | SubAgent 的系统提示词；chat 的提示词增加 `run_subagents` 的用法与派生准则，Mission 根任务的派生准则在模板 `mission` 里（M2Design 第 3.9 节） |
+| PROMPT | `explorer-system`、`worker-system` | SubAgent 的系统提示词；Mission 根任务的派生准则在模板 `mission` 里（M2Design 第 3.9 节）；chat 的派生（`subagent`、`subagent_fork`、`mission`）写在 `chat-system` 里 |
 | AGENT | `lead` | 组长（[Orchestration](../Orchestration.md) 第 9.4 节）：worker 的能力加上 `agent.spawn`，不由模型直接选：根任务派一个带 `split: true` 的 worker、或派一个专家时，系统按 lead 运行它；它用 `lead-run-subagents` 派生自己的 explorer 与 worker（受任务深度限制，最深一层不带 `run_subagents`）；结束工具 `finish-worker`；缺省份额 2,400,000，40 轮、160 个工具 Unit、60 分钟 |
 | PROMPT | `lead-system` | lead 的系统提示词：先写方案与接口约定，再按不相交的写入范围派生，休眠等子任务，用消息通知兄弟任务，最后统一验证 |
 | TOOL | `sleep` | `purpose = CONTROL`，参数为 `workflow.SleepArgs`；由 main、lead、worker、explorer 的 `actions.sleep` 引用：结束当前段，任务休眠到条件满足（Orchestration 第 4 节）；只能单独出现 |

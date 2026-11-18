@@ -2,7 +2,7 @@
 
 ## 1. 目的与范围
 
-本目录定义 M2 的设计、各组件机制、跨模块接口、评测与验收要求，描述的是 **M2 V1.0** 的实现。
+本目录定义 M2 的设计、各组件机制、跨模块接口、评测与验收要求，描述的是 **M2 V1.1** 的实现。
 M2 的范围与设计以 [M2Design](M2Design.md) 为准，编排（Mission）的机制以 [Orchestration](Orchestration.md) 为准；本目录其余文档在它们的基础上展开，可以细化，不得与它们矛盾。
 
 怎么用见 [M2Usage](M2Usage.md)，已知限制见 [M2Limitations](M2Limitations.md)，评测任务集与结果见 [TaskSet](TaskSet.md)。
@@ -49,4 +49,6 @@ M2 开发过程中的旧计划、决定记录与实测已冻结在 [History/M2](
 
 ## 4. 版本
 
-**M2 V1.0**（2026-11-18）：Turn-chat 与 Mission 两种模式；Mission 即 Mission 基线1.2（Orchestration D110、D111，git 标签 `mission-baseline-1.2`），在最终集的 5 道大任务上与 `dsh` 对照：总用时 87.8 对 126.6 分钟，平均分 0.917 对 0.931，费用 $1.76 对 $1.07（pylua 取重复运行，正式运行那一次受 DeepSeek 断流影响）（[TaskSet](TaskSet.md) 第 6 节）。本目录全部文档描述的机制都已实现。
+**M2 V1.0**（2026-11-18）：Turn-chat 与 Mission 两种模式；Mission 即 Mission 基线1.2（Orchestration D110、D111，git 标签 `mission-baseline-1.2`），在最终集的 5 道大任务上与 `dsh` 对照：总用时 87.8 对 126.6 分钟，平均分 0.917 对 0.931，费用 $1.76 对 $1.07（pylua 取重复运行，正式运行那一次受 DeepSeek 断流影响）（[TaskSet](TaskSet.md) 第 6 节）。
+
+**M2 V1.1**（2026-11-18）：Mission 不变（仍是基线1.2）；Turn-chat 的 chat 按单 Agent 的写法重写（系统提示与工具说明，思考要简短），派生改为 `subagent`、`subagent_fork` 与 `mission`（Orchestration D112、D113），用户可以用 `/mission <目标>` 把一个目标交给 Mission（D114）；检索、列目录与命令前后的扫描在大仓库上的固定开销减少一半以上，结果不变；`kernel.sandbox.unisolatedWrites` 让本身就是隔离的机器放开未隔离命令的写入。小任务上与 `dsh` 对照：最终集 8 道 8/8 对 8/8、27.9 对 22.9 分钟，开发集 7 道 6/7 对 6/7、18.0 对 20.6 分钟（[experiments](experiments.md) 的 T1、T2）。本目录全部文档描述的机制都已实现。

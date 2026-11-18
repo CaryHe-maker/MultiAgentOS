@@ -277,8 +277,7 @@ nodes:
 追加一个 `HUMAN(prompt)` 节点，答复唤醒根任务的下一段。它的 checkpoint 策略是 `{ onHuman: true, onRootSpawn: false }`。
 原来写在代码里的 `chat` 生长规则变成"owner 在 `reply` 之后等开放输入"这一条通用规则的实例，不再有专门的分支。
 
-Turn-chat 不运行模板；把一部分交给预编排流程的方式是在 `run_subagents` 里派一个专家（第 3.9 节，D39），这也是
-M2ReleasePlan RP3-ORCH-1"预置工作流供 Turn-chat 调用"的落实方式（原设想的 `/run <模板>` 没有实现，D46 删除）。
+Turn-chat 不运行模板：它的 chat 用 `subagent`、`subagent_fork` 派一个子任务，用 `mission`（或用户的 `/mission <目标>`）把一个大目标交给 Mission 的根任务，由它按模板 `mission` 的所有者一步运行（D112–D114）。专家（第 3.9 节，D39）只由 Mission 里的 `run_subagents` 派出；`workflow.chatAgent = main` 时 Turn-chat 由 main 运行，用 `run_subagents`。原设想的 `/run <模板>` 没有实现（D46 删除）。
 
 ### 3.6 沿树收窄的规则
 
